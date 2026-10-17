@@ -123,3 +123,14 @@ func (s *Service) ArchiveSIM(ctx context.Context, uid, id int64) error {
 	_, e := s.UpdateSIM(ctx, uid, id, SIMPatch{Status: &v})
 	return e
 }
+
+// DeleteSIM permanently removes a card and its cascading period data.
+func (s *Service) DeleteSIM(ctx context.Context, uid, id int64) error {
+	return s.transaction(ctx, uid, func(tx *sql.Tx) error {
+		if _, e := getSIM(ctx, tx, uid, id); e != nil {
+			return e
+		}
+		_, e := tx.ExecContext(ctx, "DELETE FROM sims WHERE id=? AND user_id=?", id, uid)
+		return e
+	})
+}

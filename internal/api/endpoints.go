@@ -102,6 +102,16 @@ func (h *Handler) archiveSIM(w http.ResponseWriter, r *http.Request) {
 	}
 	noContent(w, h.service.ArchiveSIM(r.Context(), currentUser(r).ID, id))
 }
+func (h *Handler) deleteSIM(w http.ResponseWriter, r *http.Request) {
+	id, ok := resourceID(w, r)
+	if !ok {
+		return
+	}
+	if _, ok := queryOnly(w, r); !ok {
+		return
+	}
+	noContent(w, h.service.DeleteSIM(r.Context(), currentUser(r).ID, id))
+}
 func (h *Handler) listPeriods(w http.ResponseWriter, r *http.Request) {
 	id, ok := resourceID(w, r)
 	if !ok {
@@ -180,6 +190,17 @@ func (h *Handler) cancelPeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noContent(w, h.service.CancelPeriod(r.Context(), currentUser(r).ID, id, version))
+}
+func (h *Handler) deletePeriod(w http.ResponseWriter, r *http.Request) {
+	id, ok := resourceID(w, r)
+	if !ok {
+		return
+	}
+	version, ok := expectedVersion(w, r, "expected_cycle")
+	if !ok {
+		return
+	}
+	noContent(w, h.service.DeletePeriod(r.Context(), currentUser(r).ID, id, version))
 }
 func (h *Handler) listRules(w http.ResponseWriter, r *http.Request) {
 	id, ok := resourceID(w, r)

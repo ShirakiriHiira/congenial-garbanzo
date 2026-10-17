@@ -212,6 +212,21 @@ func (s *Service) CancelPeriod(ctx context.Context, uid, id, expected int64) err
 		return cancelJobs(ctx, tx, id, nil, v.UpdatedAt)
 	})
 }
+
+// DeletePeriod permanently removes a period and its rules, jobs and history.
+func (s *Service) DeletePeriod(ctx context.Context, uid, id, expected int64) error {
+	return s.transaction(ctx, uid, func(tx *sql.Tx) error {
+		v, e := s.getPeriod(ctx, tx, uid, id)
+		if e != nil {
+			return e
+		}
+		if v.Cycle != expected {
+			return ErrConflict
+		}
+		_, e = tx.ExecContext(ctx, "DELETE FROM validity_periods WHERE id=? AND cycle=?", id, expected)
+		return e
+	})
+}
 func (s *Service) SetTimezone(ctx context.Context, uid int64, zone string) (User, error) {
 	if zone == "" || zone == "Local" {
 		return User{}, ErrInvalid

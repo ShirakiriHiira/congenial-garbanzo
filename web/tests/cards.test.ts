@@ -96,6 +96,8 @@ describe('card and period consumers', () => {
     expect(screen.queryByRole('button', { name: '恢复' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '续期' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '编辑有效期' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '删除有效期' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '取消有效期' })).not.toBeInTheDocument();
     expect(screen.queryByText(sim.iccid!)).not.toBeInTheDocument();
     expect(screen.queryByText(sim.phone_number!)).not.toBeInTheDocument();
   });
@@ -113,6 +115,99 @@ describe('card and period consumers', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('服务暂时无法完成请求');
     expect(screen.getByRole('heading', { name: sim.name })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '归档' })).toBeEnabled();
+  });
+
+  it('requires explicit confirmation and deletes an archived card without a request body', async () => {
+    history.replaceState(null, '', '/app/sims/1');
+    const fetcher = vi.fn(async (path: string, request: RequestInit) => {
+      if (request.method === 'POST') return new Response(null, { status: 204 });
+      return path.includes('/periods') ? Response.json({ data: [], next_cursor: null }) : Response.json({ data: { ...sim, status: 'archived' } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(SimDetail, { props: { id: '1' } });
+    await screen.findByRole('heading', { name: sim.name });
+    expect(screen.getByRole('button', { name: '删除卡片' })).toBeEnabled();
+    await fireEvent.click(screen.getByRole('button', { name: '删除卡片' }));
+    const dialog = await screen.findByRole('dialog', { name: '永久删除这张卡片？' });
+    expect(dialog).toHaveTextContent('全部有效期、提醒规则、提醒任务和续期历史');
+    expect(fetcher.mock.calls.some(([, request]) => request.method === 'POST')).toBe(false);
+    await fireEvent.click(within(dialog).getByRole('button', { name: '确认永久删除卡片' }));
+    await waitFor(() => expect(fetcher.mock.calls.filter(([, request]) => request.method === 'POST')).toHaveLength(1));
+    const deletion = fetcher.mock.calls.find(([, request]) => request.method === 'POST');
+    expect(deletion?.[0]).toContain('/api/v1/sims/1/delete');
+    expect(deletion?.[1].body).toBeUndefined();
+    await waitFor(() => expect(location.pathname).toBe('/app/'));
+  });
+
+  it('deletes a cancelled period after confirmation with its expected cycle', async () => {
+    let deleted = false;
+    const cancelled = { ...period, status: 'cancelled' as const };
+    const fetcher = vi.fn(async (path: string, request: RequestInit) => {
+      if (request.method === 'POST') {
+        deleted = true;
+        return new Response(null, { status: 204 });
+      }
+      if (path.includes('/sims/1/periods')) return Response.json({ data: deleted ? [] : [cancelled], next_cursor: null });
+      return Response.json({ data: sim });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(SimDetail, { props: { id: '1' } });
+    await screen.findByText('已取消的有效期不可恢复，也不能再编辑或续期。');
+    await fireEvent.click(screen.getByRole('button', { name: '删除有效期' }));
+    const dialog = await screen.findByRole('dialog', { name: '永久删除这个有效期？' });
+    expect(dialog).toHaveTextContent('全部提醒规则、提醒任务和续期历史');
+    await fireEvent.click(within(dialog).getByRole('button', { name: '确认永久删除有效期' }));
+    await waitFor(() => expect(screen.getByText('有效期及其关联数据已永久删除。')).toBeInTheDocument());
+    const deletion = fetcher.mock.calls.find(([, request]) => request.method === 'POST');
+    expect(deletion?.[0]).toContain('/api/v1/periods/5/delete?expected_cycle=3');
+    expect(deletion?.[1].body).toBeUndefined();
+  });
+
+  it('pauses period deletion on a cycle conflict without automatic retry', async () => {
+    let deleteAttempts = 0;
+    const latest = { ...period, cycle: 4, name: '服务端套餐' };
+    const fetcher = vi.fn(async (path: string, request: RequestInit) => {
+      if (request.method === 'POST') {
+        deleteAttempts += 1;
+        return failure(409);
+      }
+      if (path.endsWith('/periods/5')) return Response.json({ data: latest });
+      return path.includes('/periods') ? Response.json({ data: [period], next_cursor: null }) : Response.json({ data: sim });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(SimDetail, { props: { id: '1' } });
+    await screen.findByRole('button', { name: '删除有效期' });
+    await fireEvent.click(screen.getByRole('button', { name: '删除有效期' }));
+    const confirm = await screen.findByRole('dialog', { name: '永久删除这个有效期？' });
+    await fireEvent.click(within(confirm).getByRole('button', { name: '确认永久删除有效期' }));
+    const conflict = await screen.findByRole('dialog', { name: '有效期周期已变化' });
+    await waitFor(() => expect(conflict).toHaveTextContent('3 → 4'));
+    expect(deleteAttempts).toBe(1);
+    await fireEvent.click(within(conflict).getByRole('button', { name: '使用最新值' }));
+    expect(deleteAttempts).toBe(1);
+    expect(screen.getByRole('button', { name: '删除有效期' })).toBeEnabled();
+  });
+
+  it('guards a pending card deletion and retains the card after failure', async () => {
+    const pending = Promise.withResolvers<Response>();
+    const fetcher = vi.fn((path: string, request: RequestInit) => {
+      if (request.method === 'POST') return pending.promise;
+      return Promise.resolve(path.includes('/periods') ? Response.json({ data: [], next_cursor: null }) : Response.json({ data: sim }));
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(SimDetail, { props: { id: '1' } });
+    await fireEvent.click(await screen.findByRole('button', { name: '删除卡片' }));
+    const dialog = await screen.findByRole('dialog', { name: '永久删除这张卡片？' });
+    const confirm = within(dialog).getByRole('button', { name: '确认永久删除卡片' });
+    await fireEvent.click(confirm);
+    await fireEvent.click(confirm);
+    expect(confirm).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeDisabled();
+    expect(fetcher.mock.calls.filter(([, request]) => request.method === 'POST')).toHaveLength(1);
+    pending.resolve(failure(500));
+    expect(await screen.findByRole('alert')).toHaveTextContent('服务暂时无法完成请求');
+    expect(screen.getByRole('heading', { name: sim.name })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '删除卡片' })).toBeEnabled();
   });
 
   it('converts a new datetime period using the account timezone rather than the device timezone', async () => {

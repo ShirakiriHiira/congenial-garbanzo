@@ -47,6 +47,17 @@ export const labels = {
   archivedLoaded: (loaded: number) => `已加载 ${loaded} 张归档卡片`,
   archivedEmpty: '已加载的数据中没有归档卡片。',
   filterEmpty: '已加载的数据中没有符合条件的卡片。',
+  deleteCard: '删除卡片',
+  deleteCardTitle: '永久删除这张卡片？',
+  deleteCardMessage: (name: string) => `将永久删除「${name}」及其全部有效期、提醒规则、提醒任务和续期历史。此操作不可撤销，无法恢复；已发送的 Telegram 消息不会被撤回。`,
+  deleteCardConfirm: '确认永久删除卡片',
+  deletePeriod: '删除有效期',
+  deletePeriodTitle: '永久删除这个有效期？',
+  deletePeriodMessage: (name: string) => `将永久删除「${name}」及其全部提醒规则、提醒任务和续期历史。此操作不可撤销，无法恢复；卡片和其他有效期不受影响，已发送的 Telegram 消息不会被撤回。`,
+  deletePeriodConfirm: '确认永久删除有效期',
+  periodDeleted: '有效期及其关联数据已永久删除。',
+  deleteConflict: '删除未完成，未自动重试。请核对最新值，再重新确认删除。',
+  deleteConflictFailed: '读取最新有效期失败，删除操作已暂停。',
 } as const;
 
 export type LabelKey = keyof typeof labels;

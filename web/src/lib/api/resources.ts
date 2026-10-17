@@ -109,6 +109,10 @@ export const api = {
 
   archiveSim: (id: ID, signal?: AbortSignal): Promise<void> => deleteEntity(entityPath("/sims", id), signal),
 
+  deleteSim: async (id: ID, signal?: AbortSignal): Promise<void> => {
+    await request(`${entityPath("/sims", id)}/delete`, { method: "POST", signal }, noContent);
+  },
+
   periods: (simID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Period>> =>
     getPage(`${entityPath("/sims", simID)}/periods${pageQuery(after)}`, after, signal, decodePeriods),
 
@@ -120,8 +124,9 @@ export const api = {
   updatePeriod: (id: ID, body: PeriodUpdateInput, signal?: AbortSignal): Promise<Period> =>
     writeEntity(entityPath("/periods", id), "PATCH", body, signal, decodePeriod),
 
-  cancelPeriod: (id: ID, version: number, signal?: AbortSignal): Promise<void> =>
-    deleteEntity(`${entityPath("/periods", id)}?expected_cycle=${version}`, signal),
+  deletePeriod: async (id: ID, version: number, signal?: AbortSignal): Promise<void> => {
+    await request(`${entityPath("/periods", id)}/delete?expected_cycle=${version}`, { method: "POST", signal }, noContent);
+  },
 
   rules: (periodID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Rule>> =>
     getPage(`${entityPath("/periods", periodID)}/rules${pageQuery(after)}`, after, signal, decodeRules),

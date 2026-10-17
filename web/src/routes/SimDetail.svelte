@@ -9,7 +9,7 @@
   import { getInitData } from '../lib/telegram/sdk';
   import { formatDateTime } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
-  import { cardTypeLabels, errorMessage, periodStatusLabels, periodTypeLabel, simStatusLabels } from '../lib/domain/labels';
+  import { cardTypeLabels, errorMessage, labels, periodStatusLabels, periodTypeLabel, simStatusLabels } from '../lib/domain/labels';
   import { maskPhone } from '../lib/domain/mask';
   import { formatMoney } from '../lib/domain/money';
   import AsyncState from '../components/AsyncState.svelte';
@@ -45,11 +45,12 @@
   let actionBusy = $state(false);
   let archiveOpen = $state(false);
   let restoreOpen = $state(false);
-  let cancelOpen = $state(false);
-  let cancelTarget = $state<Period | null>(null);
+  let deleteSimOpen = $state(false);
+  let deletePeriodOpen = $state(false);
+  let deleteTarget = $state<Period | null>(null);
   let conflictPeriodID = $state('');
   let conflictPreviousCycle = $state(0);
-  const cancelConflict = new ConflictFlow<Period>(() => api.period(conflictPeriodID, controller.signal));
+  const deleteConflict = new ConflictFlow<Period>(() => api.period(conflictPeriodID, controller.signal));
   let alive = true;
   let controller = new AbortController();
   const terminal = $derived(session.auth === 'expired' || session.auth === 'forbidden');
@@ -236,28 +237,50 @@
       }
     }
   }
-  function askCancel(period: Period): void {
-    cancelTarget = period;
-    cancelOpen = true;
-    actionError = '';
-  }
-  async function cancelPeriod(): Promise<void> {
-    const target = cancelTarget;
-    if (!target || actionBusy || !canWrite()) return;
+  async function deleteSim(): Promise<void> {
+    if (!sim || !deleteSimOpen || actionBusy || !canWrite()) return;
     actionBusy = true;
     actionError = '';
     try {
-      await api.cancelPeriod(target.id, target.cycle, controller.signal);
+      await api.deleteSim(sim.id, controller.signal);
       if (!alive) return;
-      notice = '有效期已取消，未发送的提醒已取消。';
+      navigate('/app/');
+    } catch (error) {
+      if (alive) actionError = errorMessage(error);
+    } finally {
+      if (alive) {
+        actionBusy = false;
+        deleteSimOpen = false;
+      }
+    }
+  }
+  function askDeletePeriod(period: Period): void {
+    if (actionBusy || !canWrite() || deleteConflict.changed || deleteConflict.open) return;
+    deleteTarget = period;
+    deletePeriodOpen = true;
+    actionError = '';
+  }
+  async function deletePeriod(): Promise<void> {
+    const target = deleteTarget;
+    if (!target || !deletePeriodOpen || actionBusy || !canWrite() || deleteConflict.changed || deleteConflict.open) return;
+    actionBusy = true;
+    actionError = '';
+    try {
+      await api.deletePeriod(target.id, target.cycle, controller.signal);
+      if (!alive) return;
+      stop();
+      periods = periods.filter((period) => period.id !== target.id);
+      sections = {};
+      expanded = {};
+      notice = labels.periodDeleted;
       await reload();
     } catch (error) {
       if (alive) {
         if (error instanceof ApiError && error.kind === 'conflict') {
           conflictPeriodID = target.id;
           conflictPreviousCycle = target.cycle;
-          cancelOpen = false;
-          await cancelConflict.present();
+          deletePeriodOpen = false;
+          await deleteConflict.present();
         } else {
           actionError = errorMessage(error);
         }
@@ -265,16 +288,17 @@
     } finally {
       if (alive) {
         actionBusy = false;
-        cancelOpen = false;
-        cancelTarget = null;
+        deletePeriodOpen = false;
+        deleteTarget = null;
       }
     }
   }
-  function useLatestCancelledPeriod(): void {
-    if (!cancelConflict.current || cancelConflict.loading || cancelConflict.failed) return;
-    const current = cancelConflict.current;
+  function useLatestPeriod(): void {
+    if (!deleteConflict.current || deleteConflict.loading || deleteConflict.failed) return;
+    const current = deleteConflict.current;
     periods = periods.map((period) => period.id === current.id ? current : period);
-    cancelConflict.dismiss();
+    deleteConflict.current = null;
+    deleteConflict.dismiss();
   }
   function renewalDate(renewal: Renewal, which: 'previous' | 'new'): string {
     if (which === 'previous') {
@@ -316,6 +340,7 @@
         {:else}
           <button type="button" onclick={() => { restoreOpen = true; }} disabled={!canWrite() || actionBusy}>恢复</button>
         {/if}
+        <button type="button" class="danger" onclick={() => { actionError = ''; deleteSimOpen = true; }} disabled={!canWrite() || actionBusy}>{labels.deleteCard}</button>
       </SectionHeader>
       <dl class="profile">
         {#if sim.operator}<div><dt>运营商</dt><dd>{sim.operator}</dd></div>{/if}
@@ -356,10 +381,10 @@
                   <button type="button" onclick={() => navigate(`/app/periods/${period.id}/edit`)} disabled={!canWrite() || actionBusy}>编辑有效期</button>
                   <button type="button" onclick={() => navigate(`/app/periods/${period.id}/rules`)} disabled={!canWrite() || actionBusy}>提醒规则</button>
                   <button type="button" onclick={() => navigate(`/app/periods/${period.id}/renew`)} disabled={!canWrite() || actionBusy}>续期</button>
-                  <button type="button" class="danger" onclick={() => askCancel(period)} disabled={!canWrite() || actionBusy || cancelConflict.failed || cancelConflict.open}>取消有效期</button>
                 {:else}
                   <p class="muted">已取消的有效期不可恢复，也不能再编辑或续期。</p>
                 {/if}
+                <button type="button" class="danger" onclick={() => askDeletePeriod(period)} disabled={!canWrite() || actionBusy || deleteConflict.changed || deleteConflict.open}>{labels.deletePeriod}</button>
               </div>
               {#if expanded[period.id]}
                 <div class="section stack">
@@ -411,13 +436,14 @@
 
 <ConfirmDialog bind:open={archiveOpen} title="归档这张卡片？" message="归档后卡片不再计入首页统计，未发送的提醒会被取消。资料与历史仍保留，可随时恢复。" confirmLabel="确认归档" busy={actionBusy} onconfirm={archive} oncancel={() => { archiveOpen = false; }} />
 <ConfirmDialog bind:open={restoreOpen} title="恢复这张卡片？" message="恢复会取消未发送提醒，未取消有效期的周期会加一，旧的版本将失效；需要按最新数据重新编辑或续期。" confirmLabel="确认恢复" busy={actionBusy} onconfirm={restore} oncancel={() => { restoreOpen = false; }} />
-<ConfirmDialog bind:open={cancelOpen} title="取消这个有效期？" message={`取消「${cancelTarget?.name ?? ''}」不可恢复，未发送的提醒会被取消。`} confirmLabel="确认取消有效期" busy={actionBusy} onconfirm={cancelPeriod} oncancel={() => { cancelOpen = false; cancelTarget = null; }} />
-<ConfirmDialog bind:open={cancelConflict.open} title="有效期周期已变化" message="取消未完成，未自动重试。取最新值后请按最新周期重新操作。" confirmLabel="取最新值继续编辑" busy={cancelConflict.loading} onconfirm={useLatestCancelledPeriod} oncancel={() => cancelConflict.dismiss()}>
-  {#if cancelConflict.loading}<p role="status">正在获取最新有效期…</p>
-  {:else if cancelConflict.failed}<ErrorBanner message="读取最新有效期失败，取消操作已暂停。" onretry={() => { void cancelConflict.retry(); }} />
-  {:else if cancelConflict.current}<p>服务端名称：{cancelConflict.current.name}</p><p>周期：{conflictPreviousCycle} → {cancelConflict.current.cycle}</p><p>截止：{formatExpiry(cancelConflict.current)}</p><p>状态：{periodStatusLabels[cancelConflict.current.status]}</p>{/if}
+<ConfirmDialog bind:open={deleteSimOpen} title={labels.deleteCardTitle} message={labels.deleteCardMessage(sim?.name ?? '')} confirmLabel={labels.deleteCardConfirm} busy={actionBusy} onconfirm={deleteSim} oncancel={() => { deleteSimOpen = false; }} />
+<ConfirmDialog bind:open={deletePeriodOpen} title={labels.deletePeriodTitle} message={labels.deletePeriodMessage(deleteTarget ? deleteTarget.name || periodTypeLabel(deleteTarget) : '')} confirmLabel={labels.deletePeriodConfirm} busy={actionBusy} onconfirm={deletePeriod} oncancel={() => { deletePeriodOpen = false; deleteTarget = null; }} />
+<ConfirmDialog bind:open={deleteConflict.open} title="有效期周期已变化" message={labels.deleteConflict} confirmLabel="使用最新值" busy={deleteConflict.loading} onconfirm={useLatestPeriod} oncancel={() => deleteConflict.dismiss()}>
+  {#if deleteConflict.loading}<p role="status">正在获取最新有效期…</p>
+  {:else if deleteConflict.failed}<ErrorBanner message={labels.deleteConflictFailed} onretry={() => { void deleteConflict.retry(); }} />
+  {:else if deleteConflict.current}<p>服务端名称：{deleteConflict.current.name || periodTypeLabel(deleteConflict.current)}</p><p>周期：{conflictPreviousCycle} → {deleteConflict.current.cycle}</p><p>截止：{formatExpiry(deleteConflict.current)}</p><p>状态：{periodStatusLabels[deleteConflict.current.status]}</p>{/if}
 </ConfirmDialog>
-{#if cancelConflict.failed && !cancelConflict.open}<ErrorBanner message="最新有效期读取失败，取消操作已暂停。" onretry={() => { void cancelConflict.retry(); }} />{/if}
+{#if deleteConflict.changed && !deleteConflict.open}<ErrorBanner message={deleteConflict.failed ? labels.deleteConflictFailed : labels.deleteConflict} onretry={() => { void deleteConflict.retry(); }} />{/if}
 
 <style>
   .heading{display:flex;align-items:center;gap:10px;min-width:0}
