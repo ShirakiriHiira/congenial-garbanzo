@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Filter from 'lucide-svelte/icons/filter';
+  import RefreshCw from 'lucide-svelte/icons/refresh-cw';
   import { api } from '../lib/api/resources';
   import type { OverviewItem, OverviewResponse, Page, Sim } from '../lib/api/types';
   import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
@@ -178,9 +180,9 @@
   {#if accountError && !terminal}<p class="notice" role="alert">{labels.accountFailed}</p>{/if}
   {#if overview && (!canWrite() || accountError)}<p class="notice">{labels.readOnly}</p>{/if}
   <SectionHeader title={labels.cardList}>
-    <button type="button" onclick={() => { sheetOpen = true; }} disabled={terminal}>{labels.filter}</button>
+    <button type="button" class="icon-button" aria-label={labels.filter} title={labels.filter} onclick={() => { sheetOpen = true; }} disabled={terminal}><Filter size={19} strokeWidth={1.8} aria-hidden="true" /></button>
     {#if session.auth !== 'forbidden'}
-      <button type="button" onclick={refresh} disabled={loading || loadingMore || archiveLoading || archiveMore || terminal}>{labels.refresh}</button>
+      <button type="button" class="icon-button" aria-label={labels.refresh} title={labels.refresh} onclick={refresh} disabled={loading || loadingMore || archiveLoading || archiveMore || terminal}><RefreshCw size={19} strokeWidth={1.8} aria-hidden="true" /></button>
     {/if}
   </SectionHeader>
   {#if subset && overview?.next_cursor}<p class="notice">{labels.filterLoadedOnly}</p>{/if}
@@ -209,4 +211,5 @@
 
 <style>
   .load-more { width: 100%; }
+  .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; }
 </style>
