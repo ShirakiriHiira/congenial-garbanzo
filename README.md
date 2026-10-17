@@ -1,6 +1,6 @@
 # SIM / eSIM 有效期提醒
 
-单实例 Go 服务：Telegram 私聊管理 SIM/eSIM、多有效期、多提醒规则、明确确认续期；SQLite 保存业务数据、续期历史、提醒任务和续期对话。提供 HTTP API 与 Telegram Mini App `initData` 验签。第一期不包含前端页面，不创建 Web App 按钮；Svelte UI、稍后提醒、运营商自动续费和支付不在本期范围。
+单实例 Go 服务：Telegram 私聊管理 SIM/eSIM、多有效期、多提醒规则、明确确认续期；SQLite 保存业务数据、续期历史、提醒任务和续期对话。提供 HTTP API 与 Svelte Mini App 前端，使用 Telegram `initData` 验签。稍后提醒、运营商自动续费和支付不在当前范围。
 
 ## 本地运行
 
@@ -42,9 +42,24 @@ Go **只**读 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境变量，不读桌面�
 
 ## 本地调试 Mini App
 
-Mini App 的 `initData` 只能由 Telegram 客户端注入；普通浏览器打开 `http://127.0.0.1:5173/app/` 只会显示「请从 Telegram 内打开」，这是预期行为，不能用假 `initData` 绕过服务端验签。
+正式 Mini App 的 `initData` 由 Telegram 客户端注入；普通浏览器打开 `http://127.0.0.1:5173/app/` 只会显示「请从 Telegram 内打开」。不提供生产鉴权绕过；无需 Telegram 的 UI/代码调试使用下述独立测试模式。
 
 Telegram 官方仅在**测试环境**允许 HTTP 链接（[Mini Apps 文档](https://core.telegram.org/bots/webapps#using-bots-in-the-test-environment)），且测试环境需要独立账号和 Bot；本服务的 Bot 轮询未接入测试 API 基址。因此用现有 Bot 调试 Mini App 时，必须给本机一个 HTTPS 入口（`cloudflared` 快速隧道即可），不要改 `WEBAPP_AUTH_MAX_AGE` 来掩盖过期问题。
+
+### 无 Telegram 的隔离测试模式
+
+```sh
+./scripts/test-miniapp.sh
+# 浏览器打开 http://127.0.0.1:5180/app/
+```
+
+要求 Go 1.27.1、Node 24 和 npm。脚本优先使用 `MINIAPP_NODE_BIN`，其次系统 Node 24，再尝试 `.cache/` 中的 Node 24.22.0；每次执行 `npm ci` 并构建独立 `cmd/miniapp-test`。
+
+- UI 固定监听 `127.0.0.1:5180`，API 固定监听 `127.0.0.1:8088`；不加载生产 `.env`、Token 或数据库配置。
+- 每次启动创建临时 SQLite，预置 SIM/eSIM、临期、过期、归档和未命名有效期；真实 API/业务逻辑支持新增、编辑、归档、续期和删除，不是静态演示数据。
+- 页面持续显示「本地测试模式」；同一次运行内修改保留，Ctrl-C 停止并清理数据库，重新启动恢复初始测试数据。测试模式不启动 Bot 或发送器，不发送 Telegram 提醒。
+- 仅开发构建且 `VITE_MINIAPP_TEST_MODE=true` 时读取专用 `/__test/init-data`。测试进程用临时密钥签发测试身份，仍经过正常验签；正式进程没有此入口，生产构建不启用该模式。不要将测试端口通过隧道公开。
+- 浏览器测试模式使用浏览器返回；正式 Mini App 使用 Telegram 原生返回按钮，页面不重复放置返回按钮。
 
 ### 1. 一条命令
 
@@ -201,8 +216,10 @@ date_precision=date&expires_at=2027-03-31
 | GET | `/api/v1/overview` | 全量统计 + 带主有效期的活跃卡片分页；只接受 `limit,after_id` |
 | GET, POST | `/api/v1/sims` | 列表；创建卡片 |
 | GET, PATCH, DELETE | `/api/v1/sims/{id}` | 详情、部分更新、归档；PATCH `status=active` 恢复 |
+| POST | `/api/v1/sims/{id}/delete` | 永久删除卡片及关联有效期、规则、任务、续期历史与对话；无请求体，204 |
 | GET, POST | `/api/v1/sims/{id}/periods` | 列表；创建有效期 |
 | GET, PATCH, DELETE | `/api/v1/periods/{id}` | 详情；PATCH 带 `expected_cycle`；DELETE query 带 `expected_cycle` |
+| POST | `/api/v1/periods/{id}/delete?expected_cycle=N` | 永久删除有效期及关联数据；无请求体，204；周期冲突 409 |
 | GET, POST | `/api/v1/periods/{id}/rules` | 列表；创建规则 `days_before,reminder_time,enabled`（enabled 默认 true） |
 | GET, PATCH, DELETE | `/api/v1/rules/{id}` | 详情；PATCH 带 `expected_revision`；DELETE query 带 `expected_revision`，软禁用 |
 | GET, POST | `/api/v1/periods/{id}/renewals` | 历史；确认续期 |
@@ -234,7 +251,7 @@ date_precision=date&expires_at=2027-03-31
 {"expected_cycle":1,"date_precision":"date","expires_at":"2027-03-31","amount":1000,"currency":"TWD"}
 ```
 
-SIM 可选字段与 Bot `/add` 相同；有效期可选 `starts_at` 为 RFC3339 且必须早于截止。用户身份/时区来自认证后的用户记录，不从请求体接受他人的 ID 或时区。必填 name 去首尾空白后非空；name/operator 最多 200 Unicode 字符，notes 最多 4000，phone_number/country_or_region/iccid 最多 200。
+SIM 可选字段与 Bot `/add` 相同；有效期可选 `starts_at` 为 RFC3339 且必须早于截止。用户身份/时区来自认证后的用户记录，不从请求体接受他人的 ID 或时区。卡片 name 去首尾空白后必须非空；有效期 name 可省略或为空，持久化为 `""`，前端显示类型作为回退。name/operator 最多 200 Unicode 字符，notes 最多 4000，phone_number/country_or_region/iccid 最多 200。有效期精确时间输入支持秒，省略秒时补 `00`；日期精度与提醒规则的 `HH:mm` 不变。
 
 响应中所有 ID 为十进制**字符串**；cycle/revision 为整数。`expires_at` 始终为 UTC RFC3339，另返回 `local_expires_date`、`date_precision`、`timezone`。列表 `limit` 默认 20，范围 1–100；`after_id` 为非负十进制字符串，按 ID 升序 keyset 分页：
 
@@ -242,9 +259,11 @@ SIM 可选字段与 Bot `/add` 相同；有效期可选 `starts_at` 为 RFC3339 
 {"data":[],"next_cursor":null}
 ```
 
-单对象 `{"data":{...}}`；错误 `{"error":{"code":"...","message":"..."}}`。创建 201，读取/修改 200，归档/取消 204（无响应体），续期新建 201/同参数重放 200。畸形输入 400、无效凭据 401、名单外 403、无对象/跨用户 404、版本冲突 409、请求过大 413、错误 JSON Content-Type 415、暂不可用 503、其他错误 500。内部 SQL/SDK 错误不会直接输出。
+单对象 `{"data":{...}}`；错误 `{"error":{"code":"...","message":"..."}}`。创建 201，读取/修改 200，归档/取消/永久删除 204（无响应体），续期新建 201/同参数重放 200。畸形输入 400、无效凭据 401、名单外 403、无对象/跨用户 404、版本冲突 409、请求过大 413、错误 JSON Content-Type 415、暂不可用 503、其他错误 500。内部 SQL/SDK 错误不会直接输出。
 
-JSON 请求必须使用 `Content-Type: application/json`，最大 64 KiB，拒绝未知字段和多段 JSON。PATCH 缺字段表示不变，`null` 仅可清除可选字段，不能清空 name、类型或状态等必需值。
+JSON 请求必须使用 `Content-Type: application/json`，最大 64 KiB，拒绝未知字段和多段 JSON。PATCH 缺字段表示不变，`null` 仅可清除可空字段；有效期名称用 `"name":""` 清空，卡片名称、类型与状态不能清空。
+
+永久删除不可撤销，Mini App 二次确认会说明关联数据范围；删除有效期不影响卡片与其他有效期。原 DELETE 接口与 Bot 命令继续归档/取消，不改变语义。迁移 `002_hard_delete.sql` 保留现有数据和 ID，增加关联级联删除与自增 ID，删除后不复用旧 ID；已进入外部发送请求的 Telegram 消息无法撤回。
 
 ### Mini App 总览
 
@@ -357,6 +376,10 @@ race 需要合适 C 工具链；生产仍用 CGO=0。真实 Telegram 验收需�
 
 ## Changelog
 ### Unreleased — Mini App 前端
+- 移除截图外圈留白、圆角框与宽度限制，保留设备安全区；首页筛选/刷新、SIM/eSIM 使用 Lucide 图标，页面返回交给 Telegram 原生按钮。
+- 卡片保留归档并新增永久删除；有效期改为永久删除，均需二次确认。后端新增删除端点与级联/自增 ID 迁移，旧归档/取消接口保持原语义。
+- 有效期名称可留空，精确时间输入和展示支持秒，省略秒补 `00`，移除单独的清除开始时间按钮。
+- 新增独立本地测试模式 `scripts/test-miniapp.sh`：临时 SQLite、真实 API、预置测试数据，无生产凭据或 Telegram 消息投递。
 
 - 新增 `web/` Svelte 5 + Vite + TypeScript strict 前端：同源 `/api/v1` 客户端、原始 Telegram `initData` 鉴权、10 秒超时、游标分页、401/403 只读失效和未知响应校验。
 - 完成首页全量统计、独立归档筛选、双主题参考布局、卡片资料与有效期、规则版本冲突、续期 200/201 幂等语义、提醒记录和时区设置主流程。
