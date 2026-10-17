@@ -13,6 +13,7 @@ services:
       WEBAPP_AUTH_MAX_AGE: ${WEBAPP_AUTH_MAX_AGE:-5m}
       HTTP_ADDR: :8080
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEGRAM_API_PROXY: ${TELEGRAM_API_PROXY:-}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

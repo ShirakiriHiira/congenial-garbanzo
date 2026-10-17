@@ -11,7 +11,7 @@ import (
 var configurationKeys = []string{
 	"DATABASE_PATH", "APP_TIMEZONE", "REMINDER_SCAN_INTERVAL",
 	"REMINDER_CATCHUP_WINDOW", "WEBAPP_AUTH_MAX_AGE",
-	"ALLOWED_TELEGRAM_USER_IDS", "HTTP_ADDR", "LOG_LEVEL",
+	"ALLOWED_TELEGRAM_USER_IDS", "HTTP_ADDR", "LOG_LEVEL", "TELEGRAM_API_PROXY",
 }
 
 func cleanEnvironment(t *testing.T) {
@@ -48,6 +48,9 @@ func TestLoadDefaults(t *testing.T) {
 	if c.HTTPAddr != "127.0.0.1:8080" || c.LogLevel != slog.LevelInfo {
 		t.Fatal("unexpected HTTP or logging defaults")
 	}
+	if c.Proxy != nil {
+		t.Fatal("proxy is set without TELEGRAM_API_PROXY")
+	}
 	if !c.Allowed(10001) || c.Allowed(10002) || c.Allowed(0) || c.Allowed(-1) {
 		t.Fatal("authorization does not enforce the configured allowlist")
 	}
@@ -64,6 +67,7 @@ func TestLoadOverrides(t *testing.T) {
 		"ALLOWED_TELEGRAM_USER_IDS": " 10001,10002,10001,9223372036854775807 ",
 		"HTTP_ADDR":                 ":9090",
 		"LOG_LEVEL":                 "debug",
+		"TELEGRAM_API_PROXY":        "socks5://proxy.internal:1080",
 	}
 	for key, value := range values {
 		t.Setenv(key, value)
@@ -80,6 +84,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if c.HTTPAddr != ":9090" || c.LogLevel != slog.LevelDebug {
 		t.Fatal("HTTP or logging override was ignored")
+	}
+	if c.Proxy == nil || c.Proxy.String() != "socks5://proxy.internal:1080" {
+		t.Fatalf("proxy override was ignored: %v", c.Proxy)
 	}
 	if len(c.AllowedIDs) != 3 || !c.Allowed(10002) || !c.Allowed(9223372036854775807) {
 		t.Fatal("IDs were not parsed or deduplicated correctly")
@@ -118,6 +125,11 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"LOG_LEVEL", ""},
 		{"LOG_LEVEL", "trace"},
 		{"LOG_LEVEL", "INFO"},
+		{"TELEGRAM_API_PROXY", "://missing-scheme"},
+		{"TELEGRAM_API_PROXY", "http://"},
+		{"TELEGRAM_API_PROXY", "ftp://127.0.0.1:21"},
+		{"TELEGRAM_API_PROXY", "http://127.0.0.1:7890/path"},
+		{"TELEGRAM_API_PROXY", "http://127.0.0.1:7890?x=1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.key+"/"+tc.value, func(t *testing.T) {
@@ -126,6 +138,29 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 			_, err := Load("test-token")
 			if err == nil || !strings.Contains(err.Error(), tc.key) {
 				t.Fatalf("expected error identifying %s, got %v", tc.key, err)
+			}
+		})
+	}
+}
+
+func TestLoadProxy(t *testing.T) {
+	tests := map[string]string{
+		"http://127.0.0.1:7890":           "http://127.0.0.1:7890",
+		"127.0.0.1:7890":                  "http://127.0.0.1:7890",
+		"http://u:p@127.0.0.1:8443":       "http://u:p@127.0.0.1:8443",
+		"socks5://127.0.0.1:1080":         "socks5://127.0.0.1:1080",
+		"socks5h://alice@127.0.0.1:1080/": "socks5h://alice@127.0.0.1:1080/",
+	}
+	for raw, want := range tests {
+		t.Run(raw, func(t *testing.T) {
+			cleanEnvironment(t)
+			t.Setenv("TELEGRAM_API_PROXY", raw)
+			c, err := Load("test-token")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Proxy == nil || c.Proxy.String() != want {
+				t.Fatalf("proxy = %v, want %s", c.Proxy, want)
 			}
 		})
 	}

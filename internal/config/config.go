@@ -21,9 +21,12 @@ type Config struct {
 	ScanInterval  time.Duration
 	CatchupWindow time.Duration
 	AuthMaxAge    time.Duration
-	AllowedIDs    map[int64]bool
-	HTTPAddr      string
-	LogLevel      slog.Level
+	// Proxy overrides the Telegram API transport proxy. Nil keeps the standard
+	// library behavior of honoring HTTP_PROXY/HTTPS_PROXY/NO_PROXY.
+	Proxy      *url.URL
+	AllowedIDs map[int64]bool
+	HTTPAddr   string
+	LogLevel   slog.Level
 }
 
 // Allowed is the shared authorization policy for API, Bot, and reminder delivery.
@@ -75,6 +78,11 @@ func Load(token string) (Config, error) {
 		}
 		c.AllowedIDs[id] = true
 	}
+
+	c.Proxy, err = proxyURL(setting("TELEGRAM_API_PROXY", ""))
+	if err != nil {
+		return Config{}, err
+	}
 	c.HTTPAddr = setting("HTTP_ADDR", "127.0.0.1:8080")
 
 	switch setting("LOG_LEVEL", "info") {
@@ -97,6 +105,32 @@ func setting(key, fallback string) string {
 		return strings.TrimSpace(value)
 	}
 	return fallback
+}
+
+// proxyURL validates an explicit proxy for the Telegram transport. An empty
+// value returns nil so HTTP_PROXY/HTTPS_PROXY/NO_PROXY keep working unchanged.
+func proxyURL(raw string) (*url.URL, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	if !strings.Contains(raw, "://") {
+		// A bare host:port is the common local-proxy spelling; assume HTTP like
+		// net/http's own environment parser does.
+		raw = "http://" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" {
+		return nil, errors.New("TELEGRAM_API_PROXY must be an absolute proxy URL")
+	}
+	switch parsed.Scheme {
+	case "http", "https", "socks5", "socks5h":
+	default:
+		return nil, errors.New("TELEGRAM_API_PROXY scheme must be http, https, socks5, or socks5h")
+	}
+	if (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("TELEGRAM_API_PROXY must not contain a path, query, or fragment")
+	}
+	return parsed, nil
 }
 
 func duration(key, fallback string, minimum time.Duration) (time.Duration, error) {

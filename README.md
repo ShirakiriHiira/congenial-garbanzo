@@ -38,6 +38,8 @@ curl -fsS http://127.0.0.1:8080/readyz
 
 `healthcheck` 仅使用 `HTTP_ADDR` 请求本机 `/readyz`，2 秒超时；不加载 Token、不打开数据库，非 200 时非零退出。通配监听地址转换为回环地址。
 
+Go **只**读 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境变量，不读桌面环境的系统代理设置；需要走本机代理时显式设置 `TELEGRAM_API_PROXY`，例如 `export TELEGRAM_API_PROXY=http://127.0.0.1:7890`（Clash/Mihomo 的 socks 端口用 `socks5://127.0.0.1:7891`）。该代理只作用于 Telegram API，`healthcheck` 与本机 `/readyz` 不受影响。
+
 ### 配置
 
 | 环境变量 | 默认值 | 约束/作用 |
@@ -51,6 +53,7 @@ curl -fsS http://127.0.0.1:8080/readyz
 | `WEBAPP_AUTH_MAX_AGE` | `5m` | 正 duration，initData 最大年龄 |
 | `HTTP_ADDR` | `127.0.0.1:8080` | 容器固定为 `:8080` |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `TELEGRAM_API_PROXY` | 无 | 可选。Telegram API 出口代理，`http`/`https`/`socks5`/`socks5h`，支持 `user:pass@`；裸 `host:port` 按 `http` 处理。空值仍读 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` |
 | `REMIND_DATA_VOLUME` | `sim-reminder-data` | 仅 Compose 使用的卷名，不是应用配置 |
 
 配置、迁移、SDK 初始化或 HTTP 监听失败会阻止完整启动。数据库父目录权限 0700、数据库文件权限 0600；WAL、外键、5 秒 busy timeout、FULL synchronous。迁移按版本事务执行并记录 SHA-256；同版本校验和改变或数据库版本高于程序时拒绝启动，不自动降级、删库或回滚。

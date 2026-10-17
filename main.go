@@ -83,7 +83,7 @@ func runWith(ctx context.Context, cfg config.Config, now func() time.Time, optio
 	opts := []telegram.Option{
 		telegram.WithNotAsyncHandlers(), telegram.WithWorkers(1),
 		telegram.WithCheckInitTimeout(5 * time.Second),
-		telegram.WithHTTPClient(30*time.Second, &http.Client{Timeout: 35 * time.Second}),
+		telegram.WithHTTPClient(30*time.Second, telegramHTTPClient(cfg.Proxy)),
 		telegram.WithErrorsHandler(func(error) { slog.Warn("telegram request failed", "code", "telegram_error") }),
 	}
 	opts = append(opts, options...)
@@ -284,6 +284,21 @@ func healthcheck(addr string) error {
 		return errors.New("application not ready")
 	}
 	return nil
+}
+
+// telegramHTTPClient builds the transport used for Telegram API calls. Without
+// an explicit proxy the zero client keeps the standard environment behavior
+// (HTTP_PROXY/HTTPS_PROXY/NO_PROXY). Go reads those variables only, never the
+// desktop environment proxy settings.
+func telegramHTTPClient(proxy *url.URL) *http.Client {
+	client := &http.Client{Timeout: 35 * time.Second}
+	if proxy == nil {
+		return client
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(proxy)
+	client.Transport = transport
+	return client
 }
 
 // loadToken reads the token from .env first and falls back to the process environment.
