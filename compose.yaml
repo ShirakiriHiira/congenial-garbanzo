@@ -21,6 +21,18 @@ services:
     restart: unless-stopped
     stop_grace_period: 40s
 
+  web:
+    image: sim-reminder-web:local
+    build:
+      context: ./web
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${MINIAPP_HTTP_PORT:-8081}:8080"
+    restart: unless-stopped
+    stop_grace_period: 10s
+
 volumes:
   data:
     name: ${REMIND_DATA_VOLUME:-sim-reminder-data}

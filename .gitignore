@@ -14,3 +14,14 @@
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Mini App build artifacts and local dependencies
+/web/node_modules/
+/web/dist/
+/web/coverage/
+/web/.env
+
+/web/.vitest/
+
+/.cache/
+/web/.env.*

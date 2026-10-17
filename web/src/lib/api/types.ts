@@ -1,0 +1,189 @@
+export type ID = string;
+
+export type CardType = "physical_sim" | "esim";
+export type SimStatus = "active" | "archived";
+export type PeriodType =
+  | "number_validity"
+  | "plan_validity"
+  | "data_package_validity"
+  | "custom";
+export type DatePrecision = "date" | "datetime";
+export type PeriodStatus = "active" | "expired" | "cancelled";
+export type ReminderStatus = "pending" | "sending" | "sent" | "failed" | "cancelled";
+export type ReminderStatusFilter = ReminderStatus | "all";
+
+export interface User {
+  id: ID;
+  telegram_user_id: ID;
+  timezone: string;
+  has_private_chat: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Sim {
+  id: ID;
+  user_id: ID;
+  name: string;
+  card_type: CardType;
+  operator: string | null;
+  phone_number: string | null;
+  country_or_region: string | null;
+  iccid: string | null;
+  notes: string | null;
+  status: SimStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Period {
+  id: ID;
+  sim_id: ID;
+  period_type: PeriodType;
+  name: string;
+  starts_at: string | null;
+  expires_at: string;
+  date_precision: DatePrecision;
+  local_expires_date: string | null;
+  timezone: string;
+  status: PeriodStatus;
+  cycle: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Rule {
+  id: ID;
+  validity_period_id: ID;
+  days_before: number;
+  reminder_time: string;
+  enabled: boolean;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Renewal {
+  id: ID;
+  validity_period_id: ID;
+  previous_cycle: number;
+  previous_expires_at: string;
+  new_expires_at: string;
+  previous_date_precision: DatePrecision;
+  new_date_precision: DatePrecision;
+  previous_local_expires_date: string | null;
+  new_local_expires_date: string | null;
+  timezone: string;
+  renewed_at: string;
+  amount: number | null;
+  currency: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ReminderJob {
+  id: ID;
+  validity_period_id: ID;
+  reminder_rule_id: ID;
+  cycle: number;
+  rule_revision: number;
+  scheduled_at: string;
+  expires_at_snapshot: string;
+  status: ReminderStatus;
+  attempts: number;
+  next_attempt_at: string | null;
+  sent_at: string | null;
+  telegram_message_id: ID | null;
+  last_error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OverviewCounts {
+  total: number;
+  due_soon: number;
+  expired: number;
+  no_period: number;
+}
+
+export interface OverviewItem {
+  sim: Sim;
+  primary_period: Period | null;
+}
+
+export interface OverviewResponse {
+  data: {
+    counts: OverviewCounts;
+    items: OverviewItem[];
+  };
+  next_cursor: ID | null;
+}
+
+export interface Page<T> {
+  data: T[];
+  next_cursor: ID | null;
+}
+
+export interface SimCreateInput {
+  name: string;
+  card_type: CardType;
+  operator?: string | null;
+  phone_number?: string | null;
+  country_or_region?: string | null;
+  iccid?: string | null;
+  notes?: string | null;
+}
+
+export interface SimUpdateInput {
+  name?: string;
+  card_type?: CardType;
+  operator?: string | null;
+  phone_number?: string | null;
+  country_or_region?: string | null;
+  iccid?: string | null;
+  notes?: string | null;
+  status?: SimStatus;
+}
+
+export interface PeriodCreateInput {
+  period_type: PeriodType;
+  name: string;
+  starts_at?: string | null;
+  date_precision: DatePrecision;
+  expires_at: string;
+}
+
+export interface PeriodUpdateInput {
+  expected_cycle: number;
+  period_type?: PeriodType;
+  name?: string;
+  starts_at?: string | null;
+  date_precision?: DatePrecision;
+  expires_at?: string;
+}
+
+export interface RuleCreateInput {
+  days_before: number;
+  reminder_time: string;
+  enabled?: boolean;
+}
+
+export interface RuleUpdateInput {
+  expected_revision: number;
+  days_before?: number;
+  reminder_time?: string;
+  enabled?: boolean;
+}
+
+export interface RenewalCreateInput {
+  expected_cycle: number;
+  date_precision: DatePrecision;
+  expires_at: string;
+  amount?: number | null;
+  currency?: string | null;
+  notes?: string | null;
+}
+
+export interface UserUpdateInput {
+  timezone: string;
+}

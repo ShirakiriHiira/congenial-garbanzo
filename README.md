@@ -40,6 +40,73 @@ curl -fsS http://127.0.0.1:8080/readyz
 
 Go **只**读 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境变量，不读桌面环境的系统代理设置；需要走本机代理时显式设置 `TELEGRAM_API_PROXY`，例如 `export TELEGRAM_API_PROXY=http://127.0.0.1:7890`（Clash/Mihomo 的 socks 端口用 `socks5://127.0.0.1:7891`）。该代理只作用于 Telegram API，`healthcheck` 与本机 `/readyz` 不受影响。
 
+## 本地调试 Mini App
+
+Mini App 的 `initData` 只能由 Telegram 客户端注入；普通浏览器打开 `http://127.0.0.1:5173/app/` 只会显示「请从 Telegram 内打开」，这是预期行为，不能用假 `initData` 绕过服务端验签。
+
+Telegram 官方仅在**测试环境**允许 HTTP 链接（[Mini Apps 文档](https://core.telegram.org/bots/webapps#using-bots-in-the-test-environment)），且测试环境需要独立账号和 Bot；本服务的 Bot 轮询未接入测试 API 基址。因此用现有 Bot 调试 Mini App 时，必须给本机一个 HTTPS 入口（`cloudflared` 快速隧道即可），不要改 `WEBAPP_AUTH_MAX_AGE` 来掩盖过期问题。
+
+### 1. 一条命令
+
+已有 Cloudflare 自定义域名时，把隧道 origin 配成 `http://127.0.0.1:5173`，然后：
+
+```sh
+MINIAPP_PUBLIC_URL='https://sim.example.com' \
+TELEGRAM_BOT_TOKEN='123:abc' \
+ALLOWED_TELEGRAM_USER_IDS='你的Telegram用户ID' \
+./scripts/dev-miniapp.sh
+```
+
+没有自定义域名时省略 `MINIAPP_PUBLIC_URL`，脚本会自动开 `cloudflared` 快速隧道。
+
+脚本会依次完成：
+
+- 检查 Node 24；系统没有时下载官方 Node 24 到 `.cache/` 并校验 SHA-256。
+- `npm ci`、`go build`，启动 Go API（`127.0.0.1:8080`）和 Vite（`127.0.0.1:5173`，`/api` 反代到 Go）。
+- 设置了 `MINIAPP_PUBLIC_URL` 时直接使用该 HTTPS URL；否则启动 `cloudflared` 快速隧道并解析出 URL。
+- 调 Bot API `setChatMenuButton`，只给白名单里的第一个用户设置菜单按钮，URL 指向 `<公网地址>/app/`。
+- 打印 URL、数据库路径和日志目录；Ctrl-C 会停止全部进程。
+
+`MINIAPP_PUBLIC_URL` 必须是纯 origin（`https://host`，可带 `/app`），不能带其他路径或查询串；Cloudflare 控制台的 Public Hostname 应转到 `http://127.0.0.1:5173`。Vite 只额外允许这个精确 Host。
+
+默认使用 `./data/miniapp-test.db`，不会写现有数据。要测试已有卡片时显式覆盖，并确保没有其他实例正在使用该库：
+
+```sh
+DATABASE_PATH=./data/remind.db TELEGRAM_BOT_TOKEN='...' ALLOWED_TELEGRAM_USER_IDS='...' ./scripts/dev-miniapp.sh
+```
+
+Token 不会由脚本打印；但直接写在命令行会进入 shell 历史，介意时改用 `.env`（脚本也支持只在该文件里放 `TELEGRAM_BOT_TOKEN`）。
+
+### 2. 手动排错
+
+如果自动设置菜单按钮失败，脚本仍会打印 HTTPS URL；在 BotFather 执行 `/setmenubutton`，填入：
+
+```text
+https://<你的域名或随机隧道>/app/
+```
+
+也可以手动只跑隧道（不使用 `MINIAPP_PUBLIC_URL` 时）：
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:5173
+```
+
+隧道必须指向 **5173**，不能指向 8080，否则 `/app/` 没有静态资源。`*.trycloudflare.com` 与 `MINIAPP_PUBLIC_URL` 的 Host 已加入 Vite 的 `allowedHosts`。
+
+### 3. 必查项
+
+- 首次使用先私聊 `/start`：Mini App 鉴权只创建/识别用户，不绑定私聊地址；`has_private_chat=false` 时提醒会失败。
+- 非白名单账号得到 403；这是 `ALLOWED_TELEGRAM_USER_IDS` 未包含该 ID，不是前端缺陷。
+- 页面显示「请从 Telegram 内打开」说明不是从 Telegram 打开；显示「会话已过期」说明 `initData` 超过默认 5 分钟，关闭并重新打开 Mini App。
+- 所有 API 都是同源 `/api/v1`，没有 CORS；隧道只暴露 5173 即可。
+- 调试时会真实读写数据库并启动提醒调度；不要用生产数据卷，也不要同时运行两个使用同一 Bot Token 的轮询实例。
+
+
+### 4. 真机 WebView 调试
+
+按 [Telegram 官方调试模式](https://core.telegram.org/bots/webapps#debug-mode-for-mini-apps)：iOS 连点 Settings 图标 10 次开启 *Allow Web View Inspection*，在 Mac Safari 的 *Develop* 菜单选设备；Android 在 Telegram 设置里长按版本号开启 *WebView Debug*，再用 `chrome://inspect/#devices`；桌面端用 Beta 版开启 *Enable webview inspection* 后右键 *Inspect*。
+
+
 ### 配置
 
 | 环境变量 | 默认值 | 约束/作用 |
@@ -211,17 +278,22 @@ chmod 600 .env
 docker compose build
 docker compose up -d
 curl -fsS http://127.0.0.1:8080/readyz
-docker compose logs --tail=100 app
+curl -fsSI http://127.0.0.1:${MINIAPP_HTTP_PORT:-8081}/app/
+docker compose logs --tail=100 app web
 ```
 
 Compose 在宿主读取 `.env` 用于变量插值，只把列出的变量注入进程；不挂载该文件。宿主已 export 的同名变量可覆盖 Compose `.env`，这与本地 Token 加载器的优先级不同。不要分享 `docker compose config` 的完整输出，它可能展开凭据。
 
-- 构建镜像固定 `golang:1.27.1-bookworm`；运行镜像 `gcr.io/distroless/static-debian12:nonroot`，不用 latest。镜像只复制二进制及空数据目录，迁移/tzdata 已嵌入，没有 shell/curl，也不包含 `.env`、SQLite 或前端依赖。
+- `web` 是 Node 24 构建、nginx unprivileged 运行的独立静态/反向代理容器。构建产物在 `/app/`，`/api/v1/`、`/healthz`、`/readyz` 同源转发到 `app`；Go 容器不托管静态资源。
+- `MINIAPP_HTTP_PORT` 仅控制宿主回环端口，默认 `8081`。外部 HTTPS 反向代理或 Tunnel 必须把整个站点转发到该端口，不要直接公开 Go 的 `8080`。
+- `web` 不挂载数据卷、不接收 Bot Token；Token、白名单和数据库仍只注入 `app`。构建脚本把首帧主题脚本的 SHA-256 写入 nginx CSP，不使用 `unsafe-inline`。
+- `app` 镜像固定 `golang:1.27.1-bookworm` / `gcr.io/distroless/static-debian12:nonroot`；`web` 构建固定 Node `24.22.0-alpine3.23`，运行固定 `nginxinc/nginx-unprivileged:1.28.0-alpine`，均不使用 `latest`。
 - 镜像使用 uid/gid **65532:65532**，`/data` 0700 并归该用户所有；首次空命名卷继承目录权限。进程仅需要 `/data` 写权限。若改用 bind mount，先在宿主为目录设置 `chown 65532:65532` 与 `chmod 0700`；权限错误应失败，不切回 root。
 - 默认命名卷 `sim-reminder-data` 挂整个 `/data`，包含 DB、WAL、SHM；不要只挂单个 `.db`。禁止多个容器/进程调度同一数据库，不要扩容 app 副本。
-- 宿主只发布 `127.0.0.1:8080:8080`；公网入口由 HTTPS 代理提供。容器 healthcheck 使用 `/remind healthcheck`。
-- `restart: unless-stopped`；停止宽限 40 秒。SIGTERM 先撤销 ready、停止新 API/Bot 工作与任务领取，最多等待 30 秒完成已有工作和结果写回，再关闭数据库。
-- 镜像标签不是不可变 digest。部署前确认构建镜像可用并记录**实际**构建/运行 digest；本说明不宣称镜像清单或 Docker 运行已经验收。可用 `docker buildx imagetools inspect golang:1.27.1-bookworm` 与 `docker buildx imagetools inspect gcr.io/distroless/static-debian12:nonroot` 检查。若前者缺失，仅核查同 patch `golang:1.27.1`；不能擅自降 Go 版本掩盖供应问题。
+- 宿主只发布 `127.0.0.1:8080:8080` 与 `127.0.0.1:${MINIAPP_HTTP_PORT:-8081}:8080`；公网入口由 HTTPS 代理提供。容器 healthcheck 分别负责 Go 就绪与 web 静态入口。
+- `restart: unless-stopped`；app 停止宽限 40 秒，web 10 秒。SIGTERM 先撤销 ready、停止新 API/Bot 工作与任务领取，最多等待 30 秒完成已有工作和结果写回，再关闭数据库。
+- 镜像标签不是不可变 digest。部署前确认构建镜像可用并记录**实际**构建/运行 digest；本说明不宣称镜像清单或 Docker 运行已经验收。
+
 
 ### 停机一致性备份
 
@@ -284,6 +356,13 @@ race 需要合适 C 工具链；生产仍用 CGO=0。真实 Telegram 验收需�
 应用使用结构化脱敏日志；不要主动增加 Token、initData、电话号码、ICCID、备注、请求体或含 Token 的 SDK URL 到日志。数据库和备份目前没有应用层加密；保护宿主、卷、代理配置与备份访问权限。详尽需求见 [开发规范](docs/DEVELOPMENT.md)。
 
 ## Changelog
+### Unreleased — Mini App 前端
+
+- 新增 `web/` Svelte 5 + Vite + TypeScript strict 前端：同源 `/api/v1` 客户端、原始 Telegram `initData` 鉴权、10 秒超时、游标分页、401/403 只读失效和未知响应校验。
+- 完成首页全量统计、独立归档筛选、双主题参考布局、卡片资料与有效期、规则版本冲突、续期 200/201 幂等语义、提醒记录和时区设置主流程。
+- 新增 Temporal DST 墙上时间转换、整数最小货币单位、服务端状态优先的剩余日历天展示；手机号默认脱敏，ICCID 不在列表/详情展示。
+- 新增 `web/Dockerfile` 与 nginx 同源反代配置；前端不接收 Bot Token，不修改 Go、schema、迁移或根入口文件。真实 Telegram、HTTPS、iOS/Android 真机和 Docker 守护进程验收仍依赖外部凭据与运行环境。
+
 
 ### Unreleased — Mini App 总览 API
 

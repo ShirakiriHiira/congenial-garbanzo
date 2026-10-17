@@ -15,4 +15,13 @@ backups
 *.tar
 *.tar.gz
 *.tgz
+
+# Mini App dependencies/build output are excluded from the Go context
+web/node_modules
+web/dist
+web/coverage
+web/.env
+web/.env.*
+
+.cache
 node_modules
