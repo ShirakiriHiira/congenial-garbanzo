@@ -29,7 +29,6 @@
   let occurrence = $state<Occurrence | undefined>();
   let starts = $state('');
   let startsOccurrence = $state<Occurrence | undefined>();
-  let startsCleared = $state(false);
   let baseline = $state<Snapshot | null>(null);
   let loading = $state(true);
   let loadError = $state<unknown>(null);
@@ -43,7 +42,7 @@
   const submitter = new Submitter();
   const conflict = new ConflictFlow<Period>(() => api.period(id, controller.signal));
   const dirty = $derived(baseline
-    ? name !== baseline.name || periodType !== baseline.type || precision !== baseline.precision || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence || startsCleared
+    ? name !== baseline.name || periodType !== baseline.type || precision !== baseline.precision || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence
     : name !== '' || expires !== '' || starts !== '' || precision !== 'date' || periodType !== 'number_validity');
   $effect(() => { session.dirty = dirty; });
   $effect(() => { expires; precision; occurrence; expiresError = ''; });
@@ -74,7 +73,6 @@
     occurrence = resolved.occurrence;
     if (current.starts_at) { const wall = instantToWallTime(current.starts_at, zone); starts = wall.value; startsOccurrence = wall.occurrence; }
     else { starts = ''; startsOccurrence = undefined; }
-    startsCleared = false;
     baseline = snapshot();
   }
   async function load() {
@@ -136,7 +134,7 @@
           if (periodType !== baseline.type) body.period_type = periodType;
           if (precision !== baseline.precision) { body.date_precision = precision; body.expires_at = prepared.expiresValue; }
           else if (expires !== baseline.expires || occurrence !== baseline.occurrence) body.expires_at = prepared.expiresValue;
-          if (startsCleared || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence) body.starts_at = prepared.startsValue ?? null;
+          if (starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence) body.starts_at = prepared.startsValue ?? null;
           saved = await api.updatePeriod(id, body, controller.signal);
         }
         if (!alive) return;
@@ -193,7 +191,6 @@
       </FormField>
       <DatePrecisionInput id="period-expires" bind:precision bind:expires bind:occurrence {zone} disabled={!canWrite() || submitter.busy} error={expiresError} />
       <DateTimeInput id="period-starts" label="开始时间（可选）" bind:value={starts} bind:occurrence={startsOccurrence} {zone} disabled={!canWrite() || submitter.busy} error={startsError} />
-      <button class="clear" type="button" aria-label="清除开始时间" disabled={!canWrite() || submitter.busy} onclick={() => { starts = ''; startsOccurrence = undefined; startsCleared = mode === 'edit'; }}>清除开始时间</button>
       {#if submitter.error && !conflict.open}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
       {#if stale && !conflict.open}<ErrorBanner message="草稿已保留。请先读取最新值，再继续编辑。" onretry={() => { void conflict.retry(); }} />{/if}
       <button class="primary" type="submit" disabled={!canWrite() || submitter.busy || stale || conflict.open || conflict.failed || (mode === 'edit' && !dirty)}>{submitter.busy ? '保存中…' : '保存有效期'}</button>
@@ -205,4 +202,4 @@
   {:else if conflict.failed}<ErrorBanner message="读取最新有效期失败，保存已暂停。" onretry={() => { void conflict.retry(); }} />
   {:else if conflict.current}<p>周期：{entity?.cycle} → {conflict.current.cycle}</p><p>服务端名称：{conflict.current.name}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{#if conflict.current.status === 'cancelled'}<p>该有效期已取消，不可恢复。取最新值后只能返回。</p>{/if}{/if}
 </ConfirmDialog>
-<style>h1{font-size:20px;margin:0}.muted{color:var(--text-secondary);margin:0}.clear{justify-self:start}</style>
+<style>h1{font-size:20px;margin:0}.muted{color:var(--text-secondary);margin:0}</style>

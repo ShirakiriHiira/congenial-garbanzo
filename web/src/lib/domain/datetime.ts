@@ -73,7 +73,7 @@ export function localDateAt(value: string, zone: string): string {
 
 export function formatDateTime(value: string, zone: string): string {
   const wall = Temporal.Instant.from(value).toZonedDateTimeISO(zone).toPlainDateTime();
-  return wall.toString({ smallestUnit: 'minute' }).replace('T', ' ');
+  return wall.toString({ smallestUnit: 'second' }).replace('T', ' ');
 }
 
 /** Calendar arithmetic intentionally ignores elapsed hours, including DST days. */

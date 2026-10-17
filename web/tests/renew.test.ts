@@ -205,6 +205,17 @@ describe('renewal route', () => {
     expect(api.writes[0]?.expires_at).toBe('2027-02-28T18:00:00+08:00');
   });
 
+  it('submits supplied seconds for a precise renewal', async () => {
+    const api = transport();
+    render(Renew, { id: '11' });
+    await screen.findByLabelText(/截止日期/);
+    await fireEvent.click(screen.getByRole('radio', { name: '精确时间' }));
+    await fireEvent.input(screen.getByLabelText(/截止时间/), { target: { value: '2027-02-28T18:00:45' } });
+    await send();
+    await screen.findByText('续期成功');
+    expect(api.writes[0]?.expires_at).toBe('2027-02-28T18:00:45+08:00');
+  });
+
   it('rejects a DST gap and requires a choice for an overlapping wall time', async () => {
     const api = transport({ period: { ...initialPeriod, timezone: 'America/New_York' } });
     render(Renew, { id: '11' });

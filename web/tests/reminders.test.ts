@@ -66,8 +66,8 @@ describe('reminder records', () => {
     render(Reminders, { periodNames: { '101': '测试套餐' } });
     const sent = await screen.findByRole('listitem', { name: '提醒 #1' });
     expect(within(sent).getByRole('heading')).toHaveTextContent('测试套餐');
-    expect(sent).toHaveTextContent('2027-01-01 08:00');
-    expect(sent).toHaveTextContent('2027-01-01 09:02');
+    expect(sent).toHaveTextContent('2027-01-01 08:00:00');
+    expect(sent).toHaveTextContent('2027-01-01 09:02:00');
     expect(sent).toHaveTextContent('已发送');
     expect(sent).toHaveTextContent('尝试次数2');
     expect(within(sent).queryByRole('button', { name: '取消提醒' })).not.toBeInTheDocument();

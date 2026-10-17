@@ -17,7 +17,7 @@
 
 <FormField {id} {label} {required} error={validation} hint={`使用时区：${zone}`}>
   {#snippet children(field)}
-    <input bind:this={input} {id} type="datetime-local" step="any" bind:value oninput={() => { occurrence = undefined; }} {required} {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid} />
+    <input bind:this={input} {id} type="datetime-local" step="1" bind:value oninput={() => { occurrence = undefined; }} {required} {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid} />
   {/snippet}
 </FormField>
 {#if resolution.candidates.length > 1}

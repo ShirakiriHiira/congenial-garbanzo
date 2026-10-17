@@ -18,7 +18,15 @@ const now = '2027-01-01T00:00:00Z';
 describe('用户时区墙上时间', () => {
   it('转换用户时区，不依赖设备时区', () => {
     expect(wallTimeToRFC3339('2027-01-31T18:00', 'Asia/Taipei')).toBe('2027-01-31T18:00:00+08:00');
-    expect(formatDateTime('2027-01-31T10:00:00Z', 'Asia/Taipei')).toBe('2027-01-31 18:00');
+    expect(formatDateTime('2027-01-31T10:00:00Z', 'Asia/Taipei')).toBe('2027-01-31 18:00:00');
+  });
+
+  it('保留秒并在省略秒时按零秒提交', () => {
+    expect(wallTimeToRFC3339('2027-01-31T18:00', 'Asia/Taipei')).toBe('2027-01-31T18:00:00+08:00');
+    expect(wallTimeToRFC3339('2027-01-31T18:00:45', 'Asia/Taipei')).toBe('2027-01-31T18:00:45+08:00');
+    expect(instantToWallTime('2027-01-31T10:00:45Z', 'Asia/Taipei')).toEqual({ value: '2027-01-31T18:00:45', occurrence: 'earlier' });
+    expect(wallTimeToRFC3339(instantToWallTime('2027-01-31T10:00:45Z', 'Asia/Taipei').value, 'Asia/Taipei')).toBe('2027-01-31T18:00:45+08:00');
+    expect(formatDateTime('2027-01-31T10:00:45Z', 'Asia/Taipei')).toBe('2027-01-31 18:00:45');
   });
   it('拒绝夏令时不存在的时间', () => {
     expect(() => wallTimeToRFC3339('2027-03-14T02:30', 'America/New_York')).toThrow(DateTimeError);
@@ -53,7 +61,8 @@ describe('服务端状态与日历有效期', () => {
   });
   it('日期精度直接使用本地截止日', () => {
     expect(formatExpiry(period)).toBe('2027-01-08');
-    expect(formatExpiry({ ...period, date_precision: 'datetime' })).toBe('2027-01-09 00:00');
+    expect(formatExpiry({ ...period, date_precision: 'datetime' })).toBe('2027-01-09 00:00:00');
+    expect(formatExpiry({ ...period, date_precision: 'datetime', expires_at: '2027-01-08T16:00:37Z' })).toBe('2027-01-09 00:00:37');
   });
   it('区分今天、七天、八天和无主期', () => {
     expect(expiryDisplay({ ...period, local_expires_date: '2027-01-01' }, now)).toMatchObject({ days: 0, tone: 'warn' });
