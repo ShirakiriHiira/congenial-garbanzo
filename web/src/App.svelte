@@ -16,6 +16,7 @@
   import Renew from './routes/Renew.svelte';
   import Reminders from './routes/Reminders.svelte';
   import Settings from './routes/Settings.svelte';
+  import { testMode } from './lib/test-mode';
   let path = $state(location.pathname);
   const route = $derived(matchRoute(path));
 
@@ -55,6 +56,9 @@
 </script>
 
 <AppShell>
+  {#if testMode}
+    <aside class="test-mode" role="status">本地测试模式 · 仅测试数据 · 重启后重置 · 不发送提醒</aside>
+  {/if}
   {#if session.auth === 'missing'}
     <AppHeader firstName="" photoUrl={null} onsettings={() => navigate('/app/settings')}>{#snippet children()}{/snippet}</AppHeader>
     <div class="content stack">

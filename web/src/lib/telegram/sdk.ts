@@ -1,3 +1,5 @@
+import { getTestInitData, testMode } from '../test-mode';
+
 export interface TelegramWebApp {
   initData: string;
   colorScheme?: 'light' | 'dark';
@@ -30,7 +32,7 @@ export function getWebApp(): TelegramWebApp | undefined {
 }
 
 export function getInitData(): string {
-  return getWebApp()?.initData ?? '';
+  return testMode ? getTestInitData() : (getWebApp()?.initData ?? '');
 }
 
 export function supportsVersion(sdk: TelegramWebApp, version: string): boolean {
