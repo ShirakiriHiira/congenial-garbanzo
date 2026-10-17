@@ -221,7 +221,6 @@
 </script>
 
 <div class="content stack renew-page">
-  <div class="actions"><button type="button" onclick={() => back(period ? `/app/sims/${period.sim_id}` : '/app/')}>{labels.back}</button></div>
   <section class="section stack">
     <h1>{text.title}</h1>
     {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}

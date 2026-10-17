@@ -6,7 +6,7 @@
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
   import { acceptMe, canWrite, session } from '../lib/session.svelte';
-  import { back, navigate } from '../lib/router';
+  import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
   import { cardTypeLabels, errorMessage, labels } from '../lib/domain/labels';
   import FormField from '../components/FormField.svelte';
@@ -109,7 +109,6 @@
 </script>
 
 <section class="stack" aria-labelledby="sim-form-title">
-  <div class="actions"><button type="button" onclick={() => back(id ? `/app/sims/${id}` : '/app/')}>{labels.back}</button></div>
   <h1 id="sim-form-title">{id ? '编辑卡片' : '添加卡片'}</h1>
   <p class="muted">卡片资料没有版本锁；多端同时修改时，以后提交的资料为准。</p>
   {#if loading}<p role="status">{labels.loading}</p>

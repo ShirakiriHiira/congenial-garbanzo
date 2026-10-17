@@ -243,7 +243,7 @@
 </script>
 
 <div class="content stack rules-page">
-  <div class="actions"><button type="button" onclick={returnToCard}>{labels.back}</button><h1>{copy.title}</h1></div>
+  <h1>{copy.title}</h1>
   {#if periodLoading}<p role="status">{labels.loading}</p>{/if}
   {#if periodError}<ErrorBanner message={errorMessage(periodError)} onretry={mayRead() ? () => { void loadPeriod(); } : undefined} />{/if}
   {#if period}<p class="muted">{period.name || periodTypeLabel(period)} · {period.timezone}</p>{/if}

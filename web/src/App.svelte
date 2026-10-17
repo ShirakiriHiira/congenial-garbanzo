@@ -87,7 +87,7 @@
         <ErrorBanner message={session.auth === 'expired' ? labels.expired : labels.forbidden} />
       {/if}
       <section class="section"><h2>{labels.notFound}</h2><p>{labels.notFoundHint}</p></section>
-      <div class="actions"><button onclick={() => back('/app/')}>{labels.back}</button><button onclick={() => navigate('/app/')}>{labels.home}</button></div>
+      <div class="actions"><button onclick={() => navigate('/app/')}>{labels.home}</button></div>
     </div>
   {/if}
 </AppShell>

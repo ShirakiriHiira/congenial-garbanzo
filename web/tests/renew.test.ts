@@ -359,7 +359,6 @@ describe('renewal route', () => {
     render(Renew, { id: '11' });
     expect(await screen.findByText('此有效期已取消且不可恢复，请返回卡片详情。')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '确认续期' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '返回' })).toBeInTheDocument();
   });
 
   it('retains a draft but blocks all further writes after a 401', async () => {

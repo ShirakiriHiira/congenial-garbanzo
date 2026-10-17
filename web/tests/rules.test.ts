@@ -201,13 +201,12 @@ describe('rules route consumer behavior', () => {
     expect(screen.getByLabelText(/提前天数/)).toHaveValue('3');
   });
 
-  it('offers only return and read-only rules for a cancelled period', async () => {
+  it('offers only read-only rules for a cancelled period', async () => {
     vi.mocked(api.period).mockResolvedValue({ ...period, status: 'cancelled' });
     render(Rules, { id: '10' });
     expect(await screen.findByText(/此有效期已取消/)).toBeInTheDocument();
     expect(await screen.findByRole('article', { name: '提前 7 天 09:00' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '添加规则' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '编辑规则' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '返回' })).toBeInTheDocument();
   });
 });

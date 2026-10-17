@@ -5,7 +5,7 @@
   import { ConflictFlow } from '../lib/conflict.svelte';
   import type { Page, Period, Renewal, Rule, Sim } from '../lib/api/types';
   import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
-  import { back, navigate } from '../lib/router';
+  import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
   import { formatDateTime } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
@@ -313,7 +313,6 @@
 </script>
 
 <section class="stack" aria-labelledby="sim-detail-title">
-  <div class="actions"><button type="button" onclick={() => back('/app/')}>返回首页</button></div>
   {#if simLoading && !sim}
     <AsyncState loading />
   {:else if simError && !sim}

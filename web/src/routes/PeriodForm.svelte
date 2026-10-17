@@ -6,7 +6,7 @@
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
   import { acceptMe, canWrite, session } from '../lib/session.svelte';
-  import { back, navigate } from '../lib/router';
+  import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
   import { instantToWallTime, isValidDate, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
@@ -173,7 +173,6 @@
 </script>
 
 <section class="stack" aria-labelledby="period-form-title">
-  <div class="actions"><button type="button" onclick={() => back(entity ? `/app/sims/${entity.sim_id}` : mode === 'new' ? `/app/sims/${id}` : '/app/')}>{labels.back}</button></div>
   <h1 id="period-form-title">{mode === 'new' ? '添加有效期' : '编辑有效期'}</h1>
   {#if loading}<p role="status">{labels.loading}</p>
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={load} />
