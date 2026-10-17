@@ -1,0 +1,25 @@
+services:
+  app:
+    image: sim-reminder:local
+    build:
+      context: .
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN}
+      ALLOWED_TELEGRAM_USER_IDS: ${ALLOWED_TELEGRAM_USER_IDS:?Set ALLOWED_TELEGRAM_USER_IDS}
+      DATABASE_PATH: /data/remind.db
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Taipei}
+      REMINDER_SCAN_INTERVAL: ${REMINDER_SCAN_INTERVAL:-30s}
+      REMINDER_CATCHUP_WINDOW: ${REMINDER_CATCHUP_WINDOW:-24h}
+      WEBAPP_AUTH_MAX_AGE: ${WEBAPP_AUTH_MAX_AGE:-5m}
+      HTTP_ADDR: :8080
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - data:/data
+    restart: unless-stopped
+    stop_grace_period: 40s
+
+volumes:
+  data:
+    name: ${REMIND_DATA_VOLUME:-sim-reminder-data}
