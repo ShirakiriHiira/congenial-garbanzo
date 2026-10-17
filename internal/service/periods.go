@@ -36,7 +36,7 @@ func applyExpiration(v *Period, precision, value string) error {
 	return nil
 }
 func periodValid(v Period) bool {
-	return text(v.Name, 200, true) && (v.PeriodType == "number_validity" || v.PeriodType == "plan_validity" || v.PeriodType == "data_package_validity" || v.PeriodType == "custom") && (v.StartsAt == nil || *v.StartsAt < v.ExpiresAt)
+	return text(v.Name, 200, false) && (v.PeriodType == "number_validity" || v.PeriodType == "plan_validity" || v.PeriodType == "data_package_validity" || v.PeriodType == "custom") && (v.StartsAt == nil || *v.StartsAt < v.ExpiresAt)
 }
 func validateRules(ctx context.Context, tx *sql.Tx, v Period) error {
 	rows, e := tx.QueryContext(ctx, "SELECT days_before,reminder_time FROM reminder_rules WHERE validity_period_id=? AND enabled=1", v.ID)

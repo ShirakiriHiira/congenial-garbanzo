@@ -10,7 +10,7 @@
   import { formatDateTime, isValidDate, localDateAt, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
   import { formatMoney, parseMoney } from '../lib/domain/money';
-  import { errorMessage, labels, renewalLabels as text } from '../lib/domain/labels';
+  import { errorMessage, labels, periodTypeLabel, renewalLabels as text } from '../lib/domain/labels';
   import AsyncState from '../components/AsyncState.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import DatePrecisionInput from '../components/DatePrecisionInput.svelte';
@@ -228,7 +228,7 @@
     {#if !period}
       <AsyncState {loading} error={periodError} onretry={terminal ? undefined : () => { void readPeriod().then(() => { if (period) { precision = period.date_precision; void readHistory(); } }); }} />
     {:else}
-      <h2>{period.name}</h2>
+      <h2>{period.name || periodTypeLabel(period)}</h2>
       <dl class="renew-facts">
         <dt>{text.previousExpiry}</dt><dd>{formatExpiry(period)}</dd>
         <dt>expires_at</dt><dd><time datetime={period.expires_at}>{period.expires_at}</time></dd>

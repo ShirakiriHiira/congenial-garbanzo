@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { Temporal } from '@js-temporal/polyfill';
 import SimForm from '../src/routes/SimForm.svelte';
 import SimDetail from '../src/routes/SimDetail.svelte';
 import PeriodForm from '../src/routes/PeriodForm.svelte';
@@ -221,6 +222,43 @@ describe('card and period consumers', () => {
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     const request = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(String(request[1].body))).toMatchObject({ expires_at: '2027-01-31T18:00:00+08:00', date_precision: 'datetime' });
+  });
+
+  it('accepts a blank period name and keeps supplied seconds', async () => {
+    const fetcher = vi.fn(async (_path: string, request: RequestInit) => Response.json(
+      { data: { ...period, name: '', date_precision: 'datetime', local_expires_date: null } },
+      { status: request.method === 'POST' ? 201 : 200 },
+    ));
+    vi.stubGlobal('fetch', fetcher);
+    render(PeriodForm, { props: { id: '1', mode: 'new' } });
+    await screen.findByRole('textbox', { name: '有效期名称' });
+    await fireEvent.click(screen.getByRole('radio', { name: '精确时间' }));
+    await fireEvent.input(screen.getByLabelText('截止时间', { exact: false }), { target: { value: '2027-01-31T18:00:45' } });
+    await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    const request = fetcher.mock.calls.find(([, init]) => init.method === 'POST') as unknown as [string, RequestInit];
+    expect(JSON.parse(String(request[1].body))).toMatchObject({ name: '', expires_at: '2027-01-31T18:00:45+08:00' });
+  });
+
+  it('retains existing seconds and submits changed start/end seconds with a blank name', async () => {
+    const current: Period = {
+      ...period, date_precision: 'datetime', local_expires_date: null,
+      starts_at: '2027-01-15T10:00:30Z', expires_at: '2027-02-01T16:00:35Z',
+    };
+    const fetcher = vi.fn(async (_path: string, request: RequestInit) => Response.json({
+      data: request.method === 'PATCH' ? { ...current, name: '', starts_at: '2027-01-15T10:00:45Z', expires_at: '2027-02-01T16:00:50Z' } : current,
+    }));
+    vi.stubGlobal('fetch', fetcher);
+    render(PeriodForm, { props: { id: '5', mode: 'edit' } });
+    await fireEvent.input(await screen.findByRole('textbox', { name: '有效期名称' }), { target: { value: '' } });
+    expect(Temporal.PlainDateTime.from((screen.getByLabelText('开始时间（可选）', { exact: false }) as HTMLInputElement).value).equals('2027-01-15T18:00:30')).toBe(true);
+    expect(Temporal.PlainDateTime.from((screen.getByLabelText('截止时间', { exact: false }) as HTMLInputElement).value).equals('2027-02-02T00:00:35')).toBe(true);
+    await fireEvent.input(screen.getByLabelText('开始时间（可选）', { exact: false }), { target: { value: '2027-01-15T18:00:45' } });
+    await fireEvent.input(screen.getByLabelText('截止时间', { exact: false }), { target: { value: '2027-02-02T00:00:50' } });
+    await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init.method === 'PATCH')).toBe(true));
+    const request = fetcher.mock.calls.find(([, init]) => init.method === 'PATCH') as unknown as [string, RequestInit];
+    expect(JSON.parse(String(request[1].body))).toEqual({ expected_cycle: 3, name: '', starts_at: '2027-01-15T18:00:45+08:00', expires_at: '2027-02-02T00:00:50+08:00' });
   });
 
   it('blocks a DST gap and requires an explicit occurrence during an overlap', async () => {

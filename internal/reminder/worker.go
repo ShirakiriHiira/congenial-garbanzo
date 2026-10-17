@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"telegram.bot.remind/internal/domain"
@@ -101,5 +102,9 @@ func reminderText(job *storage.ReminderDelivery) string {
 	} else if loc, err := time.LoadLocation(exp.Timezone); err == nil {
 		cutoff = exp.ExpiresAt.In(loc).Format(time.RFC3339) + "（" + exp.Timezone + "）"
 	}
-	return fmt.Sprintf("有效期提醒\n卡片：%s\n项目：%s\n截止：%s\n项目 ID：%d\n确认续期时请提供新的截止日期；不会自动延长有效期。", job.SIMName, job.PeriodName, cutoff, job.PeriodID)
+	name := job.PeriodName
+	if strings.TrimSpace(name) == "" {
+		name = "有效期"
+	}
+	return fmt.Sprintf("有效期提醒\n卡片：%s\n项目：%s\n截止：%s\n项目 ID：%d\n确认续期时请提供新的截止日期；不会自动延长有效期。", job.SIMName, name, cutoff, job.PeriodID)
 }

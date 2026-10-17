@@ -7,7 +7,7 @@
   import { Submitter } from '../lib/form.svelte';
   import { canWrite, onSessionFailure, session } from '../lib/session.svelte';
   import { back } from '../lib/router';
-  import { errorMessage, labels, rulesLabels as copy } from '../lib/domain/labels';
+  import { errorMessage, labels, periodTypeLabel, rulesLabels as copy } from '../lib/domain/labels';
   import FormField from '../components/FormField.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
@@ -246,7 +246,7 @@
   <div class="actions"><button type="button" onclick={returnToCard}>{labels.back}</button><h1>{copy.title}</h1></div>
   {#if periodLoading}<p role="status">{labels.loading}</p>{/if}
   {#if periodError}<ErrorBanner message={errorMessage(periodError)} onretry={mayRead() ? () => { void loadPeriod(); } : undefined} />{/if}
-  {#if period}<p class="muted">{period.name} · {period.timezone}</p>{/if}
+  {#if period}<p class="muted">{period.name || periodTypeLabel(period)} · {period.timezone}</p>{/if}
   {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
   {#if period?.status === 'cancelled'}<p class="notice">{copy.cancelled}</p>{/if}
   {#if toast}<Toast message={toast} ondismiss={() => { toast = ''; }} />{/if}

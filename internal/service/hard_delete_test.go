@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -143,6 +144,31 @@ func TestDeletedIdentifiersAreNotReused(t *testing.T) {
 	}
 	if _, err := s.PeriodForJob(ctx, a.ID, jobID); err != ErrNotFound {
 		t.Fatalf("stale callback: %v", err)
+	}
+}
+
+func TestOptionalPeriodName(t *testing.T) {
+	s, _, a, _ := setup(t)
+	ctx := context.Background()
+	sim, _, _ := fixture(t, s, a)
+	for _, name := range []string{"", " \t\n"} {
+		p, err := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{PeriodType: "custom", Name: name, DatePrecision: "date", ExpiresAt: "2027-02-01"})
+		if err != nil || p.Name != "" {
+			t.Fatalf("blank name: %+v %v", p, err)
+		}
+		named := "named"
+		p, err = s.UpdatePeriod(ctx, a.ID, p.ID, PeriodPatch{ExpectedCycle: p.Cycle, Name: &named})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err = s.UpdatePeriod(ctx, a.ID, p.ID, PeriodPatch{ExpectedCycle: p.Cycle, Name: &name})
+		if err != nil || p.Name != "" {
+			t.Fatalf("clear name: %+v %v", p, err)
+		}
+	}
+	tooLong := strings.Repeat("中", 201)
+	if _, err := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{PeriodType: "custom", Name: tooLong, DatePrecision: "date", ExpiresAt: "2027-02-01"}); err != ErrInvalid {
+		t.Fatalf("oversize name: %v", err)
 	}
 }
 

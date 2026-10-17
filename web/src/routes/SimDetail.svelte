@@ -367,7 +367,7 @@
             <li class="period">
               <div class="period-head">
                 <div class="period-text">
-                  <p class="period-name">{periodTypeLabel(period)}<span class="muted"> · {period.name}</span></p>
+                  <p class="period-name">{periodTypeLabel(period)}{#if period.name && period.period_type !== 'custom'}<span class="muted"> · {period.name}</span>{/if}</p>
                   <p class="muted">{formatExpiry(period)} · 周期 {period.cycle}</p>
                   <div class="badges">
                     <span class="status {period.status}">{periodStatusLabels[period.status]}</span>

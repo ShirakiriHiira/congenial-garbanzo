@@ -120,7 +120,7 @@ func (h *Handler) commandView(ctx context.Context, user service.User, raw string
 			b.WriteString("（无）")
 		}
 		for _, p := range page.Data {
-			fmt.Fprintf(&b, "#%s %s  %s  状态 %s  版本 %d\n", id(p.ID), p.Name, periodExpiry(p), p.Status, p.Cycle)
+			fmt.Fprintf(&b, "#%s %s  %s  状态 %s  版本 %d\n", id(p.ID), periodName(p), periodExpiry(p), p.Status, p.Cycle)
 			fmt.Fprintf(&b, "  类型：%s  提醒：/view period %s rules\n", p.PeriodType, id(p.ID))
 		}
 		appendNext(&b, page.NextCursor, "/view sim "+id(sim.ID)+" periods")
@@ -160,7 +160,7 @@ func (h *Handler) commandView(ctx context.Context, user service.User, raw string
 				return "", err
 			}
 			var b strings.Builder
-			fmt.Fprintf(&b, "有效期 #%s %s 的提醒规则：\n", id(p.ID), p.Name)
+			fmt.Fprintf(&b, "有效期 #%s %s 的提醒规则：\n", id(p.ID), periodName(p))
 			if len(page.Data) == 0 {
 				b.WriteString("（未配置提醒；如需通知请添加规则）")
 			}
@@ -175,7 +175,7 @@ func (h *Handler) commandView(ctx context.Context, user service.User, raw string
 			return "", err
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "有效期 #%s %s 的续期历史：\n", id(p.ID), p.Name)
+		fmt.Fprintf(&b, "有效期 #%s %s 的续期历史：\n", id(p.ID), periodName(p))
 		if len(page.Data) == 0 {
 			b.WriteString("（无）")
 		}
@@ -698,6 +698,13 @@ func simDetail(sim service.SIM) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+func periodName(p service.Period) string {
+	if strings.TrimSpace(p.Name) == "" {
+		return "有效期"
+	}
+	return p.Name
+}
+
 func periodExpiry(p service.Period) string {
 	if p.DatePrecision == domain.PrecisionDate && p.LocalExpiresDate != nil {
 		return *p.LocalExpiresDate + "（" + p.Timezone + "，当日结束前有效）"
@@ -707,7 +714,7 @@ func periodExpiry(p service.Period) string {
 
 func periodDetail(p service.Period) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "有效期 #%s\n名称：%s\n类型：%s\n精度：%s\n截止：%s\n状态：%s\n版本：%d\n", id(p.ID), p.Name, p.PeriodType, p.DatePrecision, periodExpiry(p), p.Status, p.Cycle)
+	fmt.Fprintf(&b, "有效期 #%s\n名称：%s\n类型：%s\n精度：%s\n截止：%s\n状态：%s\n版本：%d\n", id(p.ID), periodName(p), p.PeriodType, p.DatePrecision, periodExpiry(p), p.Status, p.Cycle)
 	if p.StartsAt != nil {
 		fmt.Fprintf(&b, "开始：%s\n", stamp(*p.StartsAt, p.Timezone))
 	}

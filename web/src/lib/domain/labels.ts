@@ -94,7 +94,7 @@ export function errorMessage(error: unknown): string {
 }
 
 export function periodTypeLabel(period: Pick<Period, 'period_type' | 'name'>): string {
-  return period.period_type === 'custom' ? period.name : periodTypeLabels[period.period_type];
+  return period.period_type === 'custom' ? period.name || periodTypeLabels.custom : periodTypeLabels[period.period_type];
 }
 
 export const settingsLabels = {

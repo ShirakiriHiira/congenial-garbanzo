@@ -31,3 +31,12 @@ func TestReminderTextShowsLocalCutoff(t *testing.T) {
 		t.Fatalf("message leaked UTC cutoff: %q", text)
 	}
 }
+
+func TestReminderTextFallsBackForBlankTitle(t *testing.T) {
+	for _, name := range []string{"", " \t"} {
+		text := reminderText(&storage.ReminderDelivery{PeriodName: name})
+		if !strings.Contains(text, "项目：有效期\n") {
+			t.Fatalf("blank title: %q", text)
+		}
+	}
+}
