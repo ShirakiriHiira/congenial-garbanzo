@@ -3,3 +3,14 @@
 
 # Build artifacts
 /bin/
+/remind
+
+# SQLite files, WAL/SHM companions, and private backups
+/data/
+/backups/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
