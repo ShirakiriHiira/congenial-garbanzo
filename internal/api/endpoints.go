@@ -18,6 +18,18 @@ func (h *Handler) getMe(w http.ResponseWriter, r *http.Request) {
 	}
 	object(w, 200, userView(currentUser(r)), nil)
 }
+func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
+	limit, after, _, ok := pagination(w, r, false)
+	if !ok {
+		return
+	}
+	v, err := h.service.Overview(r.Context(), currentUser(r).ID, after, limit)
+	if err != nil {
+		serviceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": overviewView(v), "next_cursor": cursor(v.Items.NextCursor)})
+}
 func (h *Handler) patchMe(w http.ResponseWriter, r *http.Request) {
 	if _, ok := queryOnly(w, r); !ok {
 		return

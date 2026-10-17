@@ -79,6 +79,26 @@ func page[T any](w http.ResponseWriter, p service.Page[T], err error, view func(
 	writeJSON(w, http.StatusOK, map[string]any{"data": data, "next_cursor": cursor(p.NextCursor)})
 }
 
+func overviewView(v service.Overview) map[string]any {
+	items := make([]map[string]any, 0, len(v.Items.Data))
+	for _, item := range v.Items.Data {
+		var period any
+		if item.PrimaryPeriod != nil {
+			period = periodView(*item.PrimaryPeriod)
+		}
+		items = append(items, map[string]any{"sim": simView(item.SIM), "primary_period": period})
+	}
+	return map[string]any{
+		"counts": map[string]int{
+			"total":     v.Counts.Total,
+			"due_soon":  v.Counts.DueSoon,
+			"expired":   v.Counts.Expired,
+			"no_period": v.Counts.NoPeriod,
+		},
+		"items": items,
+	}
+}
+
 type simCreateRequest struct {
 	Name            string  `json:"name"`
 	CardType        string  `json:"card_type"`

@@ -131,6 +131,7 @@ date_precision=date&expires_at=2027-03-31
 | GET | `/healthz` | 无需认证；进程存活 `200 {"status":"ok"}` |
 | GET | `/readyz` | 无需认证；启动完成且 1 秒数据库 Ping 成功为 200，否则 503 |
 | GET, PATCH | `/api/v1/me` | 读取当前用户；PATCH `{ "timezone": "Asia/Taipei" }` |
+| GET | `/api/v1/overview` | 全量统计 + 带主有效期的活跃卡片分页；只接受 `limit,after_id` |
 | GET, POST | `/api/v1/sims` | 列表；创建卡片 |
 | GET, PATCH, DELETE | `/api/v1/sims/{id}` | 详情、部分更新、归档；PATCH `status=active` 恢复 |
 | GET, POST | `/api/v1/sims/{id}/periods` | 列表；创建有效期 |
@@ -177,6 +178,29 @@ SIM 可选字段与 Bot `/add` 相同；有效期可选 `starts_at` 为 RFC3339 
 单对象 `{"data":{...}}`；错误 `{"error":{"code":"...","message":"..."}}`。创建 201，读取/修改 200，归档/取消 204（无响应体），续期新建 201/同参数重放 200。畸形输入 400、无效凭据 401、名单外 403、无对象/跨用户 404、版本冲突 409、请求过大 413、错误 JSON Content-Type 415、暂不可用 503、其他错误 500。内部 SQL/SDK 错误不会直接输出。
 
 JSON 请求必须使用 `Content-Type: application/json`，最大 64 KiB，拒绝未知字段和多段 JSON。PATCH 缺字段表示不变，`null` 仅可清除可选字段，不能清空 name、类型或状态等必需值。
+
+### Mini App 总览
+
+`GET /api/v1/overview?limit=20&after_id=0` 复用上述逐请求鉴权。顶层 `next_cursor` 是卡片 ID 字符串或 `null`；`data.items` 仅包含当前用户的 `active` 卡片，按卡片 ID 升序分页，**统计不随分页缩小**。
+
+空用户响应：
+
+```json
+{"data":{"counts":{"total":0,"due_soon":0,"expired":0,"no_period":0},"items":[]},"next_cursor":null}
+```
+
+每个 `items` 元素为 `{ "sim": <卡片对象>, "primary_period": <有效期对象或 null> }`。两个对象沿用现有详情接口字段，所有 ID 仍为字符串；无主有效期时明确返回 `"primary_period": null`，不省略该字段。
+
+- 主有效期：该卡未取消的有效期中 `expires_at` 最早者；截止相同取 ID 较大者。包含已过期项目，忽略 `cancelled`。
+- `total`：所有未归档卡片数，包含无主有效期的卡。
+- `no_period`：没有任何未取消有效期的卡片数，包含“只有已取消有效期”的卡。
+- `expired`：主有效期 `expires_at <= 当前时刻`。不信任数据库中可能尚未随时间更新的 `status`。
+- `due_soon`：主有效期未过期，且到期本地日期与今天的日历日差在 **0–7**（含端点）。`date` 使用 `local_expires_date`，`datetime` 使用到期时刻在用户 IANA 时区中的日期；不是“未来 7×24 小时”。今天到期计入临期，精确截止时刻起计入过期。
+
+每张卡只归类一次；超过 7 天仍有效的卡只计入 `total`。单次响应的统计与分页来自同一 SQLite 读快照、同一时刻；不同请求之间数据或时间变化时统计可以变化。聚合失败返回现有错误格式，不伪造为 0 或“无有效期”。
+
+此接口没有前端“100 张聚合上限”，也不接受 `status` / 搜索 / 排序参数。归档卡仍通过 `/api/v1/sims` 获取，客户端过滤。Mini App 布局、双主题及工程约束见 [专项开发规范](docs/MINI_APP_DEVELOPMENT.md)。
+
 
 ## Docker 部署
 
@@ -260,6 +284,12 @@ race 需要合适 C 工具链；生产仍用 CGO=0。真实 Telegram 验收需�
 应用使用结构化脱敏日志；不要主动增加 Token、initData、电话号码、ICCID、备注、请求体或含 Token 的 SDK URL 到日志。数据库和备份目前没有应用层加密；保护宿主、卷、代理配置与备份访问权限。详尽需求见 [开发规范](docs/DEVELOPMENT.md)。
 
 ## Changelog
+
+### Unreleased — Mini App 总览 API
+
+- 新增已鉴权的 `GET /api/v1/overview`，返回活跃卡片全量统计、主有效期和 ID 游标分页。
+- 统计与列表共用读快照和时刻，临期按用户时区的 0–7 个日历日计算；排除归档卡与取消项目，无 schema 或入口文件变更。
+- 新增 [Mini App 专项规范](docs/MINI_APP_DEVELOPMENT.md)，记录双主题参考、Svelte 工程约束及现有 API 边界。
 
 ### Unreleased — 第一阶段后端
 

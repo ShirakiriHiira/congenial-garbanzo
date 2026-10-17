@@ -79,7 +79,7 @@ func (h *Handler) apiMux() *http.ServeMux {
 
 	add("GET /me", h.getMe)
 	add("PATCH /me", h.patchMe)
-
+	add("GET /overview", h.overview)
 	add("GET /sims", h.listSIMs)
 	add("POST /sims", h.createSIM)
 	add("GET /sims/{id}", h.getSIM)

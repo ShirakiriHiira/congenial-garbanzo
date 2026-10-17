@@ -136,6 +136,37 @@ func ReminderAt(exp Expiration, daysBefore int64, reminderTime string) (time.Tim
 	return at, nil
 }
 
+// CalendarDaysUntil counts Gregorian calendar dates in loc, not elapsed 24-hour
+// intervals. Date precision uses the stored local date; datetime uses the local
+// date of its instant. The caller resolves loc once from the user's IANA zone.
+func CalendarDaysUntil(exp Expiration, now time.Time, loc *time.Location) (int, error) {
+	if loc == nil {
+		return 0, invalid("timezone is required")
+	}
+	var target time.Time
+	var err error
+	switch exp.DatePrecision {
+	case PrecisionDate:
+		if exp.LocalExpiresDate == nil {
+			return 0, invalid("date precision requires a local date")
+		}
+		target, err = parseDate(*exp.LocalExpiresDate)
+		if err != nil {
+			return 0, err
+		}
+	case PrecisionDateTime:
+		at := exp.ExpiresAt.In(loc)
+		target = time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, time.UTC)
+	default:
+		return 0, invalid("date_precision must be date or datetime")
+	}
+	local := now.In(loc)
+	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
+	// UTC date labels, not local instants: this counts calendar dates across
+	// DST and stays exact beyond time.Duration's approximately 290-year range.
+	return int((target.Unix() - today.Unix()) / 86400), nil
+}
+
 func parseDate(value string) (time.Time, error) {
 	date, err := time.Parse("2006-01-02", value)
 	if err != nil || len(value) != 10 || date.Format("2006-01-02") != value {

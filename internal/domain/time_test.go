@@ -188,6 +188,69 @@ func TestTimezoneRecalculation(t *testing.T) {
 	assertInstant(t, after, "2027-01-31T14:00:00Z")
 }
 
+func TestCalendarDaysUntil(t *testing.T) {
+	now := time.Date(2027, 1, 1, 4, 30, 0, 0, time.UTC) // 12:30 in Taipei
+	dateExp := func(t *testing.T, value, zone string) Expiration {
+		t.Helper()
+		exp, err := ParseExpiration(PrecisionDate, value, zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return exp
+	}
+	dtExp := func(t *testing.T, value, zone string) Expiration {
+		t.Helper()
+		exp, err := ParseExpiration(PrecisionDateTime, value, zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return exp
+	}
+	cases := []struct {
+		name string
+		exp  Expiration
+		now  time.Time
+		want int
+	}{
+		{"SameDay", dateExp(t, "2027-01-01", "Asia/Taipei"), now, 0},
+		{"Tomorrow", dateExp(t, "2027-01-02", "Asia/Taipei"), now, 1},
+		{"DueSoonBoundary", dateExp(t, "2027-01-08", "Asia/Taipei"), now, 7},
+		{"OutsideDueSoon", dateExp(t, "2027-01-09", "Asia/Taipei"), now, 8},
+		{"Yesterday", dateExp(t, "2026-12-31", "Asia/Taipei"), now, -1},
+		{"AcrossMonth", dateExp(t, "2027-03-02", "Asia/Taipei"), time.Date(2027, 2, 26, 4, 0, 0, 0, time.UTC), 4},
+		{"DateLineZone", dateExp(t, "2027-01-03", "Pacific/Kiritimati"), time.Date(2027, 1, 1, 9, 0, 0, 0, time.UTC), 2},
+		{"SpringDstIsNot24h", dateExp(t, "2027-03-14", "America/New_York"), time.Date(2027, 3, 13, 5, 0, 0, 0, time.UTC), 1},
+		{"FallDstIsNot24h", dateExp(t, "2027-11-07", "America/New_York"), time.Date(2027, 11, 6, 4, 0, 0, 0, time.UTC), 1},
+		{"SpringJumpAcrossToday", dateExp(t, "2027-03-15", "America/New_York"), time.Date(2027, 3, 14, 4, 30, 0, 0, time.UTC), 2},
+		{"FallRepeatAcrossToday", dateExp(t, "2027-11-08", "America/New_York"), time.Date(2027, 11, 7, 3, 30, 0, 0, time.UTC), 2},
+		{"DistantFuture", dateExp(t, "9999-12-30", "UTC"), time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC), 3652057},
+		{"DistantPast", dateExp(t, "0001-01-01", "UTC"), time.Date(9999, 12, 30, 0, 0, 0, 0, time.UTC), -3652057},
+		{"DateTimeUsesLocalDate", dtExp(t, "2027-01-03T00:30:00+08:00", "Asia/Taipei"), now, 2},
+		{"DateTimeLateLocalDay", dtExp(t, "2027-01-02T23:30:00+08:00", "Asia/Taipei"), now, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			loc, err := time.LoadLocation(tc.exp.Timezone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := CalendarDaysUntil(tc.exp, tc.now, loc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("days=%d want=%d", got, tc.want)
+			}
+		})
+	}
+	if _, err := CalendarDaysUntil(Expiration{DatePrecision: PrecisionDate}, now, nil); !errors.Is(err, ErrInvalidTime) {
+		t.Fatalf("missing timezone accepted: %v", err)
+	}
+	if _, err := CalendarDaysUntil(Expiration{DatePrecision: PrecisionDate}, now, time.UTC); !errors.Is(err, ErrInvalidTime) {
+		t.Fatalf("missing local date accepted: %v", err)
+	}
+}
+
 func assertInstant(t *testing.T, got time.Time, want string) {
 	t.Helper()
 	if got.Location() != time.UTC || got.Format(time.RFC3339Nano) != want {

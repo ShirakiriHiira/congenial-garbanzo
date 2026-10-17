@@ -314,6 +314,177 @@ func TestNestedOwnershipAndPagination(t *testing.T) {
 	request(t, h, "POST", "/api/v1/reminders/"+identifier(jobID)+"/cancel", "", 202, 404)
 }
 
+func TestOverviewShapeAndIsolation(t *testing.T) {
+	h, _, s := setupAPI(t)
+	ctx := context.Background()
+	u, err := s.Authenticate(ctx, 101, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	due, err := s.CreateSIM(ctx, u.ID, service.SIMInput{Name: "due", CardType: "esim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.CreatePeriod(ctx, u.ID, due.ID, service.PeriodInput{Name: "p", PeriodType: "plan_validity", DatePrecision: "date", ExpiresAt: "2027-01-01"}); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := s.CreateSIM(ctx, u.ID, service.SIMInput{Name: "expired", CardType: "physical_sim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.CreatePeriod(ctx, u.ID, expired.ID, service.PeriodInput{Name: "p", PeriodType: "custom", DatePrecision: "date", ExpiresAt: "2026-12-30"}); err != nil {
+		t.Fatal(err)
+	}
+	bare, err := s.CreateSIM(ctx, u.ID, service.SIMInput{Name: "bare", CardType: "esim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := s.CreateSIM(ctx, u.ID, service.SIMInput{Name: "archived", CardType: "esim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ArchiveSIM(ctx, u.ID, archived.ID); err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.Authenticate(ctx, 202, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherSIM, err := s.CreateSIM(ctx, other.ID, service.SIMInput{Name: "other", CardType: "esim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := request(t, h, "GET", "/api/v1/overview", "", 101, 200)
+	var body struct {
+		Data struct {
+			Counts map[string]int `json:"counts"`
+			Items  []struct {
+				SIM           map[string]any  `json:"sim"`
+				PrimaryPeriod *map[string]any `json:"primary_period"`
+			} `json:"items"`
+		} `json:"data"`
+		Next *string `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"total": 3, "due_soon": 1, "expired": 1, "no_period": 1}
+	for key, value := range want {
+		if body.Data.Counts[key] != value {
+			t.Fatalf("counts=%v want=%v", body.Data.Counts, want)
+		}
+	}
+	if len(body.Data.Items) != 3 || body.Next != nil {
+		t.Fatalf("items=%d next=%v", len(body.Data.Items), body.Next)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if string(envelope["next_cursor"]) != "null" {
+		t.Fatalf("missing terminal cursor: %s", w.Body.String())
+	}
+	var payload struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(envelope["data"], &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range payload.Items {
+		var sim struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(item["sim"], &sim); err != nil {
+			t.Fatal(err)
+		}
+		if sim.ID == identifier(bare.ID) && string(item["primary_period"]) != "null" {
+			t.Fatalf("primary_period must be present and null: %s", item["primary_period"])
+		}
+	}
+	ids := map[string]bool{}
+	for _, item := range body.Data.Items {
+		id, ok := item.SIM["id"].(string)
+		if !ok {
+			t.Fatalf("sim id is not a string: %v", item.SIM["id"])
+		}
+		ids[id] = true
+		if id == identifier(bare.ID) && item.PrimaryPeriod != nil {
+			t.Fatal("card without periods returned a primary period")
+		}
+		if id == identifier(due.ID) {
+			if item.PrimaryPeriod == nil || (*item.PrimaryPeriod)["status"] != "active" {
+				t.Fatalf("due item=%v", item.PrimaryPeriod)
+			}
+		}
+	}
+	if ids[identifier(archived.ID)] || ids[identifier(otherSIM.ID)] {
+		t.Fatal("overview leaked archived or foreign cards")
+	}
+
+	for _, query := range []string{"status=sent", "limit=0", "limit=101", "after_id=-1", "after_id=abc", "limit=1&limit=2"} {
+		request(t, h, "GET", "/api/v1/overview?"+query, "", 101, 400)
+	}
+
+	w = request(t, h, "GET", "/api/v1/overview?limit=2", "", 101, 200)
+	var page struct {
+		Data struct {
+			Counts map[string]int `json:"counts"`
+			Items  []struct {
+				SIM map[string]any `json:"sim"`
+			} `json:"items"`
+		} `json:"data"`
+		Next *string `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Data.Items) != 2 || page.Next == nil || page.Data.Counts["total"] != 3 {
+		t.Fatalf("page=%+v", page)
+	}
+	if *page.Next != identifier(expired.ID) || page.Data.Items[0].SIM["id"] != identifier(due.ID) || page.Data.Items[1].SIM["id"] != identifier(expired.ID) {
+		t.Fatalf("unexpected first page: %+v", page)
+	}
+	w = request(t, h, "GET", "/api/v1/overview?after_id="+*page.Next, "", 101, 200)
+	var second struct {
+		Data struct {
+			Counts map[string]int `json:"counts"`
+			Items  []struct {
+				SIM map[string]any `json:"sim"`
+			} `json:"items"`
+		} `json:"data"`
+		Next *string `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Data.Items) != 1 || second.Data.Items[0].SIM["id"] != identifier(bare.ID) || second.Next != nil {
+		t.Fatalf("unexpected second page: %+v", second)
+	}
+	for key, value := range want {
+		if second.Data.Counts[key] != value {
+			t.Fatalf("counts changed on second page: %v", second.Data.Counts)
+		}
+	}
+	w = request(t, h, "GET", "/api/v1/overview", "", 202, 200)
+	var foreign struct {
+		Data struct {
+			Counts map[string]int `json:"counts"`
+			Items  []struct {
+				SIM map[string]any `json:"sim"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &foreign); err != nil {
+		t.Fatal(err)
+	}
+	if foreign.Data.Counts["total"] != 1 || foreign.Data.Counts["no_period"] != 1 || len(foreign.Data.Items) != 1 || foreign.Data.Items[0].SIM["id"] != identifier(otherSIM.ID) {
+		t.Fatalf("foreign view=%+v", foreign)
+	}
+	request(t, h, "GET", "/api/v1/overview", "", 0, 401)
+	request(t, h, "GET", "/api/v1/overview", "", 303, 403)
+}
+
 func TestAuthenticationNeverTrustsClientIdentity(t *testing.T) {
 	h, _, _ := setupAPI(t)
 	for _, header := range []string{"tma invalid", "Bearer " + testAuth(101), strings.Replace(testAuth(101), "hash=", "hash=ff", 1)} {
