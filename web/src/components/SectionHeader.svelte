@@ -12,5 +12,5 @@
 <style>
   .section-header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
   h2{margin:0;font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
-  .control{display:flex;align-items:center;flex-shrink:0}
+  .control{display:flex;align-items:center;gap:8px;flex-shrink:0}
 </style>

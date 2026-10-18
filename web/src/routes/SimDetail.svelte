@@ -359,7 +359,7 @@
             <li class="period">
               <div class="period-head">
                 <div class="period-text">
-                  <p class="period-name">{periodTypeLabel(period)}{#if period.name && period.period_type !== 'custom'}<span class="muted"> · {period.name}</span>{/if}</p>
+                  <p class="period-name">{periodTypeLabel(period)}{#if period.name && period.period_type !== 'custom'}<span class="muted period-subname">· {period.name}</span>{/if}</p>
                   <p class="muted">{formatExpiry(period)} · 周期 {period.cycle}</p>
                   <div class="badges"><ExpiryBadge {period} /></div>
                 </div>
@@ -460,10 +460,11 @@
   dd{margin:0;min-width:0;overflow-wrap:anywhere}
   .preserve{white-space:pre-wrap}
   .periods,.plain{list-style:none;margin:0;padding:0;display:grid;gap:12px;min-width:0}
-  .period{padding:10px 0;border-top:1px solid var(--border);min-width:0}
+  .period{padding:14px 0;border-top:1px solid var(--border);min-width:0;display:grid;gap:12px}
   .period-head{display:flex;align-items:flex-start;gap:10px;min-width:0}
   .period-text{flex:1;min-width:0;display:grid;gap:4px}
   .period-name{margin:0;font-weight:600;overflow-wrap:anywhere}
+  .period-subname{margin-left:4px;font-weight:400}
   .badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   h3{font-size:13px;margin:0}
   .wrap{flex-wrap:wrap}
