@@ -5,7 +5,7 @@
   import type { DatePrecision, Period, Renewal, RenewalCreateInput } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
-  import { canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
   import { back } from '../lib/router';
   import { formatDateTime, isValidDate, localDateAt, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
@@ -44,6 +44,7 @@
   let replayMessage = $state('');
   let reviewRequired = $state(false);
   let refreshRequired = $state(false);
+  let accountLoading = $state(false);
   let controller: AbortController | undefined;
   let sequence = 0;
   let historySequence = 0;
@@ -118,6 +119,14 @@
       refreshRequired = reviewRequired = false;
       conflict.dismiss();
       submitter.clear();
+      const signal = controller.signal;
+      accountLoading = session.me === null && !terminal;
+      if (accountLoading) {
+        void api.me(signal)
+          .then((user) => { if (!signal.aborted) acceptMe(user); })
+          .catch(() => {})
+          .finally(() => { if (!signal.aborted) accountLoading = false; });
+      }
       void readPeriod().then(() => {
         if (period?.id !== periodID || terminal) return;
         precision = period.date_precision;
@@ -131,7 +140,7 @@
   const stopFailure = onSessionFailure(() => {
     ++sequence;
     controller?.abort();
-    loading = historyLoading = historyMore = false;
+    loading = historyLoading = historyMore = accountLoading = false;
   });
   onDestroy(() => { stopFailure(); session.dirty = false; });
 
@@ -223,7 +232,7 @@
 <div class="content stack renew-page">
   <section class="section stack">
     <h1>{text.title}</h1>
-    {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
+    {#if !canWrite() && !accountLoading}<p class="notice">{labels.readOnly}</p>{/if}
     {#if !period}
       <AsyncState {loading} error={periodError} onretry={terminal ? undefined : () => { void readPeriod().then(() => { if (period) { precision = period.date_precision; void readHistory(); } }); }} />
     {:else}

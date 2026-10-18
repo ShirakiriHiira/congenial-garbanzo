@@ -10,6 +10,10 @@ const initialPeriod: Period = {
   local_expires_date: '2027-01-31', timezone: 'Asia/Taipei', status: 'active', cycle: 4,
   created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
+const user = {
+  id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true,
+  created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
+};
 const historyEntry: Renewal = {
   id: '21', validity_period_id: '11', previous_cycle: 4,
   previous_expires_at: initialPeriod.expires_at, new_expires_at: '2027-02-28T16:00:00Z',
@@ -32,6 +36,7 @@ function transport({ period = initialPeriod, entries = [], post }: TransportOpti
   let historyReads = 0;
   const fetcher = vi.fn(async (input: string | URL | Request, options?: RequestInit) => {
     const path = String(input);
+    if (path.endsWith('/me')) return Response.json({ data: user });
     if (options?.method === 'POST') {
       const body = JSON.parse(String(options.body)) as RenewalCreateInput;
       writes.push(body);
@@ -68,10 +73,7 @@ beforeEach(() => {
   history.replaceState(null, '', '/app/periods/11/renew');
   window.Telegram = { WebApp: { initData: 'synthetic-test-transport' } };
   session.auth = 'ready';
-  session.me = {
-    id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true,
-    created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
-  };
+  session.me = { ...user };
   session.dirty = false;
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2027-01-01T00:00:00Z'));
@@ -95,6 +97,17 @@ describe('renewal route', () => {
     expect(await screen.findByText('暂无续期记录。')).toBeInTheDocument();
     expect(String(api.fetcher.mock.calls[0]?.[0])).toBe('/api/v1/periods/11');
     expect(screen.getByRole('radio', { name: '日期' })).toBeChecked();
+  });
+
+  it('loads the account on a direct open so the form is writable without a read-only notice', async () => {
+    session.auth = 'loading';
+    session.me = null;
+    const api = transport();
+    render(Renew, { id: '11' });
+    await waitFor(() => expect(screen.getByLabelText(/截止日期/)).toBeEnabled());
+    expect(session.auth).toBe('ready');
+    expect(screen.queryByText('当前为只读模式。')).not.toBeInTheDocument();
+    expect(api.fetcher.mock.calls.some(([input]) => String(input) === '/api/v1/me')).toBe(true);
   });
 
   it('sends only renewal inputs and re-GETs the real cycle and history after 201', async () => {

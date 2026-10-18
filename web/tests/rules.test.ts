@@ -17,13 +17,14 @@ const rule: Rule = {
   id: '20', validity_period_id: '10', days_before: 7, reminder_time: '09:00',
   enabled: true, revision: 4, created_at: stamp, updated_at: stamp,
 };
+const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: stamp, updated_at: stamp };
 const showModalDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
 const closeDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');
 
 beforeEach(() => {
   history.replaceState(null, '', '/app/periods/10/rules');
   session.auth = 'ready';
-  session.me = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: stamp, updated_at: stamp };
+  session.me = { ...user };
   session.dirty = false;
   vi.spyOn(api, 'period').mockResolvedValue({ ...period });
   vi.spyOn(api, 'rules').mockResolvedValue({ data: [{ ...rule }], next_cursor: null });
@@ -31,6 +32,7 @@ beforeEach(() => {
   vi.spyOn(api, 'createRule').mockResolvedValue({ ...rule, id: '21', days_before: 3, revision: 1 });
   vi.spyOn(api, 'updateRule').mockResolvedValue({ ...rule, revision: 5 });
   vi.spyOn(api, 'disableRule').mockResolvedValue(undefined);
+  vi.spyOn(api, 'me').mockResolvedValue({ ...user });
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: vi.fn(function (this: HTMLDialogElement) { this.setAttribute('open', ''); }) });
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: vi.fn(function (this: HTMLDialogElement) { this.removeAttribute('open'); }) });
@@ -208,5 +210,16 @@ describe('rules route consumer behavior', () => {
     expect(await screen.findByRole('article', { name: '提前 7 天 09:00' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '添加规则' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '编辑规则' })).not.toBeInTheDocument();
+  });
+
+  it('loads the account on a direct open so adding a rule is allowed', async () => {
+    session.auth = 'loading';
+    session.me = null;
+    render(Rules, { id: '10' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '添加规则' })).toBeEnabled());
+    expect(api.me).toHaveBeenCalledTimes(1);
+    expect(session.auth).toBe('ready');
+    expect(screen.queryByText('当前为只读模式。')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('正在加载…')).toHaveLength(0);
   });
 });

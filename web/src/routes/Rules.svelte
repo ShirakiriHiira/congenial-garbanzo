@@ -5,7 +5,7 @@
   import type { Period, Rule, RuleCreateInput } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
-  import { canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
   import { back } from '../lib/router';
   import { errorMessage, labels, periodTypeLabel, rulesLabels as copy } from '../lib/domain/labels';
   import FormField from '../components/FormField.svelte';
@@ -36,11 +36,13 @@
   let reviewRequired = $state(false);
   let refreshRequired = $state(false);
   let conflictTarget = $state<Rule | null>(null);
+  let accountLoading = $state(false);
   let generation = 0;
   let listRequest = 0;
   let periodRequest = 0;
   let listController: AbortController | undefined;
   let periodController: AbortController | undefined;
+  let accountController: AbortController | undefined;
   const submitter = new Submitter();
   const conflict = new ConflictFlow<{ period: Period; rule: Rule | null }>(async () => {
     const currentGeneration = generation;
@@ -74,6 +76,7 @@
       reviewRequired = false;
       refreshRequired = false;
       resetDraft();
+      loadAccount();
       void loadPeriod(periodID);
       void loadRules(false);
     });
@@ -81,11 +84,14 @@
       generation += 1;
       listController?.abort();
       periodController?.abort();
+      accountController?.abort();
     };
   });
   const stopSession = onSessionFailure(() => {
     listController?.abort();
     periodController?.abort();
+    accountController?.abort();
+    accountLoading = false;
   });
   onDestroy(() => { stopSession(); session.dirty = false; });
 
@@ -95,6 +101,17 @@
     return [...merged.values()].sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : BigInt(a.id) > BigInt(b.id) ? 1 : 0);
   }
   function mayRead() { return session.auth !== 'expired' && session.auth !== 'forbidden' && session.auth !== 'missing'; }
+  function loadAccount() {
+    accountController?.abort();
+    accountLoading = session.me === null && mayRead();
+    if (!accountLoading) return;
+    const controller = new AbortController();
+    accountController = controller;
+    void api.me(controller.signal)
+      .then((user) => { if (!controller.signal.aborted) acceptMe(user); })
+      .catch(() => {})
+      .finally(() => { if (!controller.signal.aborted) accountLoading = false; });
+  }
   async function loadPeriod(periodID = id) {
     if (!mayRead()) { periodLoading = false; return; }
     const request = ++periodRequest;
@@ -244,10 +261,9 @@
 
 <div class="content stack rules-page">
   <h1>{copy.title}</h1>
-  {#if periodLoading}<p role="status">{labels.loading}</p>{/if}
   {#if periodError}<ErrorBanner message={errorMessage(periodError)} onretry={mayRead() ? () => { void loadPeriod(); } : undefined} />{/if}
   {#if period}<p class="muted">{period.name || periodTypeLabel(period)} · {period.timezone}</p>{/if}
-  {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
+  {#if !canWrite() && !accountLoading}<p class="notice">{labels.readOnly}</p>{/if}
   {#if period?.status === 'cancelled'}<p class="notice">{copy.cancelled}</p>{/if}
   {#if toast}<Toast message={toast} ondismiss={() => { toast = ''; }} />{/if}
   {#if submitter.error}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
@@ -256,7 +272,7 @@
   {/if}
   {#if refreshRequired}<p class="notice">{copy.reloadRequired}</p>{/if}
   <section aria-label={copy.title} class="stack">
-    {#if loading}<p role="status">{labels.loading}</p>{/if}
+    {#if periodLoading || loading}<p role="status">{labels.loading}</p>{/if}
     {#if listError}
       {#if loaded}<p class="notice">{copy.partial}</p>{/if}
       <ErrorBanner message={errorMessage(listError)} onretry={mayRead() ? () => { void loadRules(false); } : undefined} />
