@@ -24,7 +24,7 @@
     </fieldset>
   {/if}
   {#if precision === 'date'}
-    <FormField {id} label="截止日期" required {error} hint={`使用时区：${zone}`}>
+    <FormField {id} label="截止日期" required {error}>
       {#snippet children(field)}
         <input {id} type="date" bind:value={expires} required {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid} />
       {/snippet}

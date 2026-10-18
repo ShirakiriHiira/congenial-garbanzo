@@ -178,14 +178,14 @@
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={load} />
   {:else if entity?.status === 'cancelled'}<p class="notice">该有效期已取消，不可恢复，也不能再编辑。请返回卡片详情。</p>
   {:else if zone}
-    <p class="muted">使用时区：{zone}{entity ? ` · 当前周期 ${entity.cycle}` : ''}。修改截止日期或精度会使旧周期失效。</p>
+    <p class="muted">时区：{zone}</p>
     {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
-    <Toast message={notice} />
+    <Toast message={notice} ondismiss={() => { notice = ''; }} />
     <form class="stack" onsubmit={submit} novalidate>
       <FormField id="period-type" label="有效期类型" required>
         {#snippet children(field)}<select id={field.id} bind:value={periodType} disabled={!canWrite() || submitter.busy}>{#each Object.entries(periodTypeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}
       </FormField>
-      <FormField id="period-name" label="有效期名称" hint="可选，最多 200 个字符" error={nameError}>
+      <FormField id="period-name" label="有效期名称" hint="可选" error={nameError}>
         {#snippet children(field)}<input id={field.id} bind:value={name} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
       </FormField>
       <DatePrecisionInput id="period-expires" bind:precision bind:expires bind:occurrence {zone} disabled={!canWrite() || submitter.busy} error={expiresError} />

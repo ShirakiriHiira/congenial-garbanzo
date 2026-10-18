@@ -110,7 +110,6 @@
 
 <section class="content stack" aria-labelledby="sim-form-title">
   <h1 id="sim-form-title">{id ? '编辑卡片' : '添加卡片'}</h1>
-  <p class="muted">卡片资料没有版本锁；多端同时修改时，以后提交的资料为准。</p>
   {#if loading}<p role="status">{labels.loading}</p>
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={session.auth === 'ready' ? load : undefined} />
   {:else}
@@ -123,13 +122,13 @@
         {#snippet children(field)}<select id={field.id} bind:value={cardType} disabled={!canWrite() || submitter.busy}><option value="physical_sim">{cardTypeLabels.physical_sim}</option><option value="esim">{cardTypeLabels.esim}</option></select>{/snippet}
       </FormField>
       {#each optionalFields as field (field.key)}
-        <FormField id={`sim-${field.key}`} label={field.label} error={errors[field.key]} hint={`最多 ${field.limit} 个字符`}>
+        <FormField id={`sim-${field.key}`} label={field.label} error={errors[field.key]}>
+          {#snippet action()}
+            {#if values[field.key]}<button type="button" class="text-button" aria-label={`清除${field.label}`} disabled={!canWrite() || submitter.busy} onclick={() => { values[field.key] = ''; cleared[field.key] = Boolean(id); }}>清除</button>{/if}
+          {/snippet}
           {#snippet children(input)}
-            <div class="stack">
-              {#if field.key === 'notes'}<textarea id={input.id} rows="4" bind:value={values[field.key]} oninput={() => { cleared[field.key] = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={input.invalid} aria-describedby={input.describedby}></textarea>
-              {:else}<input id={input.id} bind:value={values[field.key]} oninput={() => { cleared[field.key] = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={input.invalid} aria-describedby={input.describedby} />{/if}
-              <button type="button" class="clear" aria-label={`清除${field.label}`} disabled={!canWrite() || submitter.busy} onclick={() => { values[field.key] = ''; cleared[field.key] = Boolean(id); }}>清除</button>
-            </div>
+            {#if field.key === 'notes'}<textarea id={input.id} rows="4" bind:value={values[field.key]} oninput={() => { cleared[field.key] = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={input.invalid} aria-describedby={input.describedby}></textarea>
+            {:else}<input id={input.id} bind:value={values[field.key]} oninput={() => { cleared[field.key] = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={input.invalid} aria-describedby={input.describedby} />{/if}
           {/snippet}
         </FormField>
       {/each}
@@ -144,4 +143,3 @@
   {:else if conflict.failed}<ErrorBanner message="最新资料读取失败，提交已暂停。" onretry={() => { void conflict.retry(); }} />
   {:else if conflict.current}<p>服务端名称：{conflict.current.name}</p><p>类型：{cardTypeLabels[conflict.current.card_type]}</p><p>最后更新：{conflict.current.updated_at}</p>{/if}
 </ConfirmDialog>
-<style>.clear{justify-self:start}.muted{color:var(--text-secondary);margin:0}</style>

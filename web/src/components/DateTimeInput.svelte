@@ -15,7 +15,7 @@
   $effect(() => { input?.setCustomValidity(validation); });
 </script>
 
-<FormField {id} {label} {required} error={validation} hint={`使用时区：${zone}`}>
+<FormField {id} {label} {required} error={validation}>
   {#snippet children(field)}
     <input bind:this={input} {id} type="datetime-local" step="1" bind:value oninput={() => { occurrence = undefined; }} {required} {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid} />
   {/snippet}

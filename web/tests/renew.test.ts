@@ -91,7 +91,7 @@ describe('renewal route', () => {
   it('loads the authoritative period before history and shows the previous dates and cycle', async () => {
     const api = transport();
     render(Renew, { id: '11' });
-    expect(await screen.findByText(initialPeriod.expires_at)).toBeInTheDocument();
+    expect(await screen.findByText('2027-02-01 00:00:00')).toBeInTheDocument();
     expect(screen.getAllByText('2027-01-31').length).toBeGreaterThan(0);
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(await screen.findByText('暂无续期记录。')).toBeInTheDocument();

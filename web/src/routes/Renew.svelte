@@ -239,9 +239,8 @@
       <h2>{period.name || periodTypeLabel(period)}</h2>
       <dl class="renew-facts">
         <dt>{text.previousExpiry}</dt><dd>{formatExpiry(period)}</dd>
-        <dt>expires_at</dt><dd><time datetime={period.expires_at}>{period.expires_at}</time></dd>
-        <dt>local_expires_date</dt><dd>{period.local_expires_date ?? text.notApplicable}</dd>
-        <dt>cycle</dt><dd>{period.cycle}</dd>
+        <dt>{text.expiryInstant}</dt><dd><time datetime={period.expires_at}>{formatDateTime(period.expires_at, period.timezone)}</time></dd>
+        <dt>{text.currentCycle}</dt><dd>{period.cycle}</dd>
         <dt>{text.timezone}</dt><dd>{period.timezone}</dd>
       </dl>
       {#if periodError}<ErrorBanner message={periodError} onretry={terminal ? undefined : () => { void readPeriod(); }} />{/if}
@@ -258,11 +257,13 @@
           <p class="muted">{text.expiryHint}</p>
           <MoneyInput id="renew-amount" bind:amount bind:currency disabled={!writable} />
           <FormField id="renew-notes" label={text.notes} error={notesError} hint={text.notesHint}>
+            {#snippet action()}
+              {#if notes}<button type="button" class="text-button" aria-label={text.clearNotes} disabled={!writable} onclick={() => { notes = ''; dirty = true; }}>清除</button>{/if}
+            {/snippet}
             {#snippet children(field)}
               <textarea id={field.id} bind:value={notes} disabled={!writable} rows="4" aria-describedby={field.describedby} aria-invalid={field.invalid}></textarea>
             {/snippet}
           </FormField>
-          <div class="actions"><button type="button" disabled={!writable || !notes} onclick={() => { notes = ''; dirty = true; }}>{text.clearNotes}</button></div>
           {#if submitter.error && !fieldError && !notesError}<ErrorBanner message={submitter.error instanceof ApiError ? errorMessage(submitter.error) : text.invalidForm} />{/if}
           <button class="primary" type="submit" aria-label={text.submit} disabled={!writable}>{submitter.busy ? text.submitting : text.submit}</button>
         </form>
@@ -294,7 +295,7 @@
   {#if conflict.loading}<p role="status">{labels.loading}</p>
   {:else if conflict.failed}<p role="alert">{text.conflictReloadFailed}</p>
   {:else if conflict.current}
-    <dl class="renew-facts"><dt>cycle</dt><dd>{period?.cycle} → {conflict.current.cycle}</dd><dt>{text.currentExpiry}</dt><dd>{formatExpiry(conflict.current)}</dd><dt>expires_at</dt><dd>{conflict.current.expires_at}</dd></dl>
+    <dl class="renew-facts"><dt>{text.cycle}</dt><dd>{period?.cycle} → {conflict.current.cycle}</dd><dt>{text.currentExpiry}</dt><dd>{formatExpiry(conflict.current)}</dd><dt>{text.expiryInstant}</dt><dd>{formatDateTime(conflict.current.expires_at, conflict.current.timezone)}</dd></dl>
     {#if conflict.current.status === 'cancelled'}<p>{text.cancelled}</p>{/if}
   {/if}
 </ConfirmDialog>
