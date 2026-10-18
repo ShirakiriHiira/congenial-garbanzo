@@ -93,7 +93,7 @@
   });
 </script>
 
-<div class="stack settings">
+<div class="content stack settings">
   <h1>{labels.settings}</h1>
   {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
   {#if loadError}<ErrorBanner message={loadError} onretry={readAllowed ? () => { void loadMe(); } : undefined} />{/if}
@@ -132,5 +132,5 @@
 </ConfirmDialog>
 
 <style>
-  h1{font-size:20px;margin:0}h2{font-size:16px;margin:0}p{margin:0;overflow-wrap:anywhere}.settings__zone{font-weight:600}.settings{min-width:0}
+  h2{font-size:16px;margin:0}p{margin:0;overflow-wrap:anywhere}.settings__zone{font-weight:600}.settings{min-width:0}
 </style>

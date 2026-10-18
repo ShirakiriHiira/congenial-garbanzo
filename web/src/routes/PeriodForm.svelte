@@ -172,7 +172,7 @@
   }
 </script>
 
-<section class="stack" aria-labelledby="period-form-title">
+<section class="content stack" aria-labelledby="period-form-title">
   <h1 id="period-form-title">{mode === 'new' ? '添加有效期' : '编辑有效期'}</h1>
   {#if loading}<p role="status">{labels.loading}</p>
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={load} />
@@ -201,4 +201,4 @@
   {:else if conflict.failed}<ErrorBanner message="读取最新有效期失败，保存已暂停。" onretry={() => { void conflict.retry(); }} />
   {:else if conflict.current}<p>周期：{entity?.cycle} → {conflict.current.cycle}</p><p>服务端名称：{conflict.current.name}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{#if conflict.current.status === 'cancelled'}<p>该有效期已取消，不可恢复。取最新值后只能返回。</p>{/if}{/if}
 </ConfirmDialog>
-<style>h1{font-size:20px;margin:0}.muted{color:var(--text-secondary);margin:0}</style>
+<style>.muted{color:var(--text-secondary);margin:0}</style>

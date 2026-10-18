@@ -312,7 +312,7 @@
   }
 </script>
 
-<section class="stack" aria-labelledby="sim-detail-title">
+<section class="content stack" aria-labelledby="sim-detail-title">
   {#if simLoading && !sim}
     <AsyncState loading />
   {:else if simError && !sim}

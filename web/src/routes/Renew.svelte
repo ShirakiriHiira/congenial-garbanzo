@@ -291,5 +291,5 @@
 </ConfirmDialog>
 
 <style>
-  h1{font-size:20px;margin:0}h2{font-size:16px;margin:0}p{margin:0;overflow-wrap:anywhere}.renew-facts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:8px;margin:0}.renew-facts dt{color:var(--text-secondary)}.renew-facts dd{margin:0;overflow-wrap:anywhere}.renew-history{list-style:none;margin:0;padding:0}.renew-history li{padding:12px 0;border-bottom:1px solid var(--border)}.renew-history li:last-child{border-bottom:0}.renew-notes{white-space:pre-wrap}
+  h2{font-size:16px;margin:0}p{margin:0;overflow-wrap:anywhere}.renew-facts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:8px;margin:0}.renew-facts dt{color:var(--text-secondary)}.renew-facts dd{margin:0;overflow-wrap:anywhere}.renew-history{list-style:none;margin:0;padding:0}.renew-history li{padding:12px 0;border-bottom:1px solid var(--border)}.renew-history li:last-child{border-bottom:0}.renew-notes{white-space:pre-wrap}
 </style>

@@ -232,7 +232,7 @@
   });
 </script>
 
-<section class="section stack" aria-label={text.title}>
+<section class="content stack" aria-label={text.title}>
   <SectionHeader title={text.title}>
     <button type="button" onclick={() => load('refresh')} disabled={!readable() || loading || loadingMore || refreshing || cancelling}>{labels.refresh}</button>
   </SectionHeader>
