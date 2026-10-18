@@ -333,14 +333,7 @@
     <Toast message={notice} ondismiss={() => { notice = ''; }} />
 
     <div class="section stack">
-      <SectionHeader title="卡片资料">
-        {#if sim.status === 'active'}
-          <button type="button" onclick={() => { archiveOpen = true; }} disabled={!canWrite() || actionBusy}>归档</button>
-        {:else}
-          <button type="button" onclick={() => { restoreOpen = true; }} disabled={!canWrite() || actionBusy}>恢复</button>
-        {/if}
-        <button type="button" class="danger" onclick={() => { actionError = ''; deleteSimOpen = true; }} disabled={!canWrite() || actionBusy}>{labels.deleteCard}</button>
-      </SectionHeader>
+      <SectionHeader title="卡片资料">{#snippet children()}{/snippet}</SectionHeader>
       <dl class="profile">
         {#if sim.operator}<div><dt>运营商</dt><dd>{sim.operator}</dd></div>{/if}
         {#if sim.phone_number}<div><dt>手机号</dt><dd>{maskPhone(sim.phone_number)}</dd></div>{/if}
@@ -368,22 +361,19 @@
                 <div class="period-text">
                   <p class="period-name">{periodTypeLabel(period)}{#if period.name && period.period_type !== 'custom'}<span class="muted"> · {period.name}</span>{/if}</p>
                   <p class="muted">{formatExpiry(period)} · 周期 {period.cycle}</p>
-                  <div class="badges">
-                    <span class="status {period.status}">{periodStatusLabels[period.status]}</span>
-                    <ExpiryBadge {period} />
-                  </div>
+                  <div class="badges"><ExpiryBadge {period} /></div>
                 </div>
                 <button type="button" class="toggle" aria-expanded={Boolean(expanded[period.id])} onclick={() => toggle(period)}>{expanded[period.id] ? '收起' : '详情'}</button>
               </div>
               <div class="actions wrap">
                 {#if period.status !== 'cancelled'}
-                  <button type="button" onclick={() => navigate(`/app/periods/${period.id}/edit`)} disabled={!canWrite() || actionBusy}>编辑有效期</button>
+                  <button type="button" class="primary" onclick={() => navigate(`/app/periods/${period.id}/renew`)} disabled={!canWrite() || actionBusy}>续期</button>
                   <button type="button" onclick={() => navigate(`/app/periods/${period.id}/rules`)} disabled={!canWrite() || actionBusy}>提醒规则</button>
-                  <button type="button" onclick={() => navigate(`/app/periods/${period.id}/renew`)} disabled={!canWrite() || actionBusy}>续期</button>
+                  <button type="button" onclick={() => navigate(`/app/periods/${period.id}/edit`)} disabled={!canWrite() || actionBusy}>编辑有效期</button>
                 {:else}
                   <p class="muted">已取消的有效期不可恢复，也不能再编辑或续期。</p>
+                  <button type="button" class="danger" onclick={() => askDeletePeriod(period)} disabled={!canWrite() || actionBusy || deleteConflict.changed || deleteConflict.open}>{labels.deletePeriod}</button>
                 {/if}
-                <button type="button" class="danger" onclick={() => askDeletePeriod(period)} disabled={!canWrite() || actionBusy || deleteConflict.changed || deleteConflict.open}>{labels.deletePeriod}</button>
               </div>
               {#if expanded[period.id]}
                 <div class="section stack">
@@ -392,7 +382,7 @@
                   {:else if sections[period.id]?.rules?.data.length}
                     <ul class="plain">
                       {#each sections[period.id]!.rules!.data as rule (rule.id)}
-                        <li>{rule.days_before} 天前 {rule.reminder_time} · {rule.enabled ? '启用' : '已禁用'} · 版本 {rule.revision}</li>
+                        <li>{rule.days_before} 天前 {rule.reminder_time} · {rule.enabled ? '启用' : '已禁用'}</li>
                       {/each}
                     </ul>
                     {#if sections[period.id]?.rules?.next_cursor}
@@ -417,6 +407,9 @@
                     {/if}
                   {:else if !sections[period.id]?.renewalsError}<p class="muted">暂无续期记录。</p>{/if}
                   {#if sections[period.id]?.renewalsError}<ErrorBanner message={errorMessage(sections[period.id]?.renewalsError)} onretry={() => loadRenewals(period.id, Boolean(sections[period.id]?.renewals))} />{/if}
+                  {#if period.status !== 'cancelled'}
+                    <div class="actions"><button type="button" class="danger" onclick={() => askDeletePeriod(period)} disabled={!canWrite() || actionBusy || deleteConflict.changed || deleteConflict.open}>{labels.deletePeriod}</button></div>
+                  {/if}
                 </div>
               {/if}
             </li>
@@ -427,6 +420,18 @@
       {#if nextCursor !== null}
         <button type="button" onclick={loadMore} disabled={loadingMore}>{loadingMore ? '正在加载…' : '加载更多有效期'}</button>
       {/if}
+    </div>
+
+    <div class="section stack">
+      <SectionHeader title="管理卡片">{#snippet children()}{/snippet}</SectionHeader>
+      <div class="actions">
+        {#if sim.status === 'active'}
+          <button type="button" onclick={() => { archiveOpen = true; }} disabled={!canWrite() || actionBusy}>归档</button>
+        {:else}
+          <button type="button" onclick={() => { restoreOpen = true; }} disabled={!canWrite() || actionBusy}>恢复</button>
+        {/if}
+        <button type="button" class="danger" onclick={() => { actionError = ''; deleteSimOpen = true; }} disabled={!canWrite() || actionBusy}>{labels.deleteCard}</button>
+      </div>
     </div>
   {:else}
     <ErrorBanner message="卡片不存在或已不可访问。" onretry={refresh} />
@@ -447,7 +452,7 @@
 <style>
   .heading{display:flex;align-items:center;gap:10px;min-width:0}
   .heading-text{flex:1;min-width:0;overflow-wrap:anywhere}
-  h1{font-size:18px;margin:0;line-height:1.4}
+  h1{font-size:18px;line-height:1.4}
   .muted{color:var(--text-secondary);margin:0;overflow-wrap:anywhere}
   .profile{display:grid;gap:6px;margin:0}
   .profile div{display:flex;gap:10px;min-width:0}
@@ -460,9 +465,6 @@
   .period-text{flex:1;min-width:0;display:grid;gap:4px}
   .period-name{margin:0;font-weight:600;overflow-wrap:anywhere}
   .badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-  .status{border-radius:999px;padding:3px 7px;font-size:10px;font-weight:600;background:var(--border);color:var(--text-secondary)}
-  .status.expired{background:var(--badge-danger-bg);color:var(--badge-danger-fg)}
-  .status.active{background:var(--badge-ok-bg);color:var(--badge-ok-fg)}
   h3{font-size:13px;margin:0}
   .wrap{flex-wrap:wrap}
   .danger{color:var(--badge-danger-fg)}

@@ -173,12 +173,13 @@ describe('card and period consumers', () => {
         return failure(409);
       }
       if (path.endsWith('/periods/5')) return Response.json({ data: latest });
+      if (path.includes('/rules') || path.includes('/renewals')) return Response.json({ data: [], next_cursor: null });
       return path.includes('/periods') ? Response.json({ data: [period], next_cursor: null }) : Response.json({ data: sim });
     });
     vi.stubGlobal('fetch', fetcher);
     render(SimDetail, { props: { id: '1' } });
-    await screen.findByRole('button', { name: '删除有效期' });
-    await fireEvent.click(screen.getByRole('button', { name: '删除有效期' }));
+    await fireEvent.click(await screen.findByRole('button', { name: '详情' }));
+    await fireEvent.click(await screen.findByRole('button', { name: '删除有效期' }));
     const confirm = await screen.findByRole('dialog', { name: '永久删除这个有效期？' });
     await fireEvent.click(within(confirm).getByRole('button', { name: '确认永久删除有效期' }));
     const conflict = await screen.findByRole('dialog', { name: '有效期周期已变化' });

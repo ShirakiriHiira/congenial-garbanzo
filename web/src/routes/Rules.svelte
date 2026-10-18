@@ -280,7 +280,6 @@
     {#each rules as rule (rule.id)}
       <article class:rules-page__disabled={!rule.enabled} class="rules-page__rule" aria-label={copy.summary(rule.days_before, rule.reminder_time)}>
         <div class="rules-page__summary"><h2>{copy.detail(rule.days_before, rule.reminder_time)}</h2><span class="rules-page__status">{rule.enabled ? copy.enabledState : copy.disabledState}</span></div>
-        <p class="muted">{copy.revision} {rule.revision}</p>
         {#if period?.status !== 'cancelled'}
           <div class="actions">
             <button type="button" disabled={blocked} onclick={() => beginEdit(rule)}>{copy.edit}</button>

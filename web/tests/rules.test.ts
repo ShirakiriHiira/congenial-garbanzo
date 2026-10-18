@@ -129,9 +129,11 @@ describe('rules route consumer behavior', () => {
     const dialog = await screen.findByRole('dialog', { name: '软删除提醒规则？' });
     await fireEvent.click(within(dialog).getByRole('button', { name: '软删除' }));
     await waitFor(() => expect(api.disableRule).toHaveBeenCalledWith('20', 4));
-    expect(await within(row()).findByText('版本 11')).toBeInTheDocument();
-    expect(within(row()).getByText('已禁用')).toBeInTheDocument();
+    expect(await within(row()).findByText('已禁用')).toBeInTheDocument();
     expect(api.rules).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(within(row()).getByRole('button', { name: '启用' })).toBeEnabled());
+    await fireEvent.click(within(row()).getByRole('button', { name: '启用' }));
+    await waitFor(() => expect(api.updateRule).toHaveBeenLastCalledWith('20', { expected_revision: 11, enabled: true }));
   });
 
   it('keeps an edit draft on 409 and requires a separate submit against the reloaded revision', async () => {
