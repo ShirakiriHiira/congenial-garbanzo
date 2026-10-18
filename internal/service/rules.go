@@ -160,3 +160,18 @@ func (s *Service) DisableRule(ctx context.Context, uid, id, expected int64) erro
 	_, e = s.UpdateRule(ctx, uid, id, RulePatch{ExpectedRevision: expected, Enabled: &enabled})
 	return e
 }
+
+// DeleteRule permanently removes a rule and its reminder jobs.
+func (s *Service) DeleteRule(ctx context.Context, uid, id, expected int64) error {
+	return s.transaction(ctx, uid, func(tx *sql.Tx) error {
+		v, e := getRule(ctx, tx, uid, id)
+		if e != nil {
+			return e
+		}
+		if v.Revision != expected {
+			return ErrConflict
+		}
+		_, e = tx.ExecContext(ctx, "DELETE FROM reminder_rules WHERE id=? AND revision=?", id, expected)
+		return e
+	})
+}

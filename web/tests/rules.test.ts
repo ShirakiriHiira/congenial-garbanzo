@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.spyOn(api, 'rule').mockResolvedValue({ ...rule });
   vi.spyOn(api, 'createRule').mockResolvedValue({ ...rule, id: '21', days_before: 3, revision: 1 });
   vi.spyOn(api, 'updateRule').mockResolvedValue({ ...rule, revision: 5 });
-  vi.spyOn(api, 'disableRule').mockResolvedValue(undefined);
+  vi.spyOn(api, 'deleteRule').mockResolvedValue(undefined);
   vi.spyOn(api, 'me').mockResolvedValue({ ...user });
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: vi.fn(function (this: HTMLDialogElement) { this.setAttribute('open', ''); }) });
@@ -117,23 +117,22 @@ describe('rules route consumer behavior', () => {
     await waitFor(() => expect(within(row()).getByRole('button', { name: '启用' })).toBeEnabled());
     await fireEvent.click(within(row()).getByRole('button', { name: '启用' }));
     await waitFor(() => expect(api.updateRule).toHaveBeenLastCalledWith('20', { expected_revision: 9, enabled: true }));
-    expect(api.disableRule).not.toHaveBeenCalled();
+    expect(api.deleteRule).not.toHaveBeenCalled();
   });
 
-  it('soft deletes with expected_revision and reloads the authoritative disabled row', async () => {
+  it('permanently deletes a disabled rule with expected_revision and reloads the list', async () => {
     vi.mocked(api.rules)
-      .mockResolvedValueOnce({ data: [{ ...rule }], next_cursor: null })
-      .mockResolvedValueOnce({ data: [{ ...rule, enabled: false, revision: 11 }], next_cursor: null });
+      .mockResolvedValueOnce({ data: [{ ...rule, enabled: false }], next_cursor: null })
+      .mockResolvedValueOnce({ data: [], next_cursor: null });
     await ready();
-    await fireEvent.click(within(row()).getByRole('button', { name: '软删除' }));
-    const dialog = await screen.findByRole('dialog', { name: '软删除提醒规则？' });
-    await fireEvent.click(within(dialog).getByRole('button', { name: '软删除' }));
-    await waitFor(() => expect(api.disableRule).toHaveBeenCalledWith('20', 4));
-    expect(await within(row()).findByText('已禁用')).toBeInTheDocument();
-    expect(api.rules).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(within(row()).getByRole('button', { name: '启用' })).toBeEnabled());
-    await fireEvent.click(within(row()).getByRole('button', { name: '启用' }));
-    await waitFor(() => expect(api.updateRule).toHaveBeenLastCalledWith('20', { expected_revision: 11, enabled: true }));
+    await fireEvent.click(within(row()).getByRole('button', { name: '删除' }));
+    const dialog = await screen.findByRole('dialog', { name: '删除提醒规则？' });
+    await fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
+    await waitFor(() => expect(api.deleteRule).toHaveBeenCalledWith('20', 4));
+    expect(await screen.findByText('规则已删除。')).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: '提前 7 天 09:00' })).not.toBeInTheDocument();
+    expect(screen.getByText('还没有提醒规则。')).toBeInTheDocument();
+    expect(api.updateRule).not.toHaveBeenCalled();
   });
 
   it('keeps an edit draft on 409 and requires a separate submit against the reloaded revision', async () => {

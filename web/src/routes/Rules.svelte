@@ -233,12 +233,12 @@
     deleteTarget = rule;
     deleteOpen = true;
   }
-  async function softDelete() {
+  async function removeRule() {
     if (!deleteTarget || !canWrite()) return;
     const rule = deleteTarget;
     const currentGeneration = generation;
     await mutate(async () => {
-      await api.disableRule(rule.id, rule.revision);
+      await api.deleteRule(rule.id, rule.revision);
       if (currentGeneration !== generation) return;
       deleteOpen = false;
       refreshRequired = true;
@@ -284,7 +284,7 @@
           <div class="actions">
             <button type="button" disabled={blocked} onclick={() => beginEdit(rule)}>{copy.edit}</button>
             <button type="button" disabled={blocked} onclick={() => { void toggle(rule); }}>{rule.enabled ? copy.disable : copy.enable}</button>
-            <button type="button" disabled={blocked || !rule.enabled} onclick={() => askDelete(rule)}>{copy.remove}</button>
+            <button type="button" class="danger" disabled={blocked} onclick={() => askDelete(rule)}>{copy.remove}</button>
           </div>
         {/if}
       </article>
@@ -308,7 +308,7 @@
   {/if}
 </div>
 
-<ConfirmDialog bind:open={deleteOpen} title={copy.deleteTitle} message={copy.deleteMessage} confirmLabel={copy.remove} busy={submitter.busy} onconfirm={() => { void softDelete(); }} oncancel={() => { deleteTarget = null; }} />
+<ConfirmDialog bind:open={deleteOpen} title={copy.deleteTitle} message={copy.deleteMessage} confirmLabel={copy.remove} busy={submitter.busy} onconfirm={() => { void removeRule(); }} oncancel={() => { deleteTarget = null; }} />
 <ConfirmDialog bind:open={conflict.open} title={copy.conflictTitle} message={copy.conflictMessage} confirmLabel={conflict.failed ? labels.retry : conflict.current?.period.status === 'cancelled' ? labels.back : copy.conflictContinue} busy={conflict.loading} onconfirm={acceptConflict} oncancel={() => conflict.dismiss()}>
   {#if conflict.loading}<p role="status">{labels.loading}</p>{/if}
   {#if conflict.failed}<p role="alert">{copy.conflictFailed}</p>{/if}

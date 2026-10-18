@@ -7,6 +7,37 @@ import (
 	"time"
 )
 
+func TestDeleteRuleRemovesJobsAndFreesSlot(t *testing.T) {
+	s, st, a, b := setup(t)
+	ctx := context.Background()
+	_, p, r := fixture(t, s, a)
+	if _, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,?,?,1,?,'pending',1,1,1)`, p.ID, r.ID, p.Cycle, r.Revision, p.ExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteRule(ctx, b.ID, r.ID, r.Revision); err != ErrNotFound {
+		t.Fatalf("rule owner: %v", err)
+	}
+	if err := s.DeleteRule(ctx, a.ID, r.ID, r.Revision+1); err != ErrConflict {
+		t.Fatalf("stale revision: %v", err)
+	}
+	if err := s.DeleteRule(ctx, a.ID, r.ID, r.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetRule(ctx, a.ID, r.ID); err != ErrNotFound {
+		t.Fatalf("rule remains: %v", err)
+	}
+	var jobs int
+	if err := st.DB.QueryRowContext(ctx, "SELECT count(*) FROM reminder_jobs WHERE reminder_rule_id=?", r.ID).Scan(&jobs); err != nil || jobs != 0 {
+		t.Fatalf("jobs remain: count=%d err=%v", jobs, err)
+	}
+	if _, err := s.GetPeriod(ctx, a.ID, p.ID); err != nil {
+		t.Fatalf("period removed with rule: %v", err)
+	}
+	if _, err := s.CreateRule(ctx, a.ID, p.ID, RuleInput{DaysBefore: r.DaysBefore, ReminderTime: r.ReminderTime}); err != nil {
+		t.Fatalf("deleted rule still occupies its slot: %v", err)
+	}
+}
+
 func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 	for _, card := range []bool{false, true} {
 		name := "period"

@@ -101,6 +101,7 @@ func (h *Handler) apiMux() *http.ServeMux {
 	add("GET /rules/{id}", h.getRule)
 	add("PATCH /rules/{id}", h.patchRule)
 	add("DELETE /rules/{id}", h.disableRule)
+	add("POST /rules/{id}/delete", h.deleteRule)
 
 	add("GET /reminders", h.listReminders)
 	add("GET /reminders/{id}", h.getReminder)

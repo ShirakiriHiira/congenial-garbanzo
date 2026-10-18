@@ -274,6 +274,17 @@ func (h *Handler) disableRule(w http.ResponseWriter, r *http.Request) {
 	}
 	noContent(w, h.service.DisableRule(r.Context(), currentUser(r).ID, id, version))
 }
+func (h *Handler) deleteRule(w http.ResponseWriter, r *http.Request) {
+	id, ok := resourceID(w, r)
+	if !ok {
+		return
+	}
+	version, ok := expectedVersion(w, r, "expected_revision")
+	if !ok {
+		return
+	}
+	noContent(w, h.service.DeleteRule(r.Context(), currentUser(r).ID, id, version))
+}
 func (h *Handler) listRenewals(w http.ResponseWriter, r *http.Request) {
 	id, ok := resourceID(w, r)
 	if !ok {

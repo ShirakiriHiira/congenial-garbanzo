@@ -139,8 +139,9 @@ export const api = {
   updateRule: (id: ID, body: RuleUpdateInput, signal?: AbortSignal): Promise<Rule> =>
     writeEntity(entityPath("/rules", id), "PATCH", body, signal, decodeRule),
 
-  disableRule: (id: ID, revision: number, signal?: AbortSignal): Promise<void> =>
-    deleteEntity(`${entityPath("/rules", id)}?expected_revision=${revision}`, signal),
+  deleteRule: async (id: ID, revision: number, signal?: AbortSignal): Promise<void> => {
+    await request(`${entityPath("/rules", id)}/delete?expected_revision=${revision}`, { method: "POST", signal }, noContent);
+  },
 
   renewals: (periodID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Renewal>> =>
     getPage(`${entityPath("/periods", periodID)}/renewals${pageQuery(after)}`, after, signal, decodeRenewals),

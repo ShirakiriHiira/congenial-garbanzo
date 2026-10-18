@@ -222,6 +222,7 @@ date_precision=date&expires_at=2027-03-31
 | POST | `/api/v1/periods/{id}/delete?expected_cycle=N` | 永久删除有效期及关联数据；无请求体，204；周期冲突 409 |
 | GET, POST | `/api/v1/periods/{id}/rules` | 列表；创建规则 `days_before,reminder_time,enabled`（enabled 默认 true） |
 | GET, PATCH, DELETE | `/api/v1/rules/{id}` | 详情；PATCH 带 `expected_revision`；DELETE query 带 `expected_revision`，软禁用 |
+| POST | `/api/v1/rules/{id}/delete?expected_revision=N` | 永久删除规则及其提醒任务；无请求体，204；版本冲突 409 |
 | GET, POST | `/api/v1/periods/{id}/renewals` | 历史；确认续期 |
 | GET | `/api/v1/reminders` | 按可选 `status` 过滤任务 |
 | GET | `/api/v1/reminders/{id}` | 任务详情 |
