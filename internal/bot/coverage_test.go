@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -8,9 +9,9 @@ import (
 func TestPeriodAndRuleCallbackSurfaces(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/service add name=Host&category_id="+id(serviceCategoryID(t, f, "vps")))
-	f.send(userA, "/service period new 1 period_type=custom&name=月付&date_precision=date&expires_at=2027-06-30")
-	f.send(userA, "/edit rule new 1 days_before=3&reminder_time=09:00")
+	f.createService("Host", "vps")
+	f.createPeriod(1, "custom", "月付", "date", "2027-06-30")
+	f.createRule(1, 3, "09:00")
 
 	f.callback(userA, cb("period", "view", "1"), nil)
 	if got := serviceLastAnswer(t, f); got != "详情已发送" {
@@ -73,9 +74,14 @@ func TestPeriodAndRuleCallbackSurfaces(t *testing.T) {
 func TestCancelledPeriodCallbacks(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/delete period 1 1")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	{
+		u := f.serviceUser(userA)
+		if err := f.svc.CancelPeriod(context.Background(), u.ID, 1, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	f.callback(userA, cb("period", "renew", "1"), nil)
 	if got := serviceLastAnswer(t, f); !strings.Contains(got, "已取消") {
@@ -100,7 +106,7 @@ func TestCancelledPeriodCallbacks(t *testing.T) {
 func TestServiceEditWizardUpdatesSIMField(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
+	f.createSIM("卡")
 	f.send(userA, "/service edit 1")
 	if text := f.stub.lastText(); !strings.Contains(text, "请选择要修改的字段") {
 		t.Fatalf("edit field prompt %q", text)
@@ -140,9 +146,9 @@ func TestServiceEditWizardUpdatesSIMField(t *testing.T) {
 func TestButtonStartedFlowsHonorReplacementIntent(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createRule(1, 1, "09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Unix(), f.clock.t.Unix())
 	_ = f.count("SELECT count(*) FROM reminder_jobs") // the job is only here to make the v1 button legal
 
@@ -176,8 +182,8 @@ func TestButtonStartedFlowsHonorReplacementIntent(t *testing.T) {
 func TestRenewPreviewCancelWritesNothing(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
 	f.send(userA, "/renew 1")
 	f.callback(userA, choiceCallback("precision", "date"), nil)
 	f.send(userA, "2027-03-01")
@@ -218,7 +224,7 @@ func TestDialogRejectsAnotherChat(t *testing.T) {
 func TestServiceEditCategoryStaysWithinKind(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/service add name=Host&category_id="+id(serviceCategoryID(t, f, "vps")))
+	f.createService("Host", "vps")
 	domainCategory := serviceCategoryID(t, f, "domain")
 	f.send(userA, "/service edit 1")
 	f.callback(userA, choiceCallback("field", "category_id"), nil)
@@ -242,8 +248,8 @@ func TestServiceEditCategoryStaysWithinKind(t *testing.T) {
 func TestServiceDetailShowsPeriodActions(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/service add name=Host&category_id="+id(serviceCategoryID(t, f, "vps")))
-	f.send(userA, "/service period new 1 period_type=custom&name=月付&date_precision=date&expires_at=2027-06-30")
+	f.createService("Host", "vps")
+	f.createPeriod(1, "custom", "月付", "date", "2027-06-30")
 	f.send(userA, "/service view 1")
 	sends := f.stub.callsOf("sendMessage")
 	keyboard := sends[len(sends)-1].form.Get("reply_markup")
@@ -257,8 +263,8 @@ func TestServiceDetailShowsPeriodActions(t *testing.T) {
 func TestCallbacksNeverCarrySensitiveDraftValues(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=私密项目&date_precision=date&expires_at=2027-01-31")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "私密项目", "date", "2027-01-31")
 	f.send(userA, "/service edit 1")
 	f.callback(userA, cb("dialog", "set", "field", "phone"), nil)
 	f.send(userA, "+886900011122")

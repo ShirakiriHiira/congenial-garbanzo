@@ -47,9 +47,9 @@ API 位于 `/api/v1`，使用 Telegram Mini App `initData` 鉴权、字符串资
 
 兼容 API 仍仅限 SIM，保留旧路由、`operator` 等字段、响应结构、归档/删除及 overview 语义。旧 SIM 有效期路由及 Bot 创建命令在创建前必须验证 SIM 身份。共享 period/rule/renewal/reminder/callback 使用稳定旧 ID，并采用通用所有权关联。
 
-Bot 保留现有 SIM 命令与回调，并增加通用 `/service` 命令组管理服务、类别、有效期与条款。旧回调 wire 格式不变；回调校验所有权及当前 period cycle。续期必须显式指定新到期时间。详细语法仅见 README。
+Bot 只保留按钮与分步向导：`/service` 管理服务、有效期、条款与规则，`/renew` 走“输入—预览—确认”，`/reminders`、`/settings`、`/cancel` 提供直接操作。不再接受 query 字符串或旧 SIM 命令；所有写入都调用同一 `internal/service` 方法。详细语法仅见 README。
 
-Bot 交互层（`internal/bot`）只做传输校验、渲染与流程编排，所有写入仍调用 `internal/service` 的现有方法。`bot_dialogs` 每个用户最多一行，保存动作、固定步骤名、上限 16 KiB 的 JSON 草案、可选目标 ID 与版本（service/period/rule 外键、cycle、terms revision、rule revision）及 15 分钟 TTL；动作与步骤由代码白名单固定，不接受用户提交的名称。草案写入失败或过期后不写业务数据；业务失败保留草案，成功提交在同一事务内删除。读取命令不得清除草案；启动其他写流程前必须先经用户确认替换。权限与对象状态在每次消息、回调与提交事务内重新校验，按钮 ID 视为不可信输入；`v2:` 回调只携带动作与十进制 ID，不携带草案或敏感字段。旧 `v1:view`/`v1:renew` 及高级 query 命令继续可用，并复用同一 service 方法与幂等/版本检查。
+Bot 交互层（`internal/bot`）只做传输校验、渲染与流程编排，所有写入仍调用 `internal/service` 的现有方法。`bot_dialogs` 每个用户最多一行，保存动作、固定步骤名、上限 16 KiB 的 JSON 草案、可选目标 ID 与版本（service/period/rule 外键、cycle、terms revision、rule revision）及 15 分钟 TTL；动作与步骤由代码白名单固定，不接受用户提交的名称。草案写入失败或过期后不写业务数据；业务失败保留草案，成功提交在同一事务内删除。读取命令不得清除草案；启动其他写流程前必须先经用户确认替换。权限与对象状态在每次消息、回调与提交事务内重新校验，按钮 ID 视为不可信输入；`v2:` 回调只携带动作与十进制 ID，不携带草案或敏感字段。回调只使用 `v2:` 动作与十进制 ID；每次回调重新校验私聊、白名单、所有权与对象状态。
 
 ## 安全与隐私
 
@@ -74,7 +74,7 @@ Bot 交互层（`internal/bot`）只做传输校验、渲染与流程编排，�
 ## 后端验收
 
 - 迁移测试覆盖空库/v1/v2、重复迁移、失败回滚、外键与 integrity 检查、SIM 字段完整映射、关联记录和 sequence 高水位保留；不得修改 001/002 迁移来绕过测试。
-- 旧 SIM API/Bot 行为持续通过；旧列表在分页前过滤非 SIM。共享所有权 JOIN 不依赖 `sim_details`。
+- 旧 SIM 专用 Bot 命令已移除；共享所有权 JOIN 不依赖 `sim_details`。
 - 混合 SIM/通用 API 覆盖类别、跨用户、类别归属与 kind 校验、分页前筛选、全量统计、字面搜索、严格嵌套 JSON 与 terms 版本冲突。
 - terms-only 修改前后 period cycle 与 reminder job 状态、attempts、token、cycle 不变；续期重放与回调 cycle fencing 保留既有行为。
 - Bot 测试覆盖通用服务创建、独立有效期/规则、服务名称提醒、回调重放、持久化续期对话及归档/删除生命周期，同时保留旧 SIM 流程。

@@ -86,18 +86,17 @@ SQLite 数据目录权限 0700、文件权限 0600；启用 WAL、外键、5 秒
 
 先在私聊发送 `/start` 绑定真实私聊地址。API 登录不能替代此步骤；无私聊地址的提醒会以 `no_private_chat` 永久失败。仅白名单用户可用。支持 `/cmd@当前Bot用户名`，发给其他 Bot 的命令忽略。
 
-命令查询串使用 URL 编码：空格 `+`、字面加号 `%2B`、& 为 `%26`；重复/未知键、缺参数、非法转义拒绝，不使用 shell 引号语法。
+所有操作均通过按钮与持久化分步向导完成，不接受 query 字符串：
 
-### 日常入口（按钮与分步流程）
-
-| 命令 | 格式与行为 |
+| 命令 | 行为 |
 | --- | --- |
-| `/service` | 打开服务菜单：服务列表 / 添加服务 / 提醒任务 / 设置 |
+| `/start`, `/help` | 入口说明与当前时区 |
+| `/service` | 服务菜单：服务列表 / 添加服务 / 提醒任务 / 设置 |
 | `/service list` | 活跃服务分页列表；每条提供查看、编辑、归档按钮，翻页用按钮 |
-| `/service add` | 分步创建：类别按钮 → 名称 → 服务商/标识/管理链接/备注（可跳过）→ SIM 类别再问卡类型/号码/地区/ICCID → 预览 → 确认 |
-| `/service view <id>` | 服务详情：资料、有效期分页，以及编辑、归档/恢复、添加有效期按钮 |
-| `/service edit <id>` | 分步编辑单个字段；显式空白表示清空（名称与卡类型除外） |
-| `/service archive <id>` | 先显示归档影响与确认按钮；确认后才归档，之后可从详情恢复 |
+| `/service add` | 分步创建：类别按钮 → 名称 →（SIM：卡类型/运营商/号码/地区/ICCID）→（generic：服务商/公开标识/管理链接/备注）→ 预览 → 确认 |
+| `/service view <id>` | 服务详情：资料、有效期分页，以及查看、续期、编辑条款、规则、历史、编辑服务、归档/恢复、添加有效期按钮 |
+| `/service edit <id>` | 分步编辑单个字段；空白表示清空（名称与卡类型除外），类别只能在同类 kind 内切换 |
+| `/service archive <id>` | 显示归档影响与确认按钮；确认后归档，之后可在详情恢复 |
 | `/service period add <service_id>` | 分步创建有效期：SIM 四种类型 / generic 仅 custom → 名称（可跳过）→ date 或 datetime → 截止 → 开始时间（可跳过）→ 预览 |
 | `/service terms <period_id>` | 分步替换条款：模式按钮 → recurring 数量/单位 → 金额与币种（可跳过）→ 预览 |
 | `/service rule add <period_id>` | 分步创建提醒规则：提前天数 → HH:MM → 启用/禁用 → 预览 |
@@ -106,49 +105,16 @@ SQLite 数据目录权限 0700、文件权限 0600；启用 WAL、外键、5 秒
 | `/settings` | 当前 IANA 时区与私聊绑定；可进入修改时区 |
 | `/cancel` | 取消当前未完成流程；不写入被取消草案中的修改 |
 
-读取类命令（`/list`、`/view`、`/service list`、`/service view`、`/service categories`、`/reminders`、`/settings`、`/help`）不会清除未完成流程。发起另一个写流程时，Bot 会给出“继续当前 / 取消并开始”按钮：只有点击“取消并开始”才丢弃草案。字段校验失败保留当前步骤与已填内容；每个可编辑步骤提供“上一步 / 跳过（仅可选字段）/ 取消”，最终提交前显示摘要与“确认 / 返回修改”。
+读取类命令（`/service list`、`/service view`、`/reminders`、`/settings`、`/help`）不会清除未完成流程。发起另一个写流程时，Bot 会给出“继续当前 / 取消并开始”按钮：只有点击“取消并开始”才丢弃草案。字段校验失败保留当前步骤与已填内容；每个可编辑步骤提供“上一步 / 跳过（仅可选字段）/ 取消”，最终提交前显示摘要与“确认 / 返回修改”。
 
-### 高级命令（立即提交，保持兼容）
-
-| 命令 | 格式与行为 |
-| --- | --- |
-| `/start`, `/help` | 日常入口与高级命令说明、当前时区 |
-| `/add` | `/add name=旅行卡&card_type=esim`；旧 SIM 创建，类型 `physical_sim`/`esim`，可选 `operator,phone_number,country_or_region,iccid,notes` |
-| `/list` | `/list [after_id]`；旧 SIM 列表含归档语义，每页 10 条 |
-| `/view` | `/view sim <id>`、`/view period <id>`；支持 periods/rules/renewals 分页 |
-| `/edit sim` | `/edit sim <id> <query>`；`status=active` 恢复归档 |
-| `/edit period` | `/edit period new <sim_id> <query>`（旧 SIM 专用）；`/edit period <id> expected_cycle=N&<query>` |
-| `/edit rule` | `/edit rule new <period_id> days_before=1&reminder_time=09:00`；编辑需 `expected_revision` |
-| `/edit timezone` | `/edit timezone Asia/Taipei` |
-| `/delete sim` | `/delete sim <id>` 归档；`/delete period <id> <expected_cycle>` 取消 |
-| `/renew` | `/renew <period_id> expected_cycle=1&date_precision=date&expires_at=2027-03-31`；可选显式金额/币种/备注 |
-| `/cancel job` | `/cancel job <id>` 取消任务 |
-| `/cancel rule` | `/cancel rule <id> <expected_revision>` 禁用规则 |
-| `/service add` | `/service add <query>` 立即创建通用服务；SIM 专属字段使用扁平键 |
-| `/service list` | `/service list [after_id]` 文本分页列表 |
-| `/service view` | `/service view <id>` 文本详情 |
-| `/service edit` | `/service edit <id> <query>` 立即修改；`status=active` 可恢复 |
-| `/service categories` | `/service categories [after_id]` |
-| `/service category` | `/service category name=<名称>` 创建自定义类别 |
-| `/service category-edit` | `/service category-edit <id> name=<名称>` 改名本人类别 |
-| `/service period new` | `/service period new <service_id> <有效期query>` 立即创建 |
-| `/service terms` | `/service terms <period_id> <query>` 立即整体替换条款，必须带 cycle 与 terms revision |
-| `/service rule add <period_id>` | 交互入口；带 query 的规则编辑仍用 `/edit rule` |
-
-命令查询串使用 URL 编码：空格 `+`、字面加号 `%2B`、& 为 `%26`；重复/未知键、缺参数、非法转义拒绝，不使用 shell 引号语法。高级 query 会立即写入，不经过预览。
-
-通用服务键：`name,category_id,provider,identifier,management_url,notes`。SIM 额外键：`card_type,phone_number,country_or_region,iccid`。条款 query 必须有 `expected_cycle`、`expected_terms_revision`、`mode`；recurring 必须有数量/单位，amount/currency 必须成对。条款整体替换语义：`mode=custom` 且不带 amount/currency 即重置为无费用条款。
-
-### 对话、按钮与兼容约束
+### 对话、按钮与数据约束
 
 - 每个用户最多一个未完成流程，持久化在 `bot_dialogs`，15 分钟 TTL，重启后仍可继续；重复点击同一目标不会延长 TTL。切换目标或动作必须先确认，`/cancel` 可随时丢弃。
 - 流程动作与步骤由代码固定（`renew`、`service_add`、`service_edit`、`period_add`、`terms_edit`、`rule_add`、`rule_edit`、`timezone`）；用户不能提交任意动作名。草案仅存数据库，不写日志、回调或错误输出，上限 16 KiB。
 - 按钮使用 `v2:` 前缀，payload 只含动作与十进制 ID。每次回调都重新校验私聊、发送者、白名单、内部用户与资源所有权，再读取当前对象；过期、已归档、已取消或版本不匹配时提示状态已变化且不写入。重复点击只读按钮返回最新详情；重复点击写入按钮依赖业务幂等或当前状态判定。
-- `v1:view:<jobID>` 与 `v1:renew:<jobID>` wire 格式保持不变。提醒“已续期”按钮现在打开同一分步续期向导，字段输入后先预览再确认。
 - 续期确认在同一事务内使用启动对话时的周期，写入快照、增加 cycle、取消旧任务并删除对话；Mini App 或其他请求已推进 cycle 时拒绝写入并保留草案。相同周期同参数重放返回既有历史。
 - 创建有效期不会自动创建提醒规则。SIM `period_type` 为 `number_validity`、`plan_validity`、`data_package_validity`、`custom`；非 SIM 只能 `custom`。费用为非负整数最小货币单位（允许 0），与大写三字母币种同时提供；不换算、不代表付款。
 - 修改时区时 date 精度按新时区重算当地日历日结束，datetime 绝对时刻不变；相关有效期推进 cycle 并重新排程。归档服务会保留有效期、续期历史与已发送记录，停止未完成提醒任务。
-- 旧 `/add`、`/list`、`/view sim`、`/edit sim`、`/delete sim` 继续保持 SIM-only 语义；通用 ID 不能经旧入口读写。
 
 ## HTTP API
 

@@ -123,8 +123,8 @@ func TestServiceAddWizardKeepsDraftOnInvalidInput(t *testing.T) {
 func TestPeriodAddWizardRespectsCategoryKind(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/service add name=Host&category_id="+id(serviceCategoryID(t, f, "vps")))
-	f.send(userA, "/add name=卡&card_type=esim")
+	f.createService("Host", "vps")
+	f.createSIM("卡")
 
 	genericID := serviceLookupInt(t, f, "SELECT id FROM service_items WHERE name='Host'")
 	simID := serviceLookupInt(t, f, "SELECT id FROM service_items WHERE name='卡'")
@@ -185,9 +185,9 @@ func TestPeriodAddWizardRespectsCategoryKind(t *testing.T) {
 func TestTermsWizardOnlyChangesTerms(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createRule(1, 1, "09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,attempt_token,created_at,updated_at) VALUES(1,1,1,1,?,?,'pending',2,?,'lease',1,1)`,
 		f.clock.t.Add(24*time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix(), f.clock.t.Add(24*time.Hour).Unix())
 	jobBefore := serviceLookupString(t, f, "SELECT status||':'||attempts||':'||attempt_token FROM reminder_jobs WHERE id=1")
@@ -242,8 +242,8 @@ func TestTermsWizardOnlyChangesTerms(t *testing.T) {
 func TestRuleWizardAddEditDisableAndIdempotence(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-12-31")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-12-31")
 
 	f.send(userA, "/service rule add 1")
 	f.send(userA, "7")
@@ -292,9 +292,9 @@ func TestRuleWizardAddEditDisableAndIdempotence(t *testing.T) {
 func TestTimezoneWizardAndDateRecalculation(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=日期&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=时刻&date_precision=datetime&expires_at=2027-01-31T12:00:00%2B08:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "日期", "date", "2027-01-31")
+	f.createPeriod(1, "number_validity", "时刻", "datetime", "2027-01-31T12:00:00+08:00")
 	dateBefore := f.scalar("SELECT expires_at FROM validity_periods WHERE id=1")
 	instantBefore := f.scalar("SELECT expires_at FROM validity_periods WHERE id=2")
 
@@ -344,7 +344,7 @@ func TestSettingsRejectsInvalidZone(t *testing.T) {
 func TestServiceViewCallbackIsReadOnlyAndAnswersOnce(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/service add name=Host&category_id="+id(serviceCategoryID(t, f, "vps")))
+	f.createService("Host", "vps")
 	serviceID := serviceLookupInt(t, f, "SELECT id FROM service_items WHERE name='Host'")
 
 	sends := len(f.stub.callsOf("sendMessage"))
@@ -407,9 +407,8 @@ func TestServiceViewCallbackIsReadOnlyAndAnswersOnce(t *testing.T) {
 func TestServiceListCallbacksPage(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	category := id(serviceCategoryID(t, f, "vps"))
 	for i := range 11 {
-		f.send(userA, "/service add name=S"+id(int64(i))+"&category_id="+category)
+		f.createService("S"+id(int64(i)), "vps")
 	}
 	f.send(userA, "/service list")
 	sends := f.stub.callsOf("sendMessage")
@@ -434,9 +433,9 @@ func TestServiceListCallbacksPage(t *testing.T) {
 func TestReminderCancelButton(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createRule(1, 1, "09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,created_at,updated_at) VALUES(1,1,1,1,?,?,'pending',0,?,1,1)`,
 		f.clock.t.Add(24*time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix(), f.clock.t.Add(24*time.Hour).Unix())
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,sent_at,created_at,updated_at) VALUES(1,1,2,1,?,?,'sent',1,1,1,1)`,
@@ -463,7 +462,7 @@ func TestReminderCancelButton(t *testing.T) {
 func TestPeriodRenewButtonMatchesWizard(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/service add name=Host&category_id="+id(serviceCategoryID(t, f, "vps")))
+	f.createService("Host", "vps")
 	f.send(userA, "/service period add 1")
 	f.callback(userA, choiceCallback("period_type", "custom"), nil)
 	f.callback(userA, cb("dialog", "skip"), nil)
@@ -501,8 +500,8 @@ func TestPeriodRenewButtonMatchesWizard(t *testing.T) {
 func TestRenewRejectsAdvancedCycleAndKeepsDraft(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
 
 	f.send(userA, "/renew 1")
 	f.callback(userA, choiceCallback("precision", "date"), nil)

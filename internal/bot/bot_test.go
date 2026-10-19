@@ -237,73 +237,67 @@ func (f *fixture) callback(uid int64, data string, message *models.Message) {
 func (f *fixture) start(uid int64) {
 	f.t.Helper()
 	text := f.send(uid, "/start")
-	if !strings.Contains(text, "SIM/eSIM") {
+	if !strings.Contains(text, "服务与订阅") {
 		f.t.Fatalf("start response: %q", text)
 	}
 }
 
-func TestAuthorizedPrivateFlow(t *testing.T) {
-	f := newFixture(t)
-	f.start(userA)
+func (f *fixture) serviceUser(uid int64) service.User {
+	f.t.Helper()
+	u, err := f.svc.Authenticate(context.Background(), uid, nil)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return u
+}
 
-	if n := f.count("SELECT count(*) FROM users WHERE telegram_user_id=? AND private_chat_id=?", userA, userA); n != 1 {
-		t.Fatalf("user not persisted: %d", n)
+func (f *fixture) createService(name, categoryCode string) service.ServiceItem {
+	f.t.Helper()
+	u := f.serviceUser(userA)
+	var categoryID int64
+	if err := f.store.DB.QueryRow("SELECT id FROM service_categories WHERE code=?", categoryCode).Scan(&categoryID); err != nil {
+		f.t.Fatal(err)
 	}
-	if text := f.send(userA, "/add name=日本卡&card_type=esim&operator=NTT&notes=hello+world"); !strings.Contains(text, "日本卡") {
-		t.Fatalf("add: %q", text)
+	item, err := f.svc.CreateService(context.Background(), u.ID, service.ServiceInput{Name: name, CategoryID: categoryID})
+	if err != nil {
+		f.t.Fatal(err)
 	}
-	if n := f.count("SELECT count(*) FROM service_items"); n != 1 {
-		t.Fatalf("sim count %d", n)
-	}
-	if text := f.send(userA, "/edit period new 1 period_type=number_validity&name=号码&date_precision=date&expires_at=2027-01-31"); !strings.Contains(text, "有效期 #1") {
-		t.Fatalf("period: %q", text)
-	}
-	if text := f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00"); !strings.Contains(text, "提前 1 天") {
-		t.Fatalf("rule: %q", text)
-	}
-	if text := f.send(userA, "/view sim 1"); !strings.Contains(text, "日本卡") || !strings.Contains(text, "备注：hello world") {
-		t.Fatalf("view sim: %q", text)
-	}
-	if text := f.send(userA, "/view sim 1 periods"); !strings.Contains(text, "号码") {
-		t.Fatalf("view periods: %q", text)
-	}
-	if text := f.send(userA, "/view period 1"); !strings.Contains(text, "2027-01-31") || !strings.Contains(text, "Asia/Taipei") {
-		t.Fatalf("view period: %q", text)
-	}
-	if text := f.send(userA, "/view period 1 rules"); !strings.Contains(text, "09:00") {
-		t.Fatalf("view rules: %q", text)
-	}
-	if text := f.send(userA, "/renew 1 expected_cycle=1&date_precision=date&expires_at=2027-03-01&amount=1000&currency=TWD"); !strings.Contains(text, "续期完成") || !strings.Contains(text, "1000 TWD") {
-		t.Fatalf("renew: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
-		t.Fatalf("renewal count %d", n)
-	}
-	if n := f.scalar("SELECT cycle FROM validity_periods WHERE id=1"); n != 2 {
-		t.Fatalf("cycle %d", n)
-	}
-	if text := f.send(userA, "/reminders"); !strings.Contains(text, "提醒任务") {
-		t.Fatalf("reminders: %q", text)
-	}
-	if text := f.send(userA, "/delete sim 1"); !strings.Contains(text, "归档") {
-		t.Fatalf("archive: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM service_items WHERE status='archived'"); n != 1 {
-		t.Fatalf("archived %d", n)
-	}
+	return item
+}
 
-	if text := f.send(userA, "/delete period 1 2"); !strings.Contains(text, "取消") {
-		t.Fatalf("cancel period: %q", text)
+func (f *fixture) createSIM(name string) service.ServiceItem {
+	f.t.Helper()
+	u := f.serviceUser(userA)
+	item, err := f.svc.CreateService(context.Background(), u.ID, service.ServiceInput{
+		Name: name, CategoryID: serviceCategoryID(f.t, f, "sim"),
+		SIMDetails: &service.SIMDetails{CardType: "esim"},
+	})
+	if err != nil {
+		f.t.Fatal(err)
 	}
-	if n := f.count("SELECT count(*) FROM validity_periods WHERE status='cancelled'"); n != 1 {
-		t.Fatalf("period not cancelled %d", n)
+	return item
+}
+
+func (f *fixture) createPeriod(serviceID int64, periodType, name, precision, expires string) service.Period {
+	f.t.Helper()
+	u := f.serviceUser(userA)
+	p, err := f.svc.CreatePeriod(context.Background(), u.ID, serviceID, service.PeriodInput{
+		PeriodType: periodType, Name: name, DatePrecision: precision, ExpiresAt: expires,
+	})
+	if err != nil {
+		f.t.Fatal(err)
 	}
-	if text := f.send(userA, "/view period 1"); !strings.Contains(text, "cancelled") {
-		t.Fatalf("view cancelled period: %q", text)
+	return p
+}
+
+func (f *fixture) createRule(periodID int64, days int, at string) service.Rule {
+	f.t.Helper()
+	u := f.serviceUser(userA)
+	r, err := f.svc.CreateRule(context.Background(), u.ID, periodID, service.RuleInput{DaysBefore: days, ReminderTime: at})
+	if err != nil {
+		f.t.Fatal(err)
 	}
-	if text := f.send(userA, "/reminders sent"); !strings.Contains(text, "提醒任务（sent）") {
-		t.Fatalf("filtered reminders: %q", text)
-	}
+	return r
 }
 
 func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
@@ -315,7 +309,7 @@ func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
 		t.Fatalf("stranger created user %d", n)
 	}
 
-	f.bot.ProcessUpdate(context.Background(), groupUpdate(userA, "/add name=secret&card_type=esim"))
+	f.bot.ProcessUpdate(context.Background(), groupUpdate(userA, "/service add"))
 	if text := f.stub.lastText(); !strings.Contains(text, "私聊") || strings.Contains(text, "secret") {
 		t.Fatalf("group: %q", text)
 	}
@@ -338,52 +332,14 @@ func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
 	}
 
 	f.start(userA)
-	f.send(userA, "/add name=B卡&card_type=esim")
-	if text := f.send(userB, "/view sim 1"); !strings.Contains(text, "不存在") {
-		t.Fatalf("cross-user view: %q", text)
+	f.createSIM("B卡")
+	f.callback(userB, cb("service", "view", "1"), nil)
+	if got := serviceLastAnswer(t, f); !strings.Contains(got, "不存在") {
+		t.Fatalf("cross-user view: %q", got)
 	}
-	if text := f.send(userB, "/view period 1"); !strings.Contains(text, "不存在") {
-		t.Fatalf("cross-user period: %q", text)
-	}
-}
-
-func TestInvalidCommandInputWritesNothing(t *testing.T) {
-	f := newFixture(t)
-	f.start(userA)
-	cases := []string{
-		"/add name=only",
-		"/add name=a&card_type=esim&unknown=1",
-		"/add name=a&name=b&card_type=esim",
-		"/add name=%zz&card_type=esim",
-		"/add name=a&card_type=esim&operator=%",
-		"/edit period new 1 period_type=number_validity&name=x&date_precision=date",
-		"/edit rule new 1 days_before=-1&reminder_time=09:00",
-		"/edit rule new 1 days_before=1&reminder_time=9:00",
-		"/edit period 1 name=x",
-		"/delete sim not-a-number",
-		"/renew 1 expected_cycle=0&date_precision=date&expires_at=2027-03-01",
-		"/renew 1 expected_cycle=1&date_precision=date&expires_at=2027-03-01&period_id=1",
-		"/notacommand",
-	}
-	for _, input := range cases {
-		before := len(f.stub.callsOf("sendMessage"))
-		f.send(userA, input)
-		text := f.stub.lastText()
-		if text == "" || strings.Contains(text, "echo") {
-			t.Fatalf("%q produced %q", input, text)
-		}
-		if len(f.stub.callsOf("sendMessage")) != before+1 {
-			t.Fatalf("%q did not get a single reply", input)
-		}
-	}
-	if n := f.count("SELECT count(*) FROM service_items"); n != 0 {
-		t.Fatalf("invalid input created sims: %d", n)
-	}
-	if n := f.count("SELECT count(*) FROM validity_periods"); n != 0 {
-		t.Fatalf("invalid input created periods: %d", n)
-	}
-	if n := f.count("SELECT count(*) FROM renewals"); n != 0 {
-		t.Fatalf("invalid input created renewals: %d", n)
+	f.callback(userB, cb("period", "view", "1"), nil)
+	if got := serviceLastAnswer(t, f); !strings.Contains(got, "不存在") {
+		t.Fatalf("cross-user period: %q", got)
 	}
 }
 
@@ -411,45 +367,17 @@ func TestBotUsernameFiltering(t *testing.T) {
 	if len(f.stub.callsOf("sendMessage")) != before {
 		t.Fatal("command for another bot was answered")
 	}
-	if text := f.send(userA, "/start@"+testBotName); !strings.Contains(text, "SIM/eSIM") {
+	if text := f.send(userA, "/start@"+testBotName); !strings.Contains(text, "服务与订阅") {
 		t.Fatalf("targeted start: %q", text)
-	}
-}
-
-func TestViewPagination(t *testing.T) {
-	f := newFixture(t)
-	f.start(userA)
-	user, err := f.svc.Authenticate(context.Background(), userA, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := range 11 {
-		if _, err := f.svc.CreateSIM(context.Background(), user.ID, service.SIMInput{Name: "卡" + strconv.Itoa(i), CardType: "esim"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	text := f.send(userA, "/list")
-	marker := "下一页：/list "
-	index := strings.LastIndex(text, marker)
-	if index < 0 {
-		t.Fatalf("no next page: %q", text)
-	}
-	next := strings.TrimSpace(text[index+len(marker):])
-	page := f.send(userA, "/list "+next)
-	if !strings.Contains(page, "卡10") {
-		t.Fatalf("last page missing item: %q", page)
-	}
-	if strings.Contains(page, "下一页") {
-		t.Fatalf("unexpected extra page: %q", page)
 	}
 }
 
 func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createRule(1, 1, "09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 
 	f.callback(userA, "v1:renew:1", nil)
@@ -464,8 +392,8 @@ func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
 	}
 
 	// Reads never discard an unfinished wizard.
-	f.send(userA, "/list")
-	f.send(userA, "/view period 1")
+	f.send(userA, "/service list")
+	f.callback(userA, cb("period", "view", "1"), nil)
 	f.send(userA, "/reminders")
 	f.send(userA, "/settings")
 	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
@@ -551,9 +479,9 @@ func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
 func TestDialogSurvivesRestart(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createRule(1, 1, "09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 	f.callback(userA, "v1:renew:1", nil)
 	f.callback(userA, choiceCallback("precision", "date"), nil)
@@ -578,9 +506,9 @@ func TestDialogSurvivesRestart(t *testing.T) {
 func TestWriteWizardRequiresExplicitReplacement(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createRule(1, 1, "09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 
 	f.callback(userA, "v1:renew:1", nil)
@@ -618,9 +546,9 @@ func TestWriteWizardRequiresExplicitReplacement(t *testing.T) {
 func TestCallbackAnswersEveryBranch(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.createSIM("卡")
+	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createRule(1, 1, "09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 
 	cases := []struct {
@@ -723,72 +651,6 @@ func TestSenderSuccessAndClassification(t *testing.T) {
 	}
 }
 
-func TestEditAndCancelWorkflows(t *testing.T) {
-	f := newFixture(t)
-	f.start(userA)
-	f.send(userA, "/add name=卡&card_type=esim")
-	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
-	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
-	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'pending',?,0,1,1)`, f.clock.t.Add(24*time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix(), f.clock.t.Add(24*time.Hour).Unix())
-
-	if text := f.send(userA, "/edit sim 1 name=新名称&operator=NTT"); !strings.Contains(text, "新名称") || !strings.Contains(text, "NTT") {
-		t.Fatalf("edit sim: %q", text)
-	}
-	if text := f.send(userA, "/edit period 1 expected_cycle=1&name=新项目"); !strings.Contains(text, "新项目") || !strings.Contains(text, "版本：1") {
-		t.Fatalf("edit period description: %q", text)
-	}
-	if text := f.send(userA, "/edit period 1 expected_cycle=1&expires_at=2027-02-28"); !strings.Contains(text, "版本：2") {
-		t.Fatalf("edit period expiry: %q", text)
-	}
-	if n := f.scalar("SELECT cycle FROM validity_periods WHERE id=1"); n != 2 {
-		t.Fatalf("cycle %d", n)
-	}
-	if n := f.count("SELECT count(*) FROM reminder_jobs WHERE status='cancelled'"); n != 1 {
-		t.Fatalf("old job not cancelled %d", n)
-	}
-	if text := f.send(userA, "/edit period 1 expected_cycle=1&expires_at=2027-05-01"); !strings.Contains(text, "冲突") {
-		t.Fatalf("stale cycle should conflict: %q", text)
-	}
-
-	if text := f.send(userA, "/edit rule 1 expected_revision=1&reminder_time=10:30"); !strings.Contains(text, "10:30") || !strings.Contains(text, "版本 2") {
-		t.Fatalf("edit rule: %q", text)
-	}
-	if text := f.send(userA, "/edit rule 1 expected_revision=1&reminder_time=11:00"); !strings.Contains(text, "冲突") {
-		t.Fatalf("stale revision should conflict: %q", text)
-	}
-
-	if text := f.send(userA, "/cancel rule 1 2"); !strings.Contains(text, "已禁用") {
-		t.Fatalf("cancel rule: %q", text)
-	}
-	if n := f.scalar("SELECT enabled FROM reminder_rules WHERE id=1"); n != 0 {
-		t.Fatalf("rule still enabled %d", n)
-	}
-	if text := f.send(userA, "/cancel rule 1 2"); !strings.Contains(text, "已禁用") {
-		t.Fatalf("repeat disable: %q", text)
-	}
-
-	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,attempts,created_at,updated_at) VALUES(1,1,2,2,?,?,'pending',?,0,1,1)`, f.clock.t.Add(24*time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix(), f.clock.t.Add(24*time.Hour).Unix())
-	if text := f.send(userA, "/cancel job 2"); !strings.Contains(text, "已取消") {
-		t.Fatalf("cancel job: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM reminder_jobs WHERE id=2 AND status='cancelled'"); n != 1 {
-		t.Fatalf("job not cancelled %d", n)
-	}
-	if text := f.send(userA, "/cancel job 2"); !strings.Contains(text, "已取消") {
-		t.Fatalf("repeat cancel: %q", text)
-	}
-
-	if text := f.send(userA, "/edit timezone America/New_York"); !strings.Contains(text, "America/New_York") {
-		t.Fatalf("timezone: %q", text)
-	}
-	if text := f.send(userA, "/help"); !strings.Contains(text, "America/New_York") {
-		t.Fatalf("help should show new timezone: %q", text)
-	}
-	if text := f.send(userA, "/edit timezone Not/AZone"); !strings.Contains(text, "IANA") {
-		t.Fatalf("invalid timezone: %q", text)
-	}
-}
-
 func TestChunksRespectsRuneLimit(t *testing.T) {
 	text := strings.Repeat("卡", 25)
 	parts := chunks(text, 10)
@@ -803,7 +665,7 @@ func TestStoppedHandlerAcknowledgesCallbacksOnly(t *testing.T) {
 	f.h.Stop()
 
 	sends := len(f.stub.callsOf("sendMessage"))
-	f.bot.ProcessUpdate(context.Background(), privateUpdate(userA, "/list"))
+	f.bot.ProcessUpdate(context.Background(), privateUpdate(userA, "/service list"))
 	if len(f.stub.callsOf("sendMessage")) != sends {
 		t.Fatal("stopped handler still sent a reply")
 	}
