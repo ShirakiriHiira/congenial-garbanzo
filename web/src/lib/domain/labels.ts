@@ -9,7 +9,6 @@ export const labels = {
   expired: '会话已过期，请关闭并重新打开 Mini App',
   forbidden: '你没有访问权限，请联系机器人管理员确认白名单。',
   loading: '正在加载…',
-  loadingAccount: '正在验证账户…',
   accountFailed: '账户信息加载失败，当前仅可浏览。',
   loadFailed: '加载失败，请稍后手动重试。',
   retry: '重试',

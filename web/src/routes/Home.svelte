@@ -37,7 +37,6 @@
   let loading = $state(true);
   let loadingMore = $state(false);
   let categoryLoading = $state(true);
-  let accountLoading = $state(true);
   let accountError = $state(false);
   let error = $state('');
   let moreFailed = $state(false);
@@ -69,7 +68,7 @@
     pageController?.abort();
     categoryController?.abort();
     accountController?.abort();
-    loading = loadingMore = categoryLoading = accountLoading = false;
+    loading = loadingMore = categoryLoading = false;
   }
 
   async function loadAccount(): Promise<void> {
@@ -78,15 +77,12 @@
     const signal = accountController.signal;
     const request = ++accountSequence;
     const current = () => request === accountSequence && !signal.aborted && !terminal;
-    accountLoading = true;
     accountError = false;
     try {
       const user = await api.me(signal);
       if (current()) acceptMe(user);
     } catch {
       if (current()) accountError = true;
-    } finally {
-      if (current()) accountLoading = false;
     }
   }
 
@@ -137,7 +133,7 @@
 
   async function refresh(): Promise<void> {
     if (terminal || getInitData().length === 0) {
-      loading = accountLoading = categoryLoading = false;
+      loading = categoryLoading = false;
       return;
     }
     await Promise.all([loadAccount(), loadCategories(), loadFirst()]);
@@ -224,7 +220,6 @@
   {#if terminal}
     <ErrorBanner message={session.auth === 'expired' ? labels.expired : labels.forbidden} />
   {/if}
-  {#if accountLoading && !terminal}<p role="status">{labels.loadingAccount}</p>{/if}
   {#if accountError && !terminal}<p class="notice" role="alert">{labels.accountFailed}</p>{/if}
   {#if collection && (!canWrite() || accountError)}<p class="notice">{labels.readOnly}</p>{/if}
   <form class="search" role="search" onsubmit={(event) => { event.preventDefault(); applySearch(); }}>
