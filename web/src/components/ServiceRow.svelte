@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Category, Period, ServiceItem } from '../lib/api/types';
   import { formatExpiry } from '../lib/domain/expiry';
-  import { cardTypeLabels, labels, periodTypeLabel, serviceStatusLabels } from '../lib/domain/labels';
+  import { cardTypeLabels, labels, periodLabel, serviceStatusLabels } from '../lib/domain/labels';
   import { maskPhone } from '../lib/domain/mask';
   import ExpiryBadge from './ExpiryBadge.svelte';
   import IconTile from './IconTile.svelte';
@@ -13,10 +13,7 @@
     onopen: (id: string) => void;
   } = $props();
   const isSim = $derived(service.sim_details !== null);
-  const secondary = $derived(isSim
-    ? [maskPhone(service.sim_details?.phone_number), service.provider?.trim(), service.sim_details?.country_or_region?.trim()]
-      .filter(Boolean).join(' · ')
-    : [service.identifier?.trim(), service.provider?.trim(), category?.name].filter(Boolean).join(' · '));
+  const secondary = $derived([category?.name, service.provider?.trim(), isSim ? maskPhone(service.sim_details?.phone_number) : service.identifier?.trim()].filter(Boolean).join(' · '));
 </script>
 
 <button type="button" class="service-row" class:archived={service.status === 'archived'} onclick={() => onopen(service.id)}>
@@ -29,7 +26,7 @@
     </span>
     {#if secondary}<span class="secondary">{secondary}</span>{/if}
     {#if period}
-      <span class="expiry">{periodTypeLabel(period)}：{formatExpiry(period)}</span>
+      <span class="expiry">{periodLabel(period)}：{formatExpiry(period)}</span>
       <span class="status-line"><ExpiryBadge {period} /></span>
     {:else}
       <span class="expiry">{labels.noPeriod}</span>

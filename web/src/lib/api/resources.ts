@@ -98,9 +98,6 @@ async function writeEntity<T>(path: string, method: "POST" | "PATCH", body: unkn
   return (await request(path, { method, body, signal }, decode)).data;
 }
 
-async function deleteEntity(path: string, signal: AbortSignal | undefined): Promise<void> {
-  await request(path, { method: "DELETE", signal }, noContent);
-}
 
 export const api = {
   me: (signal?: AbortSignal): Promise<User> => getEntity("/me", signal, decodeUser),
@@ -133,10 +130,11 @@ export const api = {
   updateService: (id: ID, body: ServiceUpdateInput, signal?: AbortSignal): Promise<ServiceItem> =>
     writeEntity(entityPath("/services", id), "PATCH", body, signal, decodeService),
 
-  archiveService: (id: ID, signal?: AbortSignal): Promise<void> => deleteEntity(entityPath("/services", id), signal),
+  archiveService: (id: ID, signal?: AbortSignal): Promise<ServiceItem> =>
+    writeEntity(entityPath("/services", id), "PATCH", { status: "archived" }, signal, decodeService),
 
   deleteService: async (id: ID, signal?: AbortSignal): Promise<void> => {
-    await request(`${entityPath("/services", id)}/delete`, { method: "POST", signal }, noContent);
+    await request(entityPath("/services", id), { method: "DELETE", signal }, noContent);
   },
 
   periods: (serviceID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Period>> =>
@@ -151,7 +149,7 @@ export const api = {
     writeEntity(entityPath("/periods", id), "PATCH", body, signal, decodePeriod),
 
   deletePeriod: async (id: ID, version: number, signal?: AbortSignal): Promise<void> => {
-    await request(`${entityPath("/periods", id)}/delete?expected_cycle=${version}`, { method: "POST", signal }, noContent);
+    await request(`${entityPath("/periods", id)}?expected_cycle=${version}`, { method: "DELETE", signal }, noContent);
   },
 
   rules: (periodID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Rule>> =>
@@ -166,7 +164,7 @@ export const api = {
     writeEntity(entityPath("/rules", id), "PATCH", body, signal, decodeRule),
 
   deleteRule: async (id: ID, revision: number, signal?: AbortSignal): Promise<void> => {
-    await request(`${entityPath("/rules", id)}/delete?expected_revision=${revision}`, { method: "POST", signal }, noContent);
+    await request(`${entityPath("/rules", id)}?expected_revision=${revision}`, { method: "DELETE", signal }, noContent);
   },
 
   renewals: (periodID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Renewal>> =>

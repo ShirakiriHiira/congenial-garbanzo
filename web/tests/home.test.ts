@@ -34,7 +34,7 @@ function sim(id: number, overrides: Partial<ServiceItem> = {}): ServiceItem {
 }
 function period(id: number, date: string, status: Period['status'] = 'active'): Period {
   return {
-    id: String(id), service_id: String(id), period_type: 'custom', name: '有效期',
+    id: String(id), service_id: String(id), name: '有效期',
     starts_at: null, expires_at: `${date}T16:00:00Z`, date_precision: 'date', local_expires_date: date,
     timezone: 'Asia/Taipei', status, cycle: 1,
     terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },
@@ -247,7 +247,7 @@ describe('home filters and service rows', () => {
     await fireEvent.click(screen.getByRole('radio', { name: '未设置有效期' }));
     await waitFor(() => expect(overviewCalls().at(-1)?.searchParams.get('status')).toBe('no_period'));
     expect(overviewCalls().at(-1)?.searchParams.get('category_id')).toBe(customCategory.id);
-    expect(totalValue()).toHaveTextContent('3');
+    await waitFor(() => expect(totalValue()).toHaveTextContent('3'));
   });
 
   it('shows archived rows from the same overview collection and uses archived counts', async () => {
@@ -295,7 +295,6 @@ describe('home filters and service rows', () => {
   it('loads every category page for the filter selector', async () => {
     vi.stubGlobal('fetch', vi.fn((input: string) => {
       const url = new URL(input, location.origin);
-      if (url.pathname.endsWith('/me')) return Promise.resolve(Response.json({ data: user }));
       if (url.pathname.endsWith('/categories')) {
         return Promise.resolve(Response.json(url.searchParams.has('after_id')
           ? categoriesPage([customCategory]) : categoriesPage([simCategory, vpsCategory], '2')));
@@ -322,7 +321,7 @@ describe('home filters and service rows', () => {
     expect(within(simRow).queryByText(/8986001234/)).not.toBeInTheDocument();
     expect(within(simRow).queryByText('do not show')).not.toBeInTheDocument();
     const genericRow = screen.getByRole('button', { name: /云主机/ });
-    expect(within(genericRow).getByText('host.example · Example Cloud · VPS 与云服务器')).toBeInTheDocument();
+    expect(within(genericRow).getByText('VPS 与云服务器 · Example Cloud · host.example')).toBeInTheDocument();
   });
 
   it('renders server-provided primary-period badges without locally filtering rows', async () => {

@@ -210,14 +210,13 @@ function decodePeriod(value: unknown, path = "data"): Period {
   return {
     id: id(field(source, "id", path), `${path}.id`),
     service_id: id(field(source, "service_id", path), `${path}.service_id`),
-    period_type: oneOf(field(source, "period_type", path), ["number_validity", "plan_validity", "data_package_validity", "custom"], `${path}.period_type`),
     name: text(field(source, "name", path), `${path}.name`),
     starts_at: nullableTimestamp(field(source, "starts_at", path), `${path}.starts_at`),
     expires_at: timestamp(field(source, "expires_at", path), `${path}.expires_at`),
     date_precision: oneOf(field(source, "date_precision", path), ["date", "datetime"], `${path}.date_precision`),
     local_expires_date: field(source, "local_expires_date", path) === null ? null : date(field(source, "local_expires_date", path), `${path}.local_expires_date`),
     timezone: text(field(source, "timezone", path), `${path}.timezone`),
-    status: oneOf(field(source, "status", path), ["active", "expired", "cancelled"], `${path}.status`),
+    status: oneOf(field(source, "status", path), ["active", "expired"], `${path}.status`),
     cycle: nonNegativeInteger(field(source, "cycle", path), `${path}.cycle`),
     terms: decodeTerms(field(source, "terms", path), `${path}.terms`),
     created_at: timestamp(field(source, "created_at", path), `${path}.created_at`),
@@ -233,7 +232,7 @@ function decodeRule(value: unknown, path = "data"): Rule {
   }
   return {
     id: id(field(source, "id", path), `${path}.id`),
-    validity_period_id: id(field(source, "validity_period_id", path), `${path}.validity_period_id`),
+    period_id: id(field(source, "period_id", path), `${path}.period_id`),
     days_before: nonNegativeInteger(field(source, "days_before", path), `${path}.days_before`),
     reminder_time: reminderTime,
     enabled: boolean(field(source, "enabled", path), `${path}.enabled`),
@@ -248,7 +247,7 @@ function decodeRenewal(value: unknown, path = "data"): Renewal {
   const amount = field(source, "amount", path);
   return {
     id: id(field(source, "id", path), `${path}.id`),
-    validity_period_id: id(field(source, "validity_period_id", path), `${path}.validity_period_id`),
+    period_id: id(field(source, "period_id", path), `${path}.period_id`),
     previous_cycle: nonNegativeInteger(field(source, "previous_cycle", path), `${path}.previous_cycle`),
     previous_expires_at: timestamp(field(source, "previous_expires_at", path), `${path}.previous_expires_at`),
     new_expires_at: timestamp(field(source, "new_expires_at", path), `${path}.new_expires_at`),
@@ -269,7 +268,7 @@ function decodeReminder(value: unknown, path = "data"): ReminderJob {
   const source = object(value, path);
   return {
     id: id(field(source, "id", path), `${path}.id`),
-    validity_period_id: id(field(source, "validity_period_id", path), `${path}.validity_period_id`),
+    period_id: id(field(source, "period_id", path), `${path}.period_id`),
     reminder_rule_id: id(field(source, "reminder_rule_id", path), `${path}.reminder_rule_id`),
     cycle: nonNegativeInteger(field(source, "cycle", path), `${path}.cycle`),
     rule_revision: nonNegativeInteger(field(source, "rule_revision", path), `${path}.rule_revision`),

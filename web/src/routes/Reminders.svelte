@@ -250,7 +250,7 @@
     <ul class="reminders">
       {#each jobs as job (job.id)}
         <li class="job stack" aria-label={text.task(job.id)}>
-          <div class="job-heading"><h3>{periodNames[job.validity_period_id] || text.period(job.validity_period_id)}</h3><span class="badge" data-status={job.status}>{reminderStatusLabels[job.status]}</span></div>
+          <div class="job-heading"><h3>{periodNames[job.period_id] || text.period(job.period_id)}</h3><span class="badge" data-status={job.status}>{reminderStatusLabels[job.status]}</span></div>
           <dl>
             <div><dt>{text.scheduled}</dt><dd>{time(job.scheduled_at)}</dd></div>
             {#if job.sent_at}<div><dt>{text.sent}</dt><dd>{time(job.sent_at)}</dd></div>{/if}
@@ -269,9 +269,7 @@
                   {#if detail.data}
                     <dl>
                       <div><dt>{text.task(job.id)}</dt><dd>{reminderStatusLabels[detail.data.status]}</dd></div>
-                      <div><dt>{text.rule}</dt><dd>#{detail.data.reminder_rule_id}</dd></div>
-                      <div><dt>{text.cycle}</dt><dd>{detail.data.cycle}</dd></div>
-                      <div><dt>{text.revision}</dt><dd>{detail.data.rule_revision}</dd></div>
+                      <div><dt>{text.rule}</dt><dd>已配置</dd></div>
                       <div><dt>{text.snapshot}</dt><dd>{time(detail.data.expires_at_snapshot)}</dd></div>
                       {#if detail.data.next_attempt_at}<div><dt>{text.nextAttempt}</dt><dd>{time(detail.data.next_attempt_at)}</dd></div>{/if}
                       <div><dt>{text.created}</dt><dd>{time(detail.data.created_at)}</dd></div>

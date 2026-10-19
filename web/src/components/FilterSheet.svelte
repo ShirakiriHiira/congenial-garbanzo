@@ -1,5 +1,5 @@
 <script module lang="ts">
-  export type HomeStatus = 'active' | 'due_soon' | 'expired' | 'no_period' | 'archived';
+  export type HomeStatus = 'active' | 'due_soon' | 'expired' | 'no_period' | 'archived' | 'all';
 </script>
 
 <script lang="ts">
@@ -24,11 +24,12 @@
   } = $props();
   const uid = $props.id();
   const options: { value: HomeStatus; label: string }[] = [
-    { value: 'active', label: serviceStatusLabels.active },
+    { value: 'active', label: labels.filterActive },
     { value: 'due_soon', label: labels.dueSoon },
     { value: 'expired', label: labels.expiredCount },
     { value: 'no_period', label: labels.filterNoPeriod },
     { value: 'archived', label: labels.filterArchived },
+    { value: 'all', label: labels.filterAllWithArchived },
   ];
   let dialog = $state<HTMLDialogElement>();
   let previousFocus: HTMLElement | null = null;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { api, fetchAllPages } from '../lib/api/resources';
   import { ApiError } from '../lib/api/errors';
   import type { Category, CategoryKind, CardType, ServiceCreateInput, ServiceItem, ServiceUpdateInput } from '../lib/api/types';
@@ -8,7 +8,7 @@
   import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
   import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
-  import { cardTypeLabels, errorMessage, labels } from '../lib/domain/labels';
+  import { cardTypeLabels, errorMessage, fieldLabels, labels } from '../lib/domain/labels';
   import FormField from '../components/FormField.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
@@ -48,6 +48,7 @@
   const conflict = new ConflictFlow<ServiceItem>(() => api.service(id ?? '', controller.signal));
   let alive = true;
   const category = $derived(categories.find((item) => item.id === categoryID) ?? null);
+  const serviceFields = $derived(fieldLabels(category?.code));
   const kind = $derived(category?.kind ?? initialKind ?? 'generic');
   const entityKind = $derived(entity?.sim_details ? 'sim' : entity ? categories.find((item) => item.id === entity?.category_id)?.kind ?? 'generic' : null);
   const dirty = $derived(entity
@@ -78,6 +79,7 @@
       categories = allCategories;
       if (current) fill(current);
       else {
+        await tick();
         const preset = initialKind === 'sim' ? allCategories.find((item) => item.code === 'sim') : allCategories.find((item) => item.kind === 'generic');
         categoryID = preset?.id ?? '';
         initialCategoryID = categoryID;
@@ -231,11 +233,11 @@
       {/if}
       {#if categoryError && categoryMode === 'closed'}<ErrorBanner message={categoryError} />{/if}
       {#if category}
-        <FormField id="service-provider" label={kind === 'sim' ? '运营商' : '服务商'} error={errors.provider}>
+        <FormField id="service-provider" label={kind === 'sim' ? '运营商' : serviceFields.provider} error={errors.provider}>
           {#snippet action()}{#if general.provider}<button type="button" class="text-button" aria-label={kind === 'sim' ? '清除运营商' : '清除服务商'} disabled={!canWrite() || submitter.busy} onclick={() => { general.provider = ''; cleared.provider = Boolean(id); }}>清除</button>{/if}{/snippet}
           {#snippet children(field)}<input id={field.id} bind:value={general.provider} maxlength="200" oninput={() => { cleared.provider = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
         </FormField>
-        <FormField id="service-identifier" label="公开标识" error={errors.identifier}>
+        <FormField id="service-identifier" label={serviceFields.identifier} error={errors.identifier}>
           {#snippet action()}{#if general.identifier}<button type="button" class="text-button" aria-label="清除公开标识" disabled={!canWrite() || submitter.busy} onclick={() => { general.identifier = ''; cleared.identifier = Boolean(id); }}>清除</button>{/if}{/snippet}
           {#snippet children(field)}<input id={field.id} bind:value={general.identifier} maxlength="200" oninput={() => { cleared.identifier = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
         </FormField>

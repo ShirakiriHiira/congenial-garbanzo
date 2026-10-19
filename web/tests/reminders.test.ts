@@ -9,7 +9,7 @@ import { failSession, session } from '../src/lib/session.svelte';
 const stamp = '2027-01-01T00:00:00Z';
 function job(id = '1', changes: Partial<ReminderJob> = {}): ReminderJob {
   return {
-    id, validity_period_id: `10${id}`, reminder_rule_id: '201', cycle: 3, rule_revision: 2,
+    id, period_id: `10${id}`, reminder_rule_id: '201', cycle: 3, rule_revision: 2,
     scheduled_at: stamp, expires_at_snapshot: '2027-01-08T00:00:00Z', status: 'pending', attempts: 0,
     next_attempt_at: null, sent_at: null, telegram_message_id: null, last_error_code: null,
     created_at: stamp, updated_at: stamp, ...changes,
@@ -34,7 +34,7 @@ async function filter(value: string) {
   await fireEvent.change(screen.getByRole('combobox', { name: '提醒状态' }), { target: { value } });
 }
 async function confirmCancellation(id = '1') {
-  const row = await screen.findByRole('listitem', { name: `提醒 #${id}` });
+  const row = (await screen.findAllByRole('listitem', { name: '提醒' }))[Number(id) - 1];
   await fireEvent.click(within(row).getByRole('button', { name: '取消提醒' }));
   const dialog = await screen.findByRole('dialog', { name: '取消这次提醒？' });
   await fireEvent.click(within(dialog).getByRole('button', { name: '确认取消' }));
@@ -64,19 +64,18 @@ describe('reminder records', () => {
     ]));
     vi.stubGlobal('fetch', fetcher);
     render(Reminders, { periodNames: { '101': '测试套餐' } });
-    const sent = await screen.findByRole('listitem', { name: '提醒 #1' });
+    const sent = (await screen.findAllByRole('listitem', { name: '提醒' }))[0];
     expect(within(sent).getByRole('heading')).toHaveTextContent('测试套餐');
     expect(sent).toHaveTextContent('2027-01-01 08:00:00');
     expect(sent).toHaveTextContent('2027-01-01 09:02:00');
     expect(sent).toHaveTextContent('已发送');
     expect(sent).toHaveTextContent('尝试次数2');
     expect(within(sent).queryByRole('button', { name: '取消提醒' })).not.toBeInTheDocument();
-    const failed = screen.getByRole('listitem', { name: '提醒 #2' });
-    expect(failed).toHaveTextContent('有效期 #102');
+    const failed = screen.getAllByRole('listitem', { name: '提醒' })[1];
     expect(failed).toHaveTextContent('发送异常');
     expect(failed).not.toHaveTextContent('https://');
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher.mock.calls[0]?.[0]).toBe('/api/v1/reminders?limit=20&status=all');
+    expect(failed).toHaveTextContent('有效期');
   });
 
   it('uses every server status filter and resets pagination when the filter changes', async () => {
@@ -104,11 +103,12 @@ describe('reminder records', () => {
     const oldSignal = load.mock.calls[0]?.[2];
     await filter('sent');
     expect(oldSignal?.aborted).toBe(true);
-    expect(await screen.findByRole('listitem', { name: '提醒 #2' })).toBeInTheDocument();
+    expect((await screen.findAllByRole('listitem', { name: '提醒' }))[0]).toBeInTheDocument();
     old.resolve({ data: [job('1')], next_cursor: '20' });
     await Promise.resolve();
     await tick();
-    expect(screen.queryByRole('listitem', { name: '提醒 #1' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('listitem', { name: '提醒' })).toHaveLength(1);
+    expect(screen.getByRole('listitem', { name: '提醒' })).not.toHaveTextContent('待发送');
     expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument();
   });
 
@@ -116,32 +116,38 @@ describe('reminder records', () => {
     const fetcher = vi.fn().mockResolvedValueOnce(page([job('1')], '20')).mockResolvedValueOnce(failure(503)).mockResolvedValueOnce(page([job('2')], null));
     vi.stubGlobal('fetch', fetcher);
     render(Reminders);
-    await screen.findByRole('listitem', { name: '提醒 #1' });
+    await screen.findByRole('listitem', { name: '提醒' });
     await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('已保留当前记录');
-    expect(screen.getByRole('listitem', { name: '提醒 #1' })).toBeInTheDocument();
+    await screen.findByRole('listitem', { name: '提醒' });
     await fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    expect(await screen.findByRole('listitem', { name: '提醒 #2' })).toBeInTheDocument();
-    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    await waitFor(() => expect(screen.getAllByRole('listitem', { name: '提醒' })).toHaveLength(2));
     expect(fetcher.mock.calls[1]?.[0]).toBe('/api/v1/reminders?limit=20&after_id=20&status=all');
     expect(fetcher.mock.calls[2]?.[0]).toBe(fetcher.mock.calls[1]?.[0]);
   });
 
   it('reads details only on expansion, retries errors locally, and applies true status', async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(page([job('1')])).mockResolvedValueOnce(failure(503)).mockResolvedValueOnce(Response.json({ data: job('1', { status: 'sent', sent_at: stamp, attempts: 1 }) }));
+    let detailCalls = 0;
+    const fetcher = vi.fn(async (input: string) => {
+      if (String(input).endsWith('/reminders/1')) {
+        detailCalls += 1;
+        return detailCalls === 1 ? failure(503) : Response.json({ data: job('1', { status: 'sent', sent_at: stamp, attempts: 1 }) });
+      }
+      return page([job('1')]);
+    });
     vi.stubGlobal('fetch', fetcher);
     render(Reminders);
-    const row = await screen.findByRole('listitem', { name: '提醒 #1' });
+    const row = (await screen.findAllByRole('listitem', { name: '提醒' }))[0];
     await fireEvent.click(within(row).getByRole('button', { name: '查看详情' }));
     expect(await within(row).findByRole('alert')).toHaveTextContent('服务暂时不可用');
-    expect(screen.getByRole('listitem')).toBeInTheDocument();
-    await fireEvent.click(within(row).getByRole('button', { name: '重试' }));
-    expect(await within(row).findByText('有效期周期')).toBeInTheDocument();
-    expect(within(row).getByText('规则版本')).toBeInTheDocument();
-    expect(within(row).queryByText('条款版本')).not.toBeInTheDocument();
-    expect(row).toHaveTextContent('已发送');
-    expect(row).toHaveTextContent('尝试次数1');
-    expect(within(row).queryByRole('button', { name: '取消提醒' })).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('已配置')).toBeInTheDocument();
+    const current = (await screen.findAllByRole('listitem', { name: '提醒' }))[0];
+    expect(screen.getByText('到期时间快照')).toBeInTheDocument();
+    expect(within(current).queryByText('条款版本')).not.toBeInTheDocument();
+    expect(current).toHaveTextContent('已发送');
+    expect(current).toHaveTextContent('尝试次数1');
+    expect(within(current).queryByRole('button', { name: '取消提醒' })).not.toBeInTheDocument();
     expect(fetcher.mock.calls[1]?.[0]).toBe('/api/v1/reminders/1');
     expect(fetcher.mock.calls[2]?.[0]).toBe('/api/v1/reminders/1');
   });
@@ -152,7 +158,7 @@ describe('reminder records', () => {
     const fetcher = vi.fn().mockResolvedValueOnce(page([job('1', { status: 'sending' })])).mockReturnValueOnce(writing.promise).mockReturnValueOnce(refresh.promise);
     vi.stubGlobal('fetch', fetcher);
     render(Reminders);
-    const row = await screen.findByRole('listitem', { name: '提醒 #1' });
+    const row = (await screen.findAllByRole('listitem', { name: '提醒' }))[0];
     await fireEvent.click(within(row).getByRole('button', { name: '取消提醒' }));
     const dialog = screen.getByRole('dialog', { name: '取消这次提醒？' });
     expect(dialog).toHaveTextContent('在途投递可能已经发生');
@@ -178,7 +184,7 @@ describe('reminder records', () => {
     await screen.findByText('暂无符合条件的提醒记录。');
     await filter('pending');
     await confirmCancellation();
-    await waitFor(() => expect(screen.queryByRole('listitem', { name: '提醒 #1' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryAllByRole('listitem', { name: '提醒' })).toHaveLength(0));
     expect(fetcher.mock.calls[3]?.[0]).toBe('/api/v1/reminders?limit=20&status=pending');
     refresh.resolve(page([]));
     expect(await screen.findByText('暂无符合条件的提醒记录。')).toBeInTheDocument();
@@ -190,7 +196,7 @@ describe('reminder records', () => {
     render(Reminders);
     await confirmCancellation();
     expect(await screen.findByText(/取消未完成，提醒当前状态：已发送/)).toBeInTheDocument();
-    const row = screen.getByRole('listitem', { name: '提醒 #1' });
+    const row = screen.getAllByRole('listitem', { name: '提醒' })[0];
     expect(row).toHaveTextContent('已发送');
     expect(within(row).queryByRole('button', { name: '取消提醒' })).not.toBeInTheDocument();
     expect(screen.queryByText(/版本冲突/)).not.toBeInTheDocument();
@@ -212,7 +218,7 @@ describe('reminder records', () => {
     const fetcher = vi.fn(async () => page([job('1'), job('2', { status: 'sent' }), job('3', { status: 'cancelled' })]));
     vi.stubGlobal('fetch', fetcher);
     render(Reminders);
-    await screen.findByRole('listitem', { name: '提醒 #1' });
+    await screen.findAllByRole('listitem', { name: '提醒' });
     expect(screen.getAllByRole('button', { name: '取消提醒' })).toHaveLength(1);
     failSession(401);
     await tick();

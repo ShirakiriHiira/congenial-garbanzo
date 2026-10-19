@@ -7,7 +7,7 @@
   import { Submitter } from '../lib/form.svelte';
   import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
   import { back } from '../lib/router';
-  import { errorMessage, labels, periodTypeLabel, rulesLabels as copy } from '../lib/domain/labels';
+  import { errorMessage, labels, periodLabel, rulesLabels as copy } from '../lib/domain/labels';
   import FormField from '../components/FormField.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
@@ -56,7 +56,7 @@
     if (currentRule) rules = mergeRules(rules, [currentRule]);
     return { period: currentPeriod, rule: currentRule };
   });
-  const writable = $derived(canWrite() && period !== null && period.status !== 'cancelled');
+  const writable = $derived(canWrite() && period !== null);
   const blocked = $derived(!writable || !loaded || loading || loadingMore || submitter.busy || conflict.open || reviewRequired || refreshRequired);
   const dirty = $derived(editing
     ? days !== String(editing.days_before) || time !== editing.reminder_time || enabled !== editing.enabled
@@ -251,7 +251,6 @@
     if (conflict.loading) return;
     const current = conflict.current;
     if (conflict.failed || !current) { void conflict.retry(); return; }
-    if (current.period.status === 'cancelled') { conflict.dismiss(); returnToCard(); return; }
     if (editing && current.rule && current.rule.id === editing.id) editing = current.rule;
     reviewRequired = false;
     conflict.dismiss();
@@ -262,9 +261,8 @@
 <div class="content stack rules-page">
   <h1>{copy.title}</h1>
   {#if periodError}<ErrorBanner message={errorMessage(periodError)} onretry={mayRead() ? () => { void loadPeriod(); } : undefined} />{/if}
-  {#if period}<p class="muted">{period.name || periodTypeLabel(period)} · {period.timezone}</p>{/if}
+  {#if period}<p class="muted">{periodLabel(period)} · {period.timezone}</p>{/if}
   {#if !canWrite() && !accountLoading}<p class="notice">{labels.readOnly}</p>{/if}
-  {#if period?.status === 'cancelled'}<p class="notice">{copy.cancelled}</p>{/if}
   {#if toast}<Toast message={toast} ondismiss={() => { toast = ''; }} />{/if}
   {#if submitter.error}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
   {#if reviewRequired && !conflict.open}
@@ -280,18 +278,15 @@
     {#each rules as rule (rule.id)}
       <article class:rules-page__disabled={!rule.enabled} class="rules-page__rule" aria-label={copy.summary(rule.days_before, rule.reminder_time)}>
         <div class="rules-page__summary"><h2>{copy.detail(rule.days_before, rule.reminder_time)}</h2><span class="rules-page__status">{rule.enabled ? copy.enabledState : copy.disabledState}</span></div>
-        {#if period?.status !== 'cancelled'}
           <div class="actions">
             <button type="button" disabled={blocked} onclick={() => beginEdit(rule)}>{copy.edit}</button>
             <button type="button" disabled={blocked} onclick={() => { void toggle(rule); }}>{rule.enabled ? copy.disable : copy.enable}</button>
             <button type="button" class="danger" disabled={blocked} onclick={() => askDelete(rule)}>{copy.remove}</button>
           </div>
-        {/if}
       </article>
     {/each}
     {#if nextCursor !== null}<button type="button" disabled={loading || loadingMore || submitter.busy || reviewRequired || !mayRead()} onclick={() => { void loadRules(true); }}>{loadingMore ? labels.loading : labels.loadMore}</button>{/if}
   </section>
-  {#if period && period.status !== 'cancelled'}
     <section class="section stack">
       <h2>{editing ? copy.edit : copy.create}</h2>
       <form onsubmit={save} novalidate>
@@ -305,22 +300,18 @@
         <div class="actions"><button type="submit" class="primary" disabled={blocked}>{submitter.busy ? labels.loading : editing ? copy.save : copy.create}</button>{#if editing}<button type="button" disabled={submitter.busy || reviewRequired} onclick={resetDraft}>{copy.cancelEdit}</button>{/if}</div>
       </form>
     </section>
-  {/if}
 </div>
-
 <ConfirmDialog bind:open={deleteOpen} title={copy.deleteTitle} message={copy.deleteMessage} confirmLabel={copy.remove} busy={submitter.busy} onconfirm={() => { void removeRule(); }} oncancel={() => { deleteTarget = null; }} />
-<ConfirmDialog bind:open={conflict.open} title={copy.conflictTitle} message={copy.conflictMessage} confirmLabel={conflict.failed ? labels.retry : conflict.current?.period.status === 'cancelled' ? labels.back : copy.conflictContinue} busy={conflict.loading} onconfirm={acceptConflict} oncancel={() => conflict.dismiss()}>
+<ConfirmDialog bind:open={conflict.open} title={copy.conflictTitle} message={copy.conflictMessage} confirmLabel={conflict.failed ? labels.retry : copy.conflictContinue} busy={conflict.loading} onconfirm={acceptConflict} oncancel={() => conflict.dismiss()}>
   {#if conflict.loading}<p role="status">{labels.loading}</p>{/if}
   {#if conflict.failed}<p role="alert">{copy.conflictFailed}</p>{/if}
   {#if conflict.current?.rule}
     {@const current = conflict.current.rule}
-    <div class="notice"><p>{copy.latest}：{copy.detail(current.days_before, current.reminder_time)} · {current.enabled ? copy.enabledState : copy.disabledState}</p><p>{copy.revision} {conflictTarget?.revision} → {current.revision}</p></div>
+    <div class="notice"><p>{copy.latest}：{copy.detail(current.days_before, current.reminder_time)} · {current.enabled ? copy.enabledState : copy.disabledState}</p></div>
   {:else if duplicate && !conflict.loading && !conflict.failed}
-    <div class="notice"><p>{copy.latest}：{copy.detail(duplicate.days_before, duplicate.reminder_time)} · {duplicate.enabled ? copy.enabledState : copy.disabledState}</p><p>{copy.revision} {duplicate.revision}</p></div>
+    <div class="notice"><p>{copy.latest}：{copy.detail(duplicate.days_before, duplicate.reminder_time)} · {duplicate.enabled ? copy.enabledState : copy.disabledState}</p></div>
   {/if}
-  {#if conflict.current?.period.status === 'cancelled'}<p class="notice">{copy.cancelled}</p>{/if}
 </ConfirmDialog>
-
 <style>
   .rules-page h1,.rules-page h2,.rules-page p{margin:0}.rules-page__rule{padding:14px 0;border-bottom:1px solid var(--border);display:grid;gap:10px;min-width:0}.rules-page__summary{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.rules-page__summary h2{overflow-wrap:anywhere}.rules-page__status{background:var(--badge-ok-bg);color:var(--badge-ok-fg);padding:4px 8px;border-radius:8px;font-size:12px}.rules-page__disabled{border-left:3px solid var(--border-strong);padding-left:10px}.rules-page__disabled .rules-page__status{background:var(--border);color:var(--text-secondary)}.rules-page__checkbox{display:flex;align-items:center;gap:10px;min-height:44px}
 </style>

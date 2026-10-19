@@ -1,5 +1,5 @@
 import { ApiError, type ApiErrorKind } from '../api/errors';
-import type { CardType, IntervalUnit, Period, PeriodStatus, PeriodType, ReminderStatus, ServiceStatus, TermsMode } from '../api/types';
+import type { CardType, IntervalUnit, Period, PeriodStatus, ReminderStatus, ServiceStatus, TermsMode } from '../api/types';
 
 export const labels = {
   appName: 'SERVICE MANAGER',
@@ -35,6 +35,8 @@ export const labels = {
   statistics: '服务统计',
   filter: '筛选',
   filterAll: '全部服务',
+  filterActive: '当前服务',
+  filterAllWithArchived: '全部（含归档）',
   filterArchived: '已归档',
   filterNoPeriod: '未设置有效期',
   filterArchivedNote: '归档视图只显示已归档的服务。',
@@ -67,12 +69,19 @@ export type LabelKey = keyof typeof labels;
 
 export const cardTypeLabels: Record<CardType, string> = { physical_sim: '实体 SIM', esim: 'eSIM' };
 export const serviceStatusLabels: Record<ServiceStatus, string> = { active: '使用中', archived: '已归档' };
-export const termsModeLabels: Record<TermsMode, string> = { once: '一次性', recurring: '周期性', custom: '自定义' };
+export const termsModeLabels: Record<TermsMode, string> = { once: '一次性', recurring: '周期性', custom: '暂不设置' };
 export const intervalUnitLabels: Record<IntervalUnit, string> = { day: '天', week: '周', month: '月', year: '年' };
-export const periodTypeLabels: Record<PeriodType, string> = {
-  number_validity: '号码有效期', plan_validity: '套餐到期', data_package_validity: '流量包到期', custom: '有效期',
+export const periodStatusLabels: Record<PeriodStatus, string> = { active: '有效', expired: '已过期' };
+export const serviceFieldLabels: Record<string, { provider: string; identifier: string }> = {
+  sim: { provider: '运营商', identifier: '公开标识' },
+  vps: { provider: '服务商', identifier: '主机名或 IP' },
+  domain: { provider: '注册商', identifier: '域名' },
+  subscription: { provider: '服务商', identifier: '账号标识' },
+  other: { provider: '服务商', identifier: '公开标识' },
 };
-export const periodStatusLabels: Record<PeriodStatus, string> = { active: '有效', expired: '已过期', cancelled: '已取消' };
+export function fieldLabels(code: string | null | undefined): { provider: string; identifier: string } {
+  return (code && serviceFieldLabels[code]) || serviceFieldLabels.other;
+}
 export const reminderStatusLabels: Record<ReminderStatus, string> = {
   pending: '待发送', sending: '发送中', sent: '已发送', failed: '发送失败', cancelled: '已取消',
 };
@@ -98,8 +107,8 @@ export function errorMessage(error: unknown): string {
   return labels.loadFailed;
 }
 
-export function periodTypeLabel(period: Pick<Period, 'period_type' | 'name'>): string {
-  return period.period_type === 'custom' ? period.name || periodTypeLabels.custom : periodTypeLabels[period.period_type];
+export function periodLabel(period: Pick<Period, 'name'>): string {
+  return period.name.trim() || '有效期';
 }
 
 export const settingsLabels = {
@@ -112,7 +121,7 @@ export const settingsLabels = {
   saveTimezone: '保存时区',
   invalidTimezone: '请输入有效的 IANA 时区，不能使用空值或 Local。',
   confirmTimezone: '确认修改时区',
-  timezoneImpact: '修改后，所有非取消有效期的 cycle 都会加 1，旧周期将失效；日期（date）精度的截止时间会按新时区重新计算；日期时间（datetime）精度对应的实际时刻保持不变；所有未发送提醒任务会被取消。',
+  timezoneImpact: '修改后，仅日期（date）精度的截止时间会按新时区重新计算；日期时间（datetime）精度对应的实际时刻保持不变；相关有效期会推进版本，所有未发送提醒任务会被取消。',
   confirmSave: '确认修改',
   reminders: '提醒记录',
   remindersHint: '查看提醒发送状态与历史。',
@@ -124,8 +133,8 @@ export const remindersLabels = {
   title: '提醒记录',
   filter: '提醒状态',
   empty: '暂无符合条件的提醒记录。',
-  period: (id: string) => `有效期 #${id}`,
-  task: (id: string) => `提醒 #${id}`,
+  period: (_id: string) => `有效期`,
+  task: (_id: string) => `提醒`,
   scheduled: '计划发送',
   sent: '实际发送',
   attempts: '尝试次数',
@@ -145,8 +154,6 @@ export const remindersLabels = {
   refreshing: '正在刷新…',
   zone: '显示时区',
   rule: '提醒规则',
-  cycle: '有效期周期',
-  revision: '规则版本',
   snapshot: '到期时间快照',
   nextAttempt: '下次尝试',
   created: '创建时间',
@@ -163,13 +170,10 @@ export const renewalLabels = {
   title: '续期',
   previousExpiry: '原截止',
   expiryInstant: '截止时刻',
-  currentCycle: '当前周期',
-  cycle: '周期',
   timezone: '时区',
   terms: '约定条款',
   termsReferenceHint: '约定周期与费用仅供参考，不会自动扣款，也不会自动推进截止日期。',
   actualPaymentHint: '实际续期金额与币种需按本次付款单独填写；留空不会从约定费用推断。',
-  cancelledPeriodHint: '此有效期已取消且不可恢复，请返回服务详情。',
   dateUnavailable: '日期不可用',
   invalidDate: '请输入有效的截止日期',
   laterExpiry: '新截止必须晚于原截止和当前时间，请选择更晚的日期或时间。',
@@ -183,7 +187,6 @@ export const renewalLabels = {
   submitting: '正在提交…',
   success: '续期成功',
   replayed: '该周期已提交过相同续期，已载入原记录',
-  cancelled: '此有效期已取消且不可恢复，请返回服务详情。',
   history: '续期历史',
   noHistory: '暂无续期记录。',
   renewedAt: '续期时间',
@@ -228,10 +231,8 @@ export const rulesLabels = {
   conflictDeferred: '冲突尚未确认，请查看最新规则后继续；草稿已保留。',
   conflictFailed: '无法读取最新规则，写入已暂停。请手动重试。',
   latest: '服务端最新规则',
-  cancelled: '此有效期已取消，不可恢复；不能再修改提醒规则。',
   reloadRequired: '操作已完成，但最新规则读取失败。请刷新后再操作。',
   partial: '规则列表加载不完整，已保留已加载的规则。',
-  revision: '版本',
   summary: (days: number, time: string) => `提前 ${days} 天 ${time}`,
   detail: (days: number, time: string) => `提前 ${days} 天 · ${time}`,
 } as const;

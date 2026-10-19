@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { api } from '../lib/api/resources';
   import { ApiError } from '../lib/api/errors';
-  import type { DatePrecision, Period, PeriodType, PeriodCreateInput, PeriodUpdateInput, PeriodTermsInput, TermsMode, IntervalUnit } from '../lib/api/types';
+  import type { DatePrecision, Period, PeriodCreateInput, PeriodUpdateInput, PeriodTermsInput, TermsMode, IntervalUnit } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
   import { acceptMe, canWrite, session } from '../lib/session.svelte';
@@ -11,7 +11,7 @@
   import { instantToWallTime, isValidDate, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
   import { parseMoney } from '../lib/domain/money';
-  import { errorMessage, intervalUnitLabels, periodTypeLabel, periodTypeLabels, labels, termsModeLabels } from '../lib/domain/labels';
+  import { errorMessage, intervalUnitLabels, periodLabel, labels, termsModeLabels } from '../lib/domain/labels';
   import MoneyInput from '../components/MoneyInput.svelte';
   import FormField from '../components/FormField.svelte';
   import DatePrecisionInput from '../components/DatePrecisionInput.svelte';
@@ -21,12 +21,10 @@
   import Toast from '../components/Toast.svelte';
 
   let { id, mode }: { id: string; mode: 'new' | 'edit' } = $props();
-  type Snapshot = { name: string; type: PeriodType; precision: DatePrecision; expires: string; occurrence?: Occurrence; starts: string; startsOccurrence?: Occurrence; terms: PeriodTermsInput };
+  type Snapshot = { name: string; precision: DatePrecision; expires: string; occurrence?: Occurrence; starts: string; startsOccurrence?: Occurrence; terms: PeriodTermsInput };
   let entity = $state<Period | null>(null);
   let zone = $state('');
   let name = $state('');
-  let periodType = $state<PeriodType>('number_validity');
-  let serviceIsSIM = $state(true);
   let termsMode = $state<TermsMode>('custom');
   let intervalCount = $state('');
   let intervalUnit = $state<IntervalUnit>('month');
@@ -73,8 +71,8 @@
   const submitter = new Submitter();
   const conflict = new ConflictFlow<Period>(() => api.period(id, controller.signal));
   const dirty = $derived(baseline
-    ? name !== baseline.name || (serviceIsSIM && periodType !== baseline.type) || precision !== baseline.precision || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence || !sameTerms(readTerms(), baseline.terms)
-    : name !== '' || expires !== '' || starts !== '' || precision !== 'date' || periodType !== 'number_validity' || termsMode !== 'custom' || amount !== '' || currency !== '');
+    ? name !== baseline.name || precision !== baseline.precision || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence || !sameTerms(readTerms(), baseline.terms)
+    : name !== '' || expires !== '' || starts !== '' || precision !== 'date' || termsMode !== 'custom' || amount !== '' || currency !== '');
   $effect(() => { session.dirty = dirty; });
   $effect(() => { expires; precision; occurrence; expiresError = ''; });
   $effect(() => { starts; startsOccurrence; startsError = ''; });
@@ -84,7 +82,7 @@
     const resolvedExpires = resolvedPrecision === 'date' ? current.local_expires_date ?? '' : instantToWallTime(current.expires_at, current.timezone);
     const resolvedStarts = current.starts_at ? instantToWallTime(current.starts_at, current.timezone) : null;
     return {
-      name: current.name, type: current.period_type, precision: resolvedPrecision, terms: { mode: current.terms.mode, interval_count: current.terms.interval_count, interval_unit: current.terms.interval_unit, amount: current.terms.amount, currency: current.terms.currency },
+      name: current.name, precision: resolvedPrecision, terms: { mode: current.terms.mode, interval_count: current.terms.interval_count, interval_unit: current.terms.interval_unit, amount: current.terms.amount, currency: current.terms.currency },
       expires: typeof resolvedExpires === 'string' ? resolvedExpires : resolvedExpires.value,
       occurrence: typeof resolvedExpires === 'string' ? undefined : resolvedExpires.occurrence,
       starts: resolvedStarts?.value ?? '', startsOccurrence: resolvedStarts?.occurrence,
@@ -94,7 +92,6 @@
     entity = current;
     zone = current.timezone;
     name = current.name;
-    periodType = current.period_type;
     precision = current.date_precision;
     const resolved = snapshotOf(current);
     expires = resolved.expires;
@@ -110,12 +107,11 @@
     if (!getInitData() || session.auth === 'expired' || session.auth === 'forbidden') { loading = false; return; }
     try {
       if (mode === 'edit') {
-        const current = await api.period(id, controller.signal);
-        const [user, service] = await Promise.all([session.me ? Promise.resolve(session.me) : api.me(controller.signal), api.service(current.service_id, controller.signal)]);
-        if (alive) { acceptMe(user); fill(current); serviceIsSIM = service.sim_details !== null; }
+        const [current, user] = await Promise.all([api.period(id, controller.signal), session.me ? Promise.resolve(session.me) : api.me(controller.signal)]);
+        if (alive) { acceptMe(user); fill(current); }
       } else {
-        const [user, service] = await Promise.all([session.me ? Promise.resolve(session.me) : api.me(controller.signal), api.service(id, controller.signal)]);
-        if (alive) { acceptMe(user); zone = user.timezone; serviceIsSIM = service.sim_details !== null; }
+        const user = session.me ? session.me : await api.me(controller.signal);
+        if (alive) { acceptMe(user); zone = user.timezone; }
       }
     } catch (cause) { if (alive && !controller.signal.aborted) loadError = cause; }
     finally { if (alive) loading = false; }
@@ -149,14 +145,14 @@
   }
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (!canWrite() || submitter.busy || loading || loadError || stale || conflict.open || conflict.failed || entity?.status === 'cancelled') return;
+    if (!canWrite() || submitter.busy || loading || loadError || stale || conflict.open || conflict.failed) return;
     const prepared = prepare();
     if (!prepared) return;
     await submitter.run(async () => {
       try {
         let saved: Period;
         if (mode === 'new') {
-          const body: PeriodCreateInput = { name, period_type: serviceIsSIM ? periodType : 'custom', date_precision: precision, expires_at: prepared.expiresValue, terms: readTerms() };
+          const body: PeriodCreateInput = { name, date_precision: precision, expires_at: prepared.expiresValue, terms: readTerms() };
           if (prepared.startsValue) body.starts_at = prepared.startsValue;
           saved = await api.createPeriod(id, body, controller.signal);
         } else {
@@ -164,7 +160,6 @@
           const body: PeriodUpdateInput = { expected_cycle: entity.cycle };
           if (!sameTerms(readTerms(), baseline.terms)) { body.terms = readTerms(); body.expected_terms_revision = entity.terms.revision; }
           if (name !== baseline.name) body.name = name;
-          if (serviceIsSIM && periodType !== baseline.type) body.period_type = periodType;
           if (precision !== baseline.precision) { body.date_precision = precision; body.expires_at = prepared.expiresValue; }
           else if (expires !== baseline.expires || occurrence !== baseline.occurrence) body.expires_at = prepared.expiresValue;
           if (starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence) body.starts_at = prepared.startsValue ?? null;
@@ -186,16 +181,10 @@
     const oldBaseline = baseline;
     if (!current || conflict.loading || conflict.failed) return;
     entity = current;
-    if (current.status === 'cancelled') {
-      stale = true;
-      conflict.dismiss();
-      return;
-    }
     zone = current.timezone;
     const resolved = snapshotOf(current);
     if (oldBaseline) {
       if (name === oldBaseline.name) name = resolved.name;
-      if (periodType === oldBaseline.type) periodType = resolved.type;
       if (precision === oldBaseline.precision) precision = resolved.precision;
       if (expires === oldBaseline.expires && occurrence === oldBaseline.occurrence) { expires = resolved.expires; occurrence = resolved.occurrence; }
       if (starts === oldBaseline.starts && startsOccurrence === oldBaseline.startsOccurrence) { starts = resolved.starts; startsOccurrence = resolved.startsOccurrence; }
@@ -214,15 +203,11 @@
   <h1 id="period-form-title">{mode === 'new' ? '添加有效期' : '编辑有效期'}</h1>
   {#if loading}<p role="status">{labels.loading}</p>
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={load} />
-  {:else if entity?.status === 'cancelled'}<p class="notice">该有效期已取消，不可恢复，也不能再编辑。请返回服务详情。</p>
   {:else if zone}
     <p class="muted">时区：{zone}</p>
     {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
     <Toast message={notice} ondismiss={() => { notice = ''; }} />
     <form class="stack" onsubmit={submit} novalidate>
-      {#if serviceIsSIM}<FormField id="period-type" label="有效期类型" required>
-        {#snippet children(field)}<select id={field.id} bind:value={periodType} disabled={!canWrite() || submitter.busy}>{#each Object.entries(periodTypeLabels) as [value, label]}<option {value}>{value === 'custom' ? '自定义' : label}</option>{/each}</select>{/snippet}
-      </FormField>{/if}
       <FormField id="period-name" label="有效期名称" hint="可选" error={nameError}>
         {#snippet children(field)}<input id={field.id} bind:value={name} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
       </FormField>
@@ -244,6 +229,6 @@
 <ConfirmDialog bind:open={conflict.open} title="有效期周期冲突" message="草稿已保留。服务端记录已变化；取最新值后请重新编辑并再次保存，不会自动提交或合并。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
   {#if conflict.loading}<p role="status">正在读取最新有效期…</p>
   {:else if conflict.failed}<ErrorBanner message="读取最新有效期失败，保存已暂停。" onretry={() => { void conflict.retry(); }} />
-  {:else if conflict.current}<p>周期：{entity?.cycle} → {conflict.current.cycle}</p><p>条款版本：{entity?.terms.revision} → {conflict.current.terms.revision}</p><p>服务端名称：{conflict.current.name || periodTypeLabel(conflict.current)}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{#if conflict.current.status === 'cancelled'}<p>该有效期已取消，不可恢复。取最新值后只能返回。</p>{/if}{/if}
+  {:else if conflict.current}<p>服务端名称：{periodLabel(conflict.current)}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{/if}
 </ConfirmDialog>
 <style>.muted{color:var(--text-secondary);margin:0}.terms{min-width:0;margin:0;padding:12px;border:1px solid var(--border);border-radius:8px}.terms legend{padding:0 4px;font-weight:600}.unsafe-money{display:grid;justify-items:start;gap:4px}.unsafe-money .text-button{margin-block:0}</style>

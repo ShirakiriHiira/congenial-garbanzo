@@ -6,13 +6,8 @@ export type CategoryKind = "sim" | "generic";
 export type ServiceStatusFilter = "active" | "due_soon" | "expired" | "no_period" | "archived" | "all";
 export type TermsMode = "once" | "recurring" | "custom";
 export type IntervalUnit = "day" | "week" | "month" | "year";
-export type PeriodType =
-  | "number_validity"
-  | "plan_validity"
-  | "data_package_validity"
-  | "custom";
 export type DatePrecision = "date" | "datetime";
-export type PeriodStatus = "active" | "expired" | "cancelled";
+export type PeriodStatus = "active" | "expired";
 export type ReminderStatus = "pending" | "sending" | "sent" | "failed" | "cancelled";
 export type ReminderStatusFilter = ReminderStatus | "all";
 
@@ -117,7 +112,6 @@ export interface User {
 export interface Period {
   id: ID;
   service_id: ID;
-  period_type: PeriodType;
   name: string;
   starts_at: string | null;
   expires_at: string;
@@ -146,7 +140,7 @@ export interface ServiceOverviewResponse {
 
 export interface Rule {
   id: ID;
-  validity_period_id: ID;
+  period_id: ID;
   days_before: number;
   reminder_time: string;
   enabled: boolean;
@@ -157,7 +151,7 @@ export interface Rule {
 
 export interface Renewal {
   id: ID;
-  validity_period_id: ID;
+  period_id: ID;
   previous_cycle: number;
   previous_expires_at: string;
   new_expires_at: string;
@@ -175,7 +169,7 @@ export interface Renewal {
 
 export interface ReminderJob {
   id: ID;
-  validity_period_id: ID;
+  period_id: ID;
   reminder_rule_id: ID;
   cycle: number;
   rule_revision: number;
@@ -204,7 +198,6 @@ export interface Page<T> {
 }
 
 export interface PeriodCreateInput {
-  period_type: PeriodType;
   name: string;
   starts_at?: string | null;
   date_precision: DatePrecision;
@@ -214,7 +207,6 @@ export interface PeriodCreateInput {
 
 export interface PeriodUpdateInput {
   expected_cycle: number;
-  period_type?: PeriodType;
   name?: string;
   starts_at?: string | null;
   date_precision?: DatePrecision;

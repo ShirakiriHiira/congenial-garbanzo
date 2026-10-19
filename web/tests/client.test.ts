@@ -43,7 +43,6 @@ const terms: PeriodTerms = {
 const period = {
   id: '4',
   service_id: '9007199254740993',
-  period_type: 'custom',
   name: '',
   starts_at: null,
   expires_at: '2027-02-01T00:00:00Z',
@@ -105,7 +104,7 @@ describe('request transport', () => {
       .mockResolvedValueOnce(jsonResponse({ data: service }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.archiveService('1');
+    await api.deleteService('1');
     await api.createService({ name: 'Synthetic', category_id: '2' });
 
     const [, readInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -199,7 +198,7 @@ describe('decoder boundaries', () => {
 
   it('preserves an unsafe renewal amount for the precise-display fallback', () => {
     const renewal = {
-      id: '1', validity_period_id: '2', previous_cycle: 1,
+      id: '1', period_id: '2', previous_cycle: 1,
       previous_expires_at: '2027-01-01T00:00:00Z', new_expires_at: '2027-02-01T00:00:00Z',
       previous_date_precision: 'date', new_date_precision: 'date',
       previous_local_expires_date: '2027-01-01', new_local_expires_date: '2027-02-01',
@@ -215,7 +214,7 @@ describe('decoder boundaries', () => {
 
   it('distinguishes renewal 200 replay from 201 creation', async () => {
     const renewal = {
-      id: '1', validity_period_id: '2', previous_cycle: 1,
+      id: '1', period_id: '2', previous_cycle: 1,
       previous_expires_at: '2027-01-01T00:00:00Z', new_expires_at: '2027-02-01T00:00:00Z',
       previous_date_precision: 'date', new_date_precision: 'date',
       previous_local_expires_date: '2027-01-01', new_local_expires_date: '2027-02-01',
@@ -370,7 +369,7 @@ describe('pagination', () => {
 
     await api.categories();
     await api.periods('12');
-    await api.createPeriod('12', { period_type: 'custom', name: '', date_precision: 'date', expires_at: '2027-02-01' });
+    await api.createPeriod('12', { name: '', date_precision: 'date', expires_at: '2027-02-01' });
 
     const urls = fetchMock.mock.calls.map((call) => call[0] as string);
     expect(urls[0]).toBe('/api/v1/categories?limit=20');
@@ -388,10 +387,10 @@ describe('pagination', () => {
     await api.updateService('9', { status: 'active' });
 
     const [deleteUrl, deleteInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    const [patchUrl, patchInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
-    expect(deleteUrl).toBe('/api/v1/services/9/delete');
-    expect(deleteInit.method).toBe('POST');
+    expect(deleteUrl).toBe('/api/v1/services/9');
+    expect(deleteInit.method).toBe('DELETE');
     expect(deleteInit.body).toBeUndefined();
+    const [patchUrl, patchInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
     expect(patchUrl).toBe('/api/v1/services/9');
     expect(patchInit.method).toBe('PATCH');
     expect(JSON.parse(String(patchInit.body))).toEqual({ status: 'active' });

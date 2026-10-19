@@ -21,7 +21,7 @@ function simService(): ServiceItem {
   return service({ name: '漫游卡', category_id: '1', provider: '运营商', management_url: 'https://manage.example/', sim_details: { card_type: 'esim', phone_number: '+886912345678', country_or_region: '台湾', iccid: '8988600000000000000' } });
 }
 function period(): Period {
-  return { id: '31', service_id: '42', period_type: 'custom', name: '', starts_at: null, expires_at: '2026-02-01T00:00:00Z', date_precision: 'datetime', local_expires_date: null, timezone: 'Asia/Taipei', status: 'active', cycle: 1, terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'USD', revision: 1 }, created_at: now, updated_at: now };
+  return { id: '31', service_id: '42', name: '', starts_at: null, expires_at: '2026-02-01T00:00:00Z', date_precision: 'datetime', local_expires_date: null, timezone: 'Asia/Taipei', status: 'active', cycle: 1, terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'USD', revision: 1 }, created_at: now, updated_at: now };
 }
 function json(data: unknown): Response { return Response.json({ data }); }
 function start(): void {
@@ -200,8 +200,8 @@ describe('service detail', () => {
   });
 
   it('loads each period rules and history lazily and keeps their cursors independent', async () => {
-    const rules = [1, 2].map((id) => ({ id: String(id), validity_period_id: '31', days_before: id, reminder_time: '09:00', enabled: true, revision: 1, created_at: now, updated_at: now }));
-    const renewals = [1, 2].map((id) => ({ id: String(id), validity_period_id: '31', previous_cycle: id, previous_expires_at: now, new_expires_at: '2026-02-01T00:00:00Z', previous_date_precision: 'datetime', new_date_precision: 'datetime', previous_local_expires_date: null, new_local_expires_date: null, timezone: 'Asia/Taipei', renewed_at: now, amount: id, currency: 'USD', notes: `续期记录 ${id}`, created_at: now }));
+    const rules = [1, 2].map((id) => ({ id: String(id), period_id: '31', days_before: id, reminder_time: '09:00', enabled: true, revision: 1, created_at: now, updated_at: now }));
+    const renewals = [1, 2].map((id) => ({ id: String(id), period_id: '31', previous_cycle: id, previous_expires_at: now, new_expires_at: '2026-02-01T00:00:00Z', previous_date_precision: 'datetime', new_date_precision: 'datetime', previous_local_expires_date: null, new_local_expires_date: null, timezone: 'Asia/Taipei', renewed_at: now, amount: id, currency: 'USD', notes: `续期记录 ${id}`, created_at: now }));
     const calls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       const url = new URL(input, location.origin);
@@ -233,9 +233,7 @@ describe('service detail', () => {
       const url = new URL(input, location.origin);
       calls.push([url.pathname, init]);
       if (url.pathname.endsWith('/categories')) return page([genericCategory]);
-      if (url.pathname.endsWith('/services/42/periods')) return page([]);
-      if (url.pathname.endsWith('/services/42') && init.method === 'DELETE') { current = { ...current, status: 'archived' }; return new Response(null, { status: 204 }); }
-      if (url.pathname.endsWith('/services/42/delete') && init.method === 'POST') return new Response(null, { status: 204 });
+      if (url.pathname.endsWith('/services/42') && init.method === 'DELETE') return new Response(null, { status: 204 });
       if (url.pathname.endsWith('/services/42') && init.method === 'PATCH') { current = { ...current, ...JSON.parse(String(init.body)) }; return json(current); }
       if (url.pathname.endsWith('/services/42')) return json(current);
       return json(user);
@@ -245,18 +243,21 @@ describe('service detail', () => {
     await fireEvent.click(screen.getByRole('button', { name: '归档' }));
     const archiveDialog = await screen.findByRole('dialog', { name: '归档此服务？' });
     await fireEvent.click(within(archiveDialog).getByRole('button', { name: '确认归档' }));
-    await screen.findByRole('button', { name: '恢复' });
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: '恢复' })).toBeEnabled());
     await fireEvent.click(screen.getByRole('button', { name: '恢复' }));
     const restoreDialog = await screen.findByRole('dialog', { name: '恢复此服务？' });
+    await vi.waitFor(() => expect(within(restoreDialog).getByRole('button', { name: '确认恢复' })).toBeEnabled());
     await fireEvent.click(within(restoreDialog).getByRole('button', { name: '确认恢复' }));
-    await screen.findByRole('button', { name: '归档' });
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: '归档' })).toBeEnabled());
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: '删除服务' })).toBeEnabled());
     await fireEvent.click(screen.getByRole('button', { name: '删除服务' }));
     const deleteDialog = await screen.findByRole('dialog', { name: '永久删除此服务？' });
     expect(within(deleteDialog).getByText(/全部有效期、提醒规则、提醒任务和续期历史/)).toBeInTheDocument();
+    await vi.waitFor(() => expect(within(deleteDialog).getByRole('button', { name: '确认永久删除服务' })).toBeEnabled());
     await fireEvent.click(within(deleteDialog).getByRole('button', { name: '确认永久删除服务' }));
     await vi.waitFor(() => expect(location.pathname).toBe('/app/'));
     expect(calls.some(([path, init]) => path.endsWith('/services/42') && init.method === 'DELETE')).toBe(true);
-    const deletion = calls.find(([path, init]) => path.endsWith('/services/42/delete') && init.method === 'POST');
+    const deletion = calls.find(([path, init]) => path.endsWith('/services/42') && init.method === 'DELETE');
     expect(deletion?.[1].body).toBeUndefined();
   });
 });

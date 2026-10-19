@@ -5,11 +5,11 @@ import { expiryDisplay, formatExpiry } from '../src/lib/domain/expiry';
 import { maskPhone } from '../src/lib/domain/mask';
 import { formatMoney, parseMoney } from '../src/lib/domain/money';
 import { ApiError } from '../src/lib/api/errors';
-import { errorLabels, errorMessage, intervalUnitLabels, periodTypeLabel, termsModeLabels } from '../src/lib/domain/labels';
+import { errorLabels, errorMessage, intervalUnitLabels, periodLabel, termsModeLabels } from '../src/lib/domain/labels';
 import { formatTermsCycle } from '../src/lib/domain/terms';
 
 const period: Period = {
-  id: '1', service_id: '2', period_type: 'number_validity', name: '合成号码有效期',
+  id: '1', service_id: '2', name: '合成号码有效期',
   starts_at: null, expires_at: '2027-01-08T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-01-08', timezone: 'Asia/Taipei', status: 'active', cycle: 1,
   terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },
@@ -74,7 +74,6 @@ describe('服务端状态与日历有效期', () => {
   });
   it('服务端状态优先，不将本地负天数转为过期', () => {
     expect(expiryDisplay({ ...period, status: 'expired' }, now)).toMatchObject({ days: null, tone: 'danger' });
-    expect(expiryDisplay({ ...period, status: 'cancelled' }, now)).toMatchObject({ days: null, tone: 'muted' });
     expect(expiryDisplay({ ...period, local_expires_date: '2026-12-31' }, now)).toMatchObject({ days: null, tone: 'ok', needsRefresh: true });
   });
 });
@@ -117,14 +116,14 @@ describe('安全中文标签', () => {
     expect(errorMessage(new Error('敏感服务端内容'))).not.toContain('敏感服务端内容');
     expect(errorMessage(new DOMException('中止', 'AbortError'))).toBe('');
   });
-  it('自定义有效期使用名称', () => {
-    expect(periodTypeLabel({ period_type: 'custom', name: '合成自定义有效期' })).toBe('合成自定义有效期');
+  it('有效期使用名称或回退', () => {
+    expect(periodLabel({ name: '合成自定义有效期' })).toBe('合成自定义有效期');
   });
 });
 
 describe('通用条款与默认有效期名称', () => {
-  it('未命名的自定义有效期显示为有效期', () => {
-    expect(periodTypeLabel({ period_type: 'custom', name: '' })).toBe('有效期');
+  it('未命名的有效期显示为有效期', () => {
+    expect(periodLabel({ name: '' })).toBe('有效期');
   });
   it('约定周期只描述条款，不推导日期', () => {
     expect(formatTermsCycle({ mode: 'once', interval_count: null, interval_unit: null, amount: null, currency: null })).toBe(termsModeLabels.once);

@@ -9,7 +9,7 @@
   import { getInitData } from '../lib/telegram/sdk';
   import { formatDateTime } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
-  import { cardTypeLabels, errorMessage, labels, periodStatusLabels, periodTypeLabel, serviceStatusLabels } from '../lib/domain/labels';
+  import { cardTypeLabels, errorMessage, fieldLabels, labels, periodLabel, periodStatusLabels, serviceStatusLabels } from '../lib/domain/labels';
   import { formatTermsCycle } from '../lib/domain/terms';
   import { maskPhone } from '../lib/domain/mask';
   import { formatMoney } from '../lib/domain/money';
@@ -51,6 +51,7 @@
   let controller = new AbortController();
   const terminal = $derived(session.auth === 'expired' || session.auth === 'forbidden');
   const category = $derived(categories.find((item) => item.id === service?.category_id) ?? null);
+  const serviceFields = $derived(fieldLabels(category?.code));
   const managementURL = $derived(safeURL(service?.management_url ?? null));
 
   function stop(): AbortController { controller.abort(); controller = new AbortController(); return controller; }
@@ -127,13 +128,13 @@
   async function reload(): Promise<void> { await Promise.all([fetchService(controller.signal), loadPeriods(true)]); }
   async function archive(): Promise<void> {
     if (!service || actionBusy || !canWrite()) return; actionBusy = true; actionError = '';
-    try { await api.archiveService(service.id, controller.signal); if (!alive) return; notice = '服务已归档，未发送的提醒已取消。'; await reload(); }
+    try { service = await api.archiveService(service.id, controller.signal); if (!alive) return; notice = '服务已归档，未发送的提醒已取消。'; await reload(); }
     catch (error) { if (alive) actionError = errorMessage(error); }
     finally { if (alive) { actionBusy = false; archiveOpen = false; } }
   }
   async function restore(): Promise<void> {
     if (!service || actionBusy || !canWrite()) return; actionBusy = true; actionError = '';
-    try { service = await api.updateService(service.id, { status: 'active' }, controller.signal); if (!alive) return; notice = '服务已恢复。有效期周期已加一，旧的版本已失效。'; await reload(); }
+    try { service = await api.updateService(service.id, { status: 'active' }, controller.signal); if (!alive) return; notice = '服务已恢复，旧的草稿与按钮已失效。'; await reload(); }
     catch (error) { if (alive) actionError = errorMessage(error); }
     finally { if (alive) { actionBusy = false; restoreOpen = false; } }
   }
@@ -175,8 +176,8 @@
     {#if categoryError}<ErrorBanner message={errorMessage(categoryError)} onretry={loadCategories} />{/if}
     <div class="section stack"><SectionHeader title="服务资料">{#snippet children()}{/snippet}</SectionHeader><dl class="profile">
       {#if category}<div><dt>类别</dt><dd>{category.name}</dd></div>{/if}
-      {#if service.provider}<div><dt>{service.sim_details ? '运营商' : '服务商'}</dt><dd>{service.provider}</dd></div>{/if}
-      {#if service.identifier}<div><dt>公开标识</dt><dd>{service.identifier}</dd></div>{/if}
+      {#if service.provider}<div><dt>{service.sim_details ? '运营商' : serviceFields.provider}</dt><dd>{service.provider}</dd></div>{/if}
+      {#if service.identifier}<div><dt>{serviceFields.identifier}</dt><dd>{service.identifier}</dd></div>{/if}
       {#if managementURL}<div><dt>管理链接</dt><dd><a href={managementURL} target="_blank" rel="noopener noreferrer">{service.management_url}</a></dd></div>{/if}
       {#if service.sim_details}<div><dt>卡片类型</dt><dd>{cardTypeLabels[service.sim_details.card_type]}</dd></div>{#if service.sim_details.phone_number}<div><dt>手机号</dt><dd>{maskPhone(service.sim_details.phone_number)}</dd></div>{/if}{#if service.sim_details.country_or_region}<div><dt>国家或地区</dt><dd>{service.sim_details.country_or_region}</dd></div>{/if}{/if}
       {#if service.notes}<div><dt>备注</dt><dd class="preserve">{service.notes}</dd></div>{/if}
@@ -196,8 +197,8 @@
             <li class="period">
               <div class="period-head">
                 <div class="period-text">
-                  <p class="period-name">{periodTypeLabel(period)}{#if period.name && period.period_type !== 'custom'}<span class="muted period-subname">· {period.name}</span>{/if}</p>
-                  <p class="muted">{formatExpiry(period)} · 周期 {period.cycle}</p>
+                  <p class="period-name">{periodLabel(period)}</p>
+                  <p class="muted">{formatExpiry(period)}</p>
                   <div class="badges"><ExpiryBadge {period} /></div>
                   <p class="muted">约定周期：{formatTermsCycle(period.terms)}</p>
                   <p class="muted">约定费用：{formatMoney(period.terms.amount, period.terms.currency)}</p>
@@ -205,14 +206,9 @@
                 <button type="button" class="toggle" aria-expanded={Boolean(expanded[period.id])} onclick={() => toggle(period)}>{expanded[period.id] ? '收起' : '详情'}</button>
               </div>
               <div class="actions wrap">
-                {#if period.status !== 'cancelled'}
-                  <button type="button" class="primary" onclick={() => navigate(`/app/periods/${period.id}/renew`)} disabled={!canWrite() || actionBusy}>续期</button>
-                  <button type="button" onclick={() => navigate(`/app/periods/${period.id}/rules`)} disabled={!canWrite() || actionBusy}>提醒规则</button>
-                  <button type="button" onclick={() => navigate(`/app/periods/${period.id}/edit`)} disabled={!canWrite() || actionBusy}>编辑有效期</button>
-                {:else}
-                  <p class="muted">已取消的有效期不可恢复，也不能再编辑或续期。</p>
-                  <button type="button" class="danger" onclick={() => askDeletePeriod(period)} disabled={!canWrite() || actionBusy || deleteConflict.changed || deleteConflict.open}>{labels.deletePeriod}</button>
-                {/if}
+                <button type="button" class="primary" onclick={() => navigate(`/app/periods/${period.id}/renew`)} disabled={!canWrite() || actionBusy}>续期</button>
+                <button type="button" onclick={() => navigate(`/app/periods/${period.id}/rules`)} disabled={!canWrite() || actionBusy}>提醒规则</button>
+                <button type="button" onclick={() => navigate(`/app/periods/${period.id}/edit`)} disabled={!canWrite() || actionBusy}>编辑有效期</button>
               </div>
               {#if expanded[period.id]}
                 <div class="section stack">
@@ -232,7 +228,7 @@
                       {#each sections[period.id]!.renewals!.data as renewal (renewal.id)}
                         <li>
                           <p>{renewalDate(renewal, 'previous')} → {renewalDate(renewal, 'new')}</p>
-                          <p class="muted">周期 {renewal.previous_cycle} · {formatMoney(renewal.amount, renewal.currency)} · {formatDateTime(renewal.renewed_at, renewal.timezone)}</p>
+                          <p class="muted">{formatMoney(renewal.amount, renewal.currency)} · {formatDateTime(renewal.renewed_at, renewal.timezone)}</p>
                           {#if renewal.notes}<p class="preserve">{renewal.notes}</p>{/if}
                         </li>
                       {/each}
@@ -240,7 +236,7 @@
                     {#if sections[period.id]?.renewals?.next_cursor}<button type="button" onclick={() => loadRenewals(period.id, true)} disabled={sections[period.id]?.renewalsLoading}>加载更多历史</button>{/if}
                   {:else if !sections[period.id]?.renewalsError}<p class="muted">暂无续期记录。</p>{/if}
                   {#if sections[period.id]?.renewalsError}<ErrorBanner message={errorMessage(sections[period.id]?.renewalsError)} onretry={() => loadRenewals(period.id, Boolean(sections[period.id]?.renewals))} />{/if}
-                  {#if period.status !== 'cancelled'}<div class="actions"><button type="button" class="danger" onclick={() => askDeletePeriod(period)} disabled={!canWrite() || actionBusy || deleteConflict.changed || deleteConflict.open}>{labels.deletePeriod}</button></div>{/if}
+                  <div class="actions"><button type="button" class="danger" onclick={() => askDeletePeriod(period)} disabled={!canWrite() || actionBusy || deleteConflict.changed || deleteConflict.open}>{labels.deletePeriod}</button></div>
                 </div>
               {/if}
             </li>
@@ -254,11 +250,11 @@
   {:else}<ErrorBanner message="服务不存在或已不可访问。" onretry={refresh} />{/if}
 </section>
 <ConfirmDialog bind:open={archiveOpen} title="归档此服务？" message="归档后服务不再计入首页统计，未发送的提醒会被取消。资料与历史仍保留，可随时恢复。" confirmLabel="确认归档" busy={actionBusy} onconfirm={archive} oncancel={() => { archiveOpen = false; }} />
-<ConfirmDialog bind:open={restoreOpen} title="恢复此服务？" message="恢复会取消未发送提醒，未取消有效期的周期会加一，旧的版本将失效；需要按最新数据重新编辑或续期。" confirmLabel="确认恢复" busy={actionBusy} onconfirm={restore} oncancel={() => { restoreOpen = false; }} />
+<ConfirmDialog bind:open={restoreOpen} title="恢复此服务？" message="恢复会取消未发送提醒，并让相关有效期推进版本；旧的草稿与按钮将失效，需要按最新数据重新编辑或续期。" confirmLabel="确认恢复" busy={actionBusy} onconfirm={restore} oncancel={() => { restoreOpen = false; }} />
 <ConfirmDialog bind:open={deleteOpen} title="永久删除此服务？" message={`将永久删除「${service?.name ?? ''}」及其全部有效期、提醒规则、提醒任务和续期历史。此操作不可撤销；已发送的 Telegram 消息不会被撤回。`} confirmLabel="确认永久删除服务" busy={actionBusy} onconfirm={deleteService} oncancel={() => { deleteOpen = false; }} />
-<ConfirmDialog bind:open={deletePeriodOpen} title={labels.deletePeriodTitle} message={labels.deletePeriodMessage(deleteTarget ? deleteTarget.name || periodTypeLabel(deleteTarget) : '')} confirmLabel={labels.deletePeriodConfirm} busy={actionBusy} onconfirm={deletePeriod} oncancel={() => { deletePeriodOpen = false; deleteTarget = null; }} />
-<ConfirmDialog bind:open={deleteConflict.open} title="有效期周期已变化" message={labels.deleteConflict} confirmLabel="使用最新值" busy={deleteConflict.loading} onconfirm={useLatestPeriod} oncancel={() => deleteConflict.dismiss()}>{#if deleteConflict.loading}<p role="status">正在获取最新有效期…</p>{:else if deleteConflict.failed}<ErrorBanner message={labels.deleteConflictFailed} onretry={() => { void deleteConflict.retry(); }} />{:else if deleteConflict.current}<p>服务端名称：{deleteConflict.current.name || periodTypeLabel(deleteConflict.current)}</p><p>周期：{conflictPreviousCycle} → {deleteConflict.current.cycle}</p><p>截止：{formatExpiry(deleteConflict.current)}</p><p>状态：{periodStatusLabels[deleteConflict.current.status]}</p>{/if}</ConfirmDialog>
+<ConfirmDialog bind:open={deletePeriodOpen} title={labels.deletePeriodTitle} message={labels.deletePeriodMessage(deleteTarget ? periodLabel(deleteTarget) : '')} confirmLabel={labels.deletePeriodConfirm} busy={actionBusy} onconfirm={deletePeriod} oncancel={() => { deletePeriodOpen = false; deleteTarget = null; }} />
+<ConfirmDialog bind:open={deleteConflict.open} title="有效期已变化" message={labels.deleteConflict} confirmLabel="使用最新值" busy={deleteConflict.loading} onconfirm={useLatestPeriod} oncancel={() => deleteConflict.dismiss()}>{#if deleteConflict.loading}<p role="status">正在获取最新有效期…</p>{:else if deleteConflict.failed}<ErrorBanner message={labels.deleteConflictFailed} onretry={() => { void deleteConflict.retry(); }} />{:else if deleteConflict.current}<p>服务端名称：{periodLabel(deleteConflict.current)}</p><p>截止：{formatExpiry(deleteConflict.current)}</p><p>状态：{periodStatusLabels[deleteConflict.current.status]}</p>{/if}</ConfirmDialog>
 {#if deleteConflict.changed && !deleteConflict.open}<ErrorBanner message={deleteConflict.failed ? labels.deleteConflictFailed : labels.deleteConflict} onretry={() => { void deleteConflict.retry(); }} />{/if}
 <style>
-  .heading{display:flex;align-items:center;gap:10px;min-width:0}.heading-text{flex:1;min-width:0;overflow-wrap:anywhere}h1{font-size:18px;line-height:1.4}.muted{color:var(--text-secondary);margin:0;overflow-wrap:anywhere}.profile{display:grid;gap:6px;margin:0}.profile div{display:flex;gap:10px;min-width:0}dt{flex:0 0 72px;color:var(--text-secondary)}dd{margin:0;min-width:0;overflow-wrap:anywhere}.preserve{white-space:pre-wrap}.periods,.plain{list-style:none;margin:0;padding:0;display:grid;gap:12px;min-width:0}.period{padding:14px 0;border-top:1px solid var(--border);min-width:0;display:grid;gap:12px}.period-head{display:flex;align-items:flex-start;gap:10px;min-width:0}.period-text{flex:1;min-width:0;display:grid;gap:4px}.period-name{margin:0;font-weight:600;overflow-wrap:anywhere}.period-subname{margin-left:4px;font-weight:400}.badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}h3{font-size:13px;margin:0}.wrap{flex-wrap:wrap}.danger{color:var(--badge-danger-fg)}
+  .heading{display:flex;align-items:center;gap:10px;min-width:0}.heading-text{flex:1;min-width:0;overflow-wrap:anywhere}h1{font-size:18px;line-height:1.4}.muted{color:var(--text-secondary);margin:0;overflow-wrap:anywhere}.profile{display:grid;gap:6px;margin:0}.profile div{display:flex;gap:10px;min-width:0}dt{flex:0 0 72px;color:var(--text-secondary)}dd{margin:0;min-width:0;overflow-wrap:anywhere}.preserve{white-space:pre-wrap}.periods,.plain{list-style:none;margin:0;padding:0;display:grid;gap:12px;min-width:0}.period{padding:14px 0;border-top:1px solid var(--border);min-width:0;display:grid;gap:12px}.period-head{display:flex;align-items:flex-start;gap:10px;min-width:0}.period-text{flex:1;min-width:0;display:grid;gap:4px}.period-name{margin:0;font-weight:600;overflow-wrap:anywhere}.badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}h3{font-size:13px;margin:0}.wrap{flex-wrap:wrap}.danger{color:var(--badge-danger-fg)}
 </style>

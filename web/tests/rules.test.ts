@@ -8,14 +8,14 @@ import { failSession, session } from '../src/lib/session.svelte';
 
 const stamp = '2027-01-01T00:00:00Z';
 const period: Period = {
-  id: '10', service_id: '2', period_type: 'custom', name: '合成有效期',
+  id: '10', service_id: '2', name: '合成有效期',
   starts_at: null, expires_at: '2027-02-01T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-02-01', timezone: 'Asia/Taipei', status: 'active',
   cycle: 3, created_at: stamp, updated_at: stamp,
   terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },
 };
 const rule: Rule = {
-  id: '20', validity_period_id: '10', days_before: 7, reminder_time: '09:00',
+  id: '20', period_id: '10', days_before: 7, reminder_time: '09:00',
   enabled: true, revision: 4, created_at: stamp, updated_at: stamp,
 };
 const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: stamp, updated_at: stamp };
@@ -150,7 +150,7 @@ describe('rules route consumer behavior', () => {
     await fireEvent.click(screen.getByRole('button', { name: '保存规则' }));
     const dialog = await screen.findByRole('dialog', { name: '提醒规则发生冲突' });
     expect(within(dialog).getByText(/已禁用规则仍占用此组合/)).toBeInTheDocument();
-    await waitFor(() => expect(within(dialog).getByText(/4 → 8/)).toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).getByText(/提前 5 天 · 09:00/)).toBeInTheDocument());
     expect(screen.getByLabelText(/提前天数/)).toHaveValue('3');
     expect(api.updateRule).toHaveBeenCalledTimes(1);
     await fireEvent.click(within(dialog).getByRole('button', { name: '基于最新版本继续编辑' }));
@@ -205,14 +205,6 @@ describe('rules route consumer behavior', () => {
     expect(screen.getByLabelText(/提前天数/)).toHaveValue('3');
   });
 
-  it('offers only read-only rules for a cancelled period', async () => {
-    vi.mocked(api.period).mockResolvedValue({ ...period, status: 'cancelled' });
-    render(Rules, { id: '10' });
-    expect(await screen.findByText(/此有效期已取消/)).toBeInTheDocument();
-    expect(await screen.findByRole('article', { name: '提前 7 天 09:00' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '添加规则' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '编辑规则' })).not.toBeInTheDocument();
-  });
 
   it('shows an unnamed generic period without a SIM label', async () => {
     vi.mocked(api.period).mockResolvedValue({ ...period, name: '' });

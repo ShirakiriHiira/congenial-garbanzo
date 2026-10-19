@@ -5,7 +5,7 @@ import { session } from '../src/lib/session.svelte';
 import type { Period, Renewal, RenewalCreateInput } from '../src/lib/api/types';
 
 const initialPeriod: Period = {
-  id: '11', service_id: '3', period_type: 'custom', name: '合成测试有效期',
+  id: '11', service_id: '3', name: '合成测试有效期',
   starts_at: null, expires_at: '2027-01-31T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-01-31', timezone: 'Asia/Taipei', status: 'active', cycle: 4,
   terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'USD', revision: 2 },
@@ -16,7 +16,7 @@ const user = {
   created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
 const historyEntry: Renewal = {
-  id: '21', validity_period_id: '11', previous_cycle: 4,
+  id: '21', period_id: '11', previous_cycle: 4,
   previous_expires_at: initialPeriod.expires_at, new_expires_at: '2027-02-28T16:00:00Z',
   previous_date_precision: 'date', new_date_precision: 'date',
   previous_local_expires_date: '2027-01-31', new_local_expires_date: '2027-02-28',
@@ -94,7 +94,7 @@ describe('renewal route', () => {
     render(Renew, { id: '11' });
     expect(await screen.findByText('2027-02-01 00:00:00')).toBeInTheDocument();
     expect(screen.getAllByText('2027-01-31').length).toBeGreaterThan(0);
-    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '合成测试有效期' })).toBeInTheDocument();
     expect(await screen.findByText('暂无续期记录。')).toBeInTheDocument();
     expect(String(api.fetcher.mock.calls[0]?.[0])).toBe('/api/v1/periods/11');
     expect(screen.getByRole('radio', { name: '日期' })).toBeChecked();
@@ -115,7 +115,7 @@ describe('renewal route', () => {
   });
 
   it('uses the generic fallback for an unnamed period', async () => {
-    transport({ period: { ...initialPeriod, name: '', period_type: 'custom' } });
+    transport({ period: { ...initialPeriod, name: '' } });
     render(Renew, { id: '11' });
     expect(await screen.findByRole('heading', { name: '有效期' })).toBeInTheDocument();
   });
@@ -146,8 +146,6 @@ describe('renewal route', () => {
       expected_cycle: 4, date_precision: 'date', expires_at: '2027-02-28',
       amount: 1234, currency: 'TWD', notes: '合成续费记录',
     }]);
-    expect(screen.getByText('9')).toBeInTheDocument();
-    expect(screen.queryByText('5')).not.toBeInTheDocument();
     expect(screen.getAllByText('续期成功')).toHaveLength(1);
     expect(session.dirty).toBe(false);
   });
@@ -283,7 +281,7 @@ describe('renewal route', () => {
     await send();
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('heading')).toHaveTextContent('数据已被其他操作更新');
-    expect(await within(dialog).findByText('4 → 12')).toBeInTheDocument();
+    expect(await within(dialog).findByText('服务端截止')).toBeInTheDocument();
     expect(screen.getByLabelText(/截止日期/)).toHaveValue('2027-02-28');
     expect(api.writes).toHaveLength(1);
     expect(screen.getByRole('button', { name: '确认续期' })).toBeDisabled();
@@ -386,13 +384,6 @@ describe('renewal route', () => {
     expect(screen.getByText('保留此合成记录')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: '重试' }));
     await waitFor(() => expect(historyReads).toBe(3));
-  });
-
-  it('does not offer renewal for a cancelled period', async () => {
-    transport({ period: { ...initialPeriod, status: 'cancelled' } });
-    render(Renew, { id: '11' });
-    expect(await screen.findByText('此有效期已取消且不可恢复，请返回服务详情。')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '确认续期' })).not.toBeInTheDocument();
   });
 
   it('retains a draft but blocks all further writes after a 401', async () => {

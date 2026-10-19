@@ -16,7 +16,6 @@ export function formatExpiry(period: Period): string {
 /** Server status wins; the clock is only used for supplementary calendar-day text. */
 export function expiryDisplay(period: Period | null, now: string = new Date().toISOString()): ExpiryDisplay {
   if (!period) return { tone: 'muted', label: '未设置有效期', days: null, needsRefresh: false };
-  if (period.status === 'cancelled') return { tone: 'muted', label: '已取消', days: null, needsRefresh: false };
   if (period.status === 'expired') return { tone: 'danger', label: '已过期', days: null, needsRefresh: false };
   const endDate = period.date_precision === 'date' ? period.local_expires_date : localDateAt(period.expires_at, period.timezone);
   if (!endDate) return { tone: 'ok', label: '有效', days: null, needsRefresh: true };

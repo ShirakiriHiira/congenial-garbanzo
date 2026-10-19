@@ -71,7 +71,7 @@ describe('settings', () => {
     await chooseTimezone();
     expect(session.dirty).toBe(true);
     const dialog = await openConfirmation();
-    expect(dialog).toHaveTextContent('所有非取消有效期的 cycle 都会加 1');
+    expect(dialog).toHaveTextContent('相关有效期会推进版本');
     expect(dialog).toHaveTextContent('日期（date）精度的截止时间会按新时区重新计算');
     expect(dialog).toHaveTextContent('日期时间（datetime）精度对应的实际时刻保持不变');
     expect(dialog).toHaveTextContent('所有未发送提醒任务会被取消');

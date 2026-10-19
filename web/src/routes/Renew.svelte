@@ -6,12 +6,11 @@
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
   import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
-  import { back } from '../lib/router';
   import { formatDateTime, isValidDate, localDateAt, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
   import { formatMoney, parseMoney } from '../lib/domain/money';
   import { formatTermsCycle } from '../lib/domain/terms';
-  import { errorMessage, labels, periodTypeLabel, renewalLabels as text } from '../lib/domain/labels';
+  import { errorMessage, labels, periodLabel, renewalLabels as text } from '../lib/domain/labels';
   import AsyncState from '../components/AsyncState.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import DatePrecisionInput from '../components/DatePrecisionInput.svelte';
@@ -52,7 +51,7 @@
   const submitter = new Submitter();
   const conflict = new ConflictFlow<Period>(() => api.period(id, controller?.signal));
   const terminal = $derived(session.auth === 'expired' || session.auth === 'forbidden');
-  const writable = $derived(canWrite() && period !== null && period.status !== 'cancelled' && !loading && !refreshRequired && !reviewRequired && !conflict.open && !submitter.busy);
+  const writable = $derived(canWrite() && period !== null && !loading && !refreshRequired && !reviewRequired && !conflict.open && !submitter.busy);
 
   function current(request: number, signal: AbortSignal): boolean {
     return request === sequence && !signal.aborted && !terminal;
@@ -216,11 +215,6 @@
     if (conflict.loading) return;
     if (conflict.failed || !conflict.current) { void conflict.retry(); return; }
     period = conflict.current;
-    if (period.status === 'cancelled') {
-      conflict.dismiss();
-      back(`/app/services/${period.service_id}`);
-      return;
-    }
     reviewRequired = false;
     refreshRequired = false;
     conflict.dismiss();
@@ -237,21 +231,17 @@
     {#if !period}
       <AsyncState {loading} error={periodError} onretry={terminal ? undefined : () => { void readPeriod().then(() => { if (period) { precision = period.date_precision; void readHistory(); } }); }} />
     {:else}
-      <h2>{period.name || periodTypeLabel(period)}</h2>
+      <h2>{periodLabel(period)}</h2>
       <dl class="renew-facts">
         <dt>{text.previousExpiry}</dt><dd>{formatExpiry(period)}</dd>
         <dt>{text.terms}</dt><dd>{formatTermsCycle(period.terms)} · {formatMoney(period.terms.amount, period.terms.currency)}</dd>
         <dt>{text.expiryInstant}</dt><dd><time datetime={period.expires_at}>{formatDateTime(period.expires_at, period.timezone)}</time></dd>
-        <dt>{text.currentCycle}</dt><dd>{period.cycle}</dd>
         <dt>{text.timezone}</dt><dd>{period.timezone}</dd>
       </dl>
       <p class="muted">{text.termsReferenceHint}</p>
       {#if periodError}<ErrorBanner message={periodError} onretry={terminal ? undefined : () => { void readPeriod(); }} />{/if}
       <Toast message={toast} ondismiss={() => { toast = ''; }} />
       {#if replayMessage}<p role="status" class="notice">{replayMessage}</p>{/if}
-      {#if period.status === 'cancelled'}
-        <p class="notice">{text.cancelledPeriodHint}</p>
-      {:else}
         {#if reviewRequired && !conflict.open}
           <ErrorBanner message={text.conflictPending} onretry={terminal ? undefined : () => { void conflict.present(); }} />
         {/if}
@@ -260,6 +250,7 @@
           <p class="muted">{text.expiryHint}</p>
           <p class="muted">{text.actualPaymentHint}</p>
           <MoneyInput id="renew-amount" bind:amount bind:currency disabled={!writable} />
+          {#if period.terms.amount !== null && period.terms.currency !== null}<div class="actions"><button type="button" onclick={() => { amount = String(period!.terms.amount); currency = period!.terms.currency ?? ''; dirty = true; }} disabled={!writable}>使用约定金额</button></div>{/if}
           <FormField id="renew-notes" label={text.notes} error={notesError} hint={text.notesHint}>
             {#snippet action()}
               {#if notes}<button type="button" class="text-button" aria-label={text.clearNotes} disabled={!writable} onclick={() => { notes = ''; dirty = true; }}>清除</button>{/if}
@@ -271,7 +262,6 @@
           {#if submitter.error && !fieldError && !notesError}<ErrorBanner message={submitter.error instanceof ApiError ? errorMessage(submitter.error) : text.invalidForm} />{/if}
           <button class="primary" type="submit" aria-label={text.submit} disabled={!writable}>{submitter.busy ? text.submitting : text.submit}</button>
         </form>
-      {/if}
     {/if}
   </section>
   {#if period}
@@ -284,7 +274,7 @@
         {#each history as entry (entry.id)}
           <li class="stack">
             <p>{text.renewedAt} <time datetime={entry.renewed_at}>{formatDateTime(entry.renewed_at, entry.timezone)}</time></p>
-            <p>{text.previousCycle} {entry.previous_cycle} · {text.newExpiry} {entry.new_date_precision === 'date' ? entry.new_local_expires_date ?? text.dateUnavailable : formatDateTime(entry.new_expires_at, entry.timezone)}</p>
+            <p>{text.newExpiry} {entry.new_date_precision === 'date' ? entry.new_local_expires_date ?? text.dateUnavailable : formatDateTime(entry.new_expires_at, entry.timezone)}</p>
             <p>{formatMoney(entry.amount, entry.currency)}</p>
             {#if entry.notes}<p class="renew-notes">{entry.notes}</p>{/if}
           </li>
@@ -295,12 +285,11 @@
   {/if}
 </div>
 
-<ConfirmDialog open={conflict.open} title={text.conflictTitle} message={text.conflictMessage} confirmLabel={conflict.failed ? text.reloadLatest : conflict.current?.status === 'cancelled' ? labels.back : text.editLatest} cancelLabel={labels.back} busy={conflict.loading} onconfirm={acceptLatest} oncancel={() => conflict.dismiss()}>
+<ConfirmDialog open={conflict.open} title={text.conflictTitle} message={text.conflictMessage} confirmLabel={conflict.failed ? text.reloadLatest : text.editLatest} cancelLabel={labels.back} busy={conflict.loading} onconfirm={acceptLatest} oncancel={() => conflict.dismiss()}>
   {#if conflict.loading}<p role="status">{labels.loading}</p>
   {:else if conflict.failed}<p role="alert">{text.conflictReloadFailed}</p>
   {:else if conflict.current}
-    <dl class="renew-facts"><dt>{text.cycle}</dt><dd>{period?.cycle} → {conflict.current.cycle}</dd><dt>{text.currentExpiry}</dt><dd>{formatExpiry(conflict.current)}</dd><dt>{text.expiryInstant}</dt><dd>{formatDateTime(conflict.current.expires_at, conflict.current.timezone)}</dd></dl>
-    {#if conflict.current.status === 'cancelled'}<p>{text.cancelledPeriodHint}</p>{/if}
+    <dl class="renew-facts"><dt>{text.currentExpiry}</dt><dd>{formatExpiry(conflict.current)}</dd><dt>{text.expiryInstant}</dt><dd>{formatDateTime(conflict.current.expires_at, conflict.current.timezone)}</dd></dl>
   {/if}
 </ConfirmDialog>
 

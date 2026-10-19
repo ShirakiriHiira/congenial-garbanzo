@@ -24,11 +24,11 @@ const vpsService: ServiceItem = {
 };
 const defaultTerms = { mode: 'custom' as const, interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 };
 const period: Period = {
-  id: '5', service_id: '1', period_type: 'plan_validity', name: '合成套餐', starts_at: null,
+  id: '5', service_id: '1', name: '合成套餐', starts_at: null,
   expires_at: '2027-02-01T16:00:00Z', date_precision: 'date', local_expires_date: '2027-02-01', timezone: 'Asia/Taipei',
   status: 'active', cycle: 3, terms: defaultTerms, created_at: stamp, updated_at: stamp,
 };
-const vpsPeriod: Period = { ...period, id: '6', service_id: '2', period_type: 'custom', name: '', terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'CNY', revision: 2 } };
+const vpsPeriod: Period = { ...period, id: '6', service_id: '2', name: '', terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'CNY', revision: 2 } };
 const failure = (status: number) => Response.json({ error: { code: 'invalid_or_changed', message: 'private server detail' } }, { status });
 const json = (data: unknown, status = 200) => Response.json({ data }, { status });
 
@@ -69,7 +69,7 @@ describe('period form', () => {
     await fireEvent.input(name, { target: { value: '保留的套餐草稿' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     const dialog = await screen.findByRole('dialog', { name: '有效期周期冲突' });
-    await waitFor(() => expect(dialog).toHaveTextContent('3 → 4'));
+    await waitFor(() => expect(dialog).toHaveTextContent('服务端截止：2027-03-01'));
     expect(name).toHaveValue('保留的套餐草稿');
     expect(fetcher.mock.calls.filter(([, request]) => request?.method === 'PATCH')).toHaveLength(1);
     expect(JSON.parse(String(writeOf(fetcher, 'PATCH')?.[1].body))).toEqual({ expected_cycle: 3, name: '保留的套餐草稿' });
@@ -91,7 +91,7 @@ describe('period form', () => {
     await fireEvent.input(money, { target: { value: '1999' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     const dialog = await screen.findByRole('dialog');
-    await waitFor(() => expect(dialog).toHaveTextContent('条款版本：2 → 7'));
+    await waitFor(() => expect(dialog).toHaveTextContent('服务端名称'));
     expect(money).toHaveValue('1999');
     expect(writes).toBe(1);
     await fireEvent.click(within(dialog).getByRole('button', { name: '取最新值继续编辑' }));
@@ -190,7 +190,7 @@ describe('period form', () => {
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     await waitFor(() => expect(writeOf(fetcher, 'POST')).toBeDefined());
     expect(JSON.parse(String(writeOf(fetcher, 'POST')?.[1].body))).toMatchObject({
-      name: '', period_type: 'custom', expires_at: '2027-01-31T18:00:00+08:00',
+      name: '', expires_at: '2027-01-31T18:00:00+08:00',
       terms: { mode: 'recurring', interval_count: 3, interval_unit: 'week', amount: 1500, currency: 'USD' },
     });
     expect(writeOf(fetcher, 'POST')?.[0]).toBe('/api/v1/services/2/periods');
@@ -340,26 +340,9 @@ describe('service and period detail consumers', () => {
     expect(screen.queryByText('卡片类型')).not.toBeInTheDocument();
   });
 
-  it('does not offer restore or renewal for a cancelled period', async () => {
-    transport((path) => {
-      if (path === '/api/v1/categories') return Response.json({ data: [simCategory], next_cursor: null });
-      if (path.endsWith('/periods')) return Response.json({ data: [{ ...period, status: 'cancelled' }], next_cursor: null });
-      return json(simService);
-    });
-    render(ServiceDetail, { props: { id: '1' } });
-    expect(await screen.findByText('已取消的有效期不可恢复，也不能再编辑或续期。')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '续期' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '编辑有效期' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '删除有效期' })).toBeEnabled();
-    expect(screen.queryByRole('button', { name: '恢复' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '取消有效期' })).not.toBeInTheDocument();
-    expect(screen.queryByText(simService.sim_details!.iccid!)).not.toBeInTheDocument();
-    expect(screen.queryByText(simService.sim_details!.phone_number!)).not.toBeInTheDocument();
-  });
-
   it('retains the visible service and reports a failed archive', async () => {
     transport((path, init) => {
-      if (init.method === 'DELETE') return failure(500);
+      if (init.method === 'PATCH') return failure(500);
       if (path === '/api/v1/categories') return Response.json({ data: [vpsCategory], next_cursor: null });
       return path.endsWith('/periods') ? Response.json({ data: [], next_cursor: null }) : json(vpsService);
     });
@@ -373,31 +356,31 @@ describe('service and period detail consumers', () => {
     expect(screen.getByRole('button', { name: '归档' })).toBeEnabled();
   });
 
-  it('deletes a cancelled generic period with its expected cycle and preserves its parent', async () => {
+  it('deletes a generic period with its expected cycle and preserves its parent', async () => {
     let deleted = false;
     const fetcher = transport((path, init) => {
-      if (init.method === 'POST') { deleted = true; return new Response(null, { status: 204 }); }
+      if (init.method === 'DELETE') { deleted = true; return new Response(null, { status: 204 }); }
       if (path === '/api/v1/categories') return Response.json({ data: [vpsCategory], next_cursor: null });
-      if (path === '/api/v1/services/2/periods') return Response.json({ data: deleted ? [] : [{ ...vpsPeriod, status: 'cancelled' }], next_cursor: null });
+      if (path === '/api/v1/services/2/periods') return Response.json({ data: deleted ? [] : [vpsPeriod], next_cursor: null });
       return json(vpsService);
     });
     render(ServiceDetail, { props: { id: '2' } });
+    await fireEvent.click(await screen.findByRole('button', { name: '详情' }));
     await fireEvent.click(await screen.findByRole('button', { name: '删除有效期' }));
     const dialog = await screen.findByRole('dialog', { name: '永久删除这个有效期？' });
     expect(dialog).toHaveTextContent('全部提醒规则、提醒任务和续期历史');
-    expect(writeOf(fetcher, 'POST')).toBeUndefined();
+    expect(writeOf(fetcher, 'DELETE')).toBeUndefined();
     await fireEvent.click(within(dialog).getByRole('button', { name: '确认永久删除有效期' }));
     await screen.findByText('有效期及其关联数据已永久删除。');
-    const request = writeOf(fetcher, 'POST');
-    expect(request?.[0]).toBe('/api/v1/periods/6/delete?expected_cycle=3');
+    const request = writeOf(fetcher, 'DELETE');
+    expect(request?.[0]).toBe('/api/v1/periods/6?expected_cycle=3');
     expect(request?.[1].body).toBeUndefined();
     expect(screen.getByRole('heading', { name: vpsService.name })).toBeInTheDocument();
   });
-
   it('pauses period deletion on conflict and requires a fresh confirmation', async () => {
     let attempts = 0;
     transport((path, init) => {
-      if (init.method === 'POST') { ++attempts; return failure(409); }
+      if (init.method === 'DELETE') { ++attempts; return failure(409); }
       if (path === '/api/v1/categories') return Response.json({ data: [vpsCategory], next_cursor: null });
       if (path === '/api/v1/periods/6') return json({ ...vpsPeriod, cycle: 7 });
       if (path === '/api/v1/services/2/periods') return Response.json({ data: [vpsPeriod], next_cursor: null });
@@ -409,8 +392,8 @@ describe('service and period detail consumers', () => {
     await fireEvent.click(await screen.findByRole('button', { name: '删除有效期' }));
     const confirm = await screen.findByRole('dialog', { name: '永久删除这个有效期？' });
     await fireEvent.click(within(confirm).getByRole('button', { name: '确认永久删除有效期' }));
-    const conflict = await screen.findByRole('dialog', { name: '有效期周期已变化' });
-    await waitFor(() => expect(conflict).toHaveTextContent('3 → 7'));
+    const conflict = await screen.findByRole('dialog', { name: '有效期已变化' });
+    await waitFor(() => expect(conflict).toHaveTextContent('截止'));
     expect(attempts).toBe(1);
     await fireEvent.click(within(conflict).getByRole('button', { name: '使用最新值' }));
     expect(attempts).toBe(1);
