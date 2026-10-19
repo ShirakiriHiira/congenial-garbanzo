@@ -23,17 +23,38 @@ func (h *Handler) patchMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Timezone *string `json:"timezone"`
+		Timezone          *string `json:"timezone"`
+		SessionTTLSeconds *int64  `json:"session_ttl_seconds"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	zone, ok := require(w, in.Timezone)
-	if !ok {
+	if in.Timezone == nil && in.SessionTTLSeconds == nil {
+		fail(w, 400, "invalid_input")
 		return
 	}
-	v, err := h.service.SetTimezone(r.Context(), currentUser(r).ID, zone)
-	object(w, 200, userView(v), err)
+	user := currentUser(r)
+	if in.Timezone != nil {
+		zone, ok := require(w, in.Timezone)
+		if !ok {
+			return
+		}
+		v, err := h.service.SetTimezone(r.Context(), user.ID, zone)
+		if err != nil {
+			serviceError(w, err)
+			return
+		}
+		user = v
+	}
+	if in.SessionTTLSeconds != nil {
+		v, err := h.service.SetSessionTTL(r.Context(), user.ID, *in.SessionTTLSeconds)
+		if err != nil {
+			serviceError(w, err)
+			return
+		}
+		user = v
+	}
+	object(w, 200, userView(user), nil)
 }
 func (h *Handler) getPeriod(w http.ResponseWriter, r *http.Request) {
 	id, ok := resourceID(w, r)

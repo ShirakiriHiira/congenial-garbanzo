@@ -9,7 +9,7 @@ import { session } from '../src/lib/session.svelte';
 import { setLeaveGuard } from '../src/lib/router';
 
 const stamp = '2027-01-01T00:00:00Z';
-const user: User = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: stamp, updated_at: stamp };
+const user: User = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, session_ttl_seconds: null, created_at: stamp, updated_at: stamp };
 const simCategory: Category = { id: '1', user_id: null, code: 'sim', name: 'SIM 与 eSIM', kind: 'sim', created_at: stamp, updated_at: stamp };
 const vpsCategory: Category = { id: '2', user_id: null, code: 'vps', name: 'VPS 与云服务器', kind: 'generic', created_at: stamp, updated_at: stamp };
 const simService: ServiceItem = {

@@ -5,7 +5,7 @@ import { session } from '../src/lib/session.svelte';
 import type { Category, OverviewCounts, Page, Period, ServiceItem, ServiceOverviewItem, ServiceOverviewResponse } from '../src/lib/api/types';
 
 const now = '2027-01-01T00:00:00Z';
-const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: now, updated_at: now };
+const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, session_ttl_seconds: null, created_at: now, updated_at: now };
 const counts: OverviewCounts = { total: 105, due_soon: 1, expired: 1, no_period: 1 };
 const originalShow = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
 const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');

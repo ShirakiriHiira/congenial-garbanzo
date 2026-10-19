@@ -21,7 +21,7 @@ const failure = (status: number) => Response.json({ error: { code: 'private-code
 beforeEach(() => {
   vi.restoreAllMocks();
   session.auth = 'ready';
-  session.me = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: stamp, updated_at: stamp };
+  session.me = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, session_ttl_seconds: null, created_at: stamp, updated_at: stamp };
   session.dirty = false;
   window.Telegram = { WebApp: { initData: 'synthetic-reminders-transport' } };
   Object.defineProperties(HTMLDialogElement.prototype, {

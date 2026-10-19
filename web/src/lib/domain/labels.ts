@@ -126,7 +126,19 @@ export const settingsLabels = {
   remindersHint: '查看提醒发送状态与历史。',
   privacy: '隐私说明',
   privacyHint: '完整手机号和 ICCID 仅在编辑表单中显示；其他页面的手机号会脱敏，ICCID 不展示。',
+  sessionValidity: '会话有效期',
+  sessionHint: 'Mini App 的 initData 超过所选时长后失效，需要关闭并重新打开。时间越短越安全。',
+  saveSession: '保存会话有效期',
 } as const;
+
+export const sessionTTLOptions = [
+  { value: '3600', label: '1 小时' },
+  { value: '21600', label: '6 小时' },
+  { value: '86400', label: '24 小时' },
+  { value: '604800', label: '7 天' },
+] as const;
+
+export const DEFAULT_SESSION_TTL = 86400;
 
 export const remindersLabels = {
   title: '提醒记录',

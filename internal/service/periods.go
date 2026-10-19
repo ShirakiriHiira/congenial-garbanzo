@@ -390,3 +390,31 @@ func (s *Service) SetTimezone(ctx context.Context, uid int64, zone string) (User
 	}
 	return s.Me(ctx, uid)
 }
+
+// SessionTTLValues are the per-user initData freshness windows offered by the
+// Mini App. They are deliberately a small fixed set.
+var SessionTTLValues = []int64{3600, 21600, 86400, 604800}
+
+func validSessionTTL(seconds int64) bool {
+	for _, value := range SessionTTLValues {
+		if seconds == value {
+			return true
+		}
+	}
+	return false
+}
+
+// SetSessionTTL stores the user's preferred initData freshness window.
+func (s *Service) SetSessionTTL(ctx context.Context, uid, seconds int64) (User, error) {
+	if !validSessionTTL(seconds) {
+		return User{}, ErrInvalid
+	}
+	err := s.transaction(ctx, uid, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE users SET session_ttl_seconds=?,updated_at=? WHERE id=?", seconds, s.now().Unix(), uid)
+		return err
+	})
+	if err != nil {
+		return User{}, err
+	}
+	return s.Me(ctx, uid)
+}

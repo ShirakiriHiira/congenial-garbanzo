@@ -27,7 +27,11 @@ const testToken = "123456:api-test-token"
 var testNow = time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func testAuth(id int64) string {
-	v := url.Values{"auth_date": {strconv.FormatInt(testNow.Unix(), 10)}, "user": {fmt.Sprintf(`{"id":%d,"first_name":"測試 + %%"}`, id)}}
+	return testAuthAt(id, testNow)
+}
+
+func testAuthAt(id int64, issued time.Time) string {
+	v := url.Values{"auth_date": {strconv.FormatInt(issued.Unix(), 10)}, "user": {fmt.Sprintf(`{"id":%d,"first_name":"測試 + %%"}`, id)}}
 	keys := make([]string, 0, len(v))
 	for k := range v {
 		keys = append(keys, k)
@@ -345,4 +349,33 @@ func TestAuthenticationNeverTrustsClientIdentity(t *testing.T) {
 		t.Fatalf("duplicate header=%d", w.Code)
 	}
 	request(t, h, "PATCH", "/api/v1/me", `{"timezone":"UTC","private_chat_id":"101"}`, 101, 400)
+}
+
+func TestSessionTTLPreferenceControlsInitDataAge(t *testing.T) {
+	h, _, _ := setupAPI(t)
+	request(t, h, "GET", "/api/v1/me", "", 101, 200)
+	patched := data(t, request(t, h, "PATCH", "/api/v1/me", `{"session_ttl_seconds":86400}`, 101, 200))
+	if patched["session_ttl_seconds"] != float64(86400) {
+		t.Fatalf("session ttl=%v", patched["session_ttl_seconds"])
+	}
+	request(t, h, "PATCH", "/api/v1/me", `{"session_ttl_seconds":120}`, 101, 400)
+	request(t, h, "PATCH", "/api/v1/me", `{}`, 101, 400)
+
+	stale := func(age time.Duration) int {
+		r := httptest.NewRequest("GET", "/api/v1/me", nil)
+		r.Header.Set("Authorization", testAuthAt(101, testNow.Add(-age)))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	if status := stale(time.Hour); status != 200 {
+		t.Fatalf("24h window rejected one-hour-old initData: %d", status)
+	}
+	request(t, h, "PATCH", "/api/v1/me", `{"session_ttl_seconds":3600}`, 101, 200)
+	if status := stale(2 * time.Hour); status != 401 {
+		t.Fatalf("one-hour window accepted two-hour-old initData: %d", status)
+	}
+	if status := stale(30 * time.Minute); status != 200 {
+		t.Fatalf("one-hour window rejected fresh initData: %d", status)
+	}
 }

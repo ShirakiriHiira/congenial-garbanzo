@@ -105,6 +105,7 @@ export interface User {
   telegram_user_id: ID;
   timezone: string;
   has_private_chat: boolean;
+  session_ttl_seconds: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -239,5 +240,6 @@ export interface RenewalCreateInput {
 }
 
 export interface UserUpdateInput {
-  timezone: string;
+  timezone?: string;
+  session_ttl_seconds?: number;
 }

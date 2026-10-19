@@ -59,12 +59,13 @@ func New(store *storage.Store, timezone string, allowed func(int64) bool, now fu
 func (s *Service) Allowed(id int64) bool { return id > 0 && s.allowed != nil && s.allowed(id) }
 
 type User struct {
-	ID             int64
-	TelegramUserID int64
-	Timezone       string
-	PrivateChatID  *int64
-	CreatedAt      int64
-	UpdatedAt      int64
+	ID                int64
+	TelegramUserID    int64
+	Timezone          string
+	PrivateChatID     *int64
+	SessionTTLSeconds *int64
+	CreatedAt         int64
+	UpdatedAt         int64
 }
 type SIMDetails struct {
 	CardType        string
@@ -328,7 +329,7 @@ func (s *Service) Authenticate(ctx context.Context, tid int64, privateChatID *in
 	if e != nil {
 		return u, ErrUnavailable
 	}
-	e = s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,created_at,updated_at FROM users WHERE telegram_user_id=?", tid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.CreatedAt, &u.UpdatedAt)
+	e = s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,created_at,updated_at FROM users WHERE telegram_user_id=?", tid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.CreatedAt, &u.UpdatedAt)
 	return u, dbError(e)
 }
 func (s *Service) Me(ctx context.Context, uid int64) (User, error) {
@@ -336,8 +337,22 @@ func (s *Service) Me(ctx context.Context, uid int64) (User, error) {
 	if e := s.authorize(ctx, s.store.DB, uid); e != nil {
 		return u, e
 	}
-	e := s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,created_at,updated_at FROM users WHERE id=?", uid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.CreatedAt, &u.UpdatedAt)
+	e := s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,created_at,updated_at FROM users WHERE id=?", uid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.CreatedAt, &u.UpdatedAt)
 	return u, dbError(e)
+}
+
+// UserByTelegramID looks up an existing account without creating one. The API
+// uses it to read the per-user session window before checking initData age.
+func (s *Service) UserByTelegramID(ctx context.Context, tid int64) (User, bool, error) {
+	var u User
+	e := s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,created_at,updated_at FROM users WHERE telegram_user_id=?", tid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.CreatedAt, &u.UpdatedAt)
+	if errors.Is(e, sql.ErrNoRows) {
+		return u, false, nil
+	}
+	if e != nil {
+		return u, false, dbError(e)
+	}
+	return u, true, nil
 }
 func text(v string, max int, required bool) bool {
 	return utf8.ValidString(v) && utf8.RuneCountInString(v) <= max && (!required || strings.TrimSpace(v) != "")

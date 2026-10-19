@@ -7,7 +7,7 @@ import { session } from '../src/lib/session.svelte';
 import type { Category, Period, ServiceItem, User } from '../src/lib/api/types';
 
 const now = '2026-01-01T00:00:00Z';
-const user: User = { id: '7', telegram_user_id: '77', timezone: 'Asia/Taipei', has_private_chat: true, created_at: now, updated_at: now };
+const user: User = { id: '7', telegram_user_id: '77', timezone: 'Asia/Taipei', has_private_chat: true, session_ttl_seconds: null, created_at: now, updated_at: now };
 const simCategory: Category = { id: '1', user_id: null, code: 'sim', name: 'SIM 与 eSIM', kind: 'sim', created_at: now, updated_at: now };
 const genericCategory: Category = { id: '2', user_id: null, code: 'vps', name: 'VPS 与云服务器', kind: 'generic', created_at: now, updated_at: now };
 const customCategory: Category = { id: '9', user_id: '7', code: null, name: '自定义类别', kind: 'generic', created_at: now, updated_at: now };

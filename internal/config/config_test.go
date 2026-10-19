@@ -42,7 +42,7 @@ func TestLoadDefaults(t *testing.T) {
 	if offset != 8*60*60 {
 		t.Fatalf("Taipei offset = %d", offset)
 	}
-	if c.ScanInterval != 30*time.Second || c.CatchupWindow != 24*time.Hour || c.AuthMaxAge != 5*time.Minute {
+	if c.ScanInterval != 30*time.Second || c.CatchupWindow != 24*time.Hour || c.AuthMaxAge != 24*time.Hour {
 		t.Fatal("unexpected default durations")
 	}
 	if c.HTTPAddr != "127.0.0.1:8080" || c.LogLevel != slog.LevelInfo {

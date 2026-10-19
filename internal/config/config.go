@@ -65,7 +65,7 @@ func Load(token string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	c.AuthMaxAge, err = duration("WEBAPP_AUTH_MAX_AGE", "5m", time.Nanosecond)
+	c.AuthMaxAge, err = duration("WEBAPP_AUTH_MAX_AGE", "24h", time.Nanosecond)
 	if err != nil {
 		return Config{}, err
 	}

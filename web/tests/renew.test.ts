@@ -12,7 +12,7 @@ const initialPeriod: Period = {
   created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
 const user = {
-  id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true,
+  id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, session_ttl_seconds: null,
   created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
 const historyEntry: Renewal = {

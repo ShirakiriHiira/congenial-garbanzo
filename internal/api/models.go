@@ -51,7 +51,7 @@ func nullableID(v *int64) *string {
 }
 
 func userView(v service.User) map[string]any {
-	return map[string]any{"id": identifier(v.ID), "telegram_user_id": identifier(v.TelegramUserID), "timezone": v.Timezone, "has_private_chat": v.PrivateChatID != nil, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
+	return map[string]any{"id": identifier(v.ID), "telegram_user_id": identifier(v.TelegramUserID), "timezone": v.Timezone, "has_private_chat": v.PrivateChatID != nil, "session_ttl_seconds": v.SessionTTLSeconds, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
 }
 func termsView(v service.PeriodTerms) map[string]any {
 	return map[string]any{"mode": v.Mode, "interval_count": v.IntervalCount, "interval_unit": v.IntervalUnit, "amount": v.Amount, "currency": v.Currency, "revision": v.Revision}

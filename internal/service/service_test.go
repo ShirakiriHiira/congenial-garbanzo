@@ -219,3 +219,28 @@ func TestDialogPersistenceAndPagination(t *testing.T) {
 		t.Fatalf("last %+v %v", last, e)
 	}
 }
+
+func TestSessionTTLPreference(t *testing.T) {
+	s, _, a, _ := setup(t)
+	ctx := context.Background()
+	updated, err := s.SetSessionTTL(ctx, a.ID, 21600)
+	if err != nil || updated.SessionTTLSeconds == nil || *updated.SessionTTLSeconds != 21600 {
+		t.Fatalf("set ttl: %+v %v", updated, err)
+	}
+	me, err := s.Me(ctx, a.ID)
+	if err != nil || me.SessionTTLSeconds == nil || *me.SessionTTLSeconds != 21600 {
+		t.Fatalf("me ttl: %+v %v", me, err)
+	}
+	existing, found, err := s.UserByTelegramID(ctx, a.TelegramUserID)
+	if err != nil || !found || existing.SessionTTLSeconds == nil || *existing.SessionTTLSeconds != 21600 {
+		t.Fatalf("lookup ttl: %+v %v %v", existing, found, err)
+	}
+	for _, value := range []int64{0, 60, 3601, 604801} {
+		if _, err := s.SetSessionTTL(ctx, a.ID, value); err != ErrInvalid {
+			t.Fatalf("ttl %d: %v", value, err)
+		}
+	}
+	if _, found, err := s.UserByTelegramID(ctx, 999); err != nil || found {
+		t.Fatalf("unknown user: %v %v", found, err)
+	}
+}

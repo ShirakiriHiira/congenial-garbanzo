@@ -6,7 +6,7 @@ import { session } from '../src/lib/session.svelte';
 import { setLeaveGuard } from '../src/lib/router';
 
 const user: User = {
-  id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: false,
+  id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: false, session_ttl_seconds: null,
   created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
 const supportedValuesOf = Object.getOwnPropertyDescriptor(Intl, 'supportedValuesOf');
@@ -61,6 +61,27 @@ describe('settings', () => {
       expect(request.body).toBeUndefined();
     }
     expect(session.me?.has_private_chat).toBe(true);
+  });
+
+  it('shows the 24-hour default and saves a new session validity without leaving settings', async () => {
+    const updated = { ...user, session_ttl_seconds: 21600 };
+    const fetcher = vi.fn(async (_path: string, request: RequestInit) => Response.json({ data: request.method === 'PATCH' ? updated : user }));
+    vi.stubGlobal('fetch', fetcher);
+    render(Settings);
+    const select = await screen.findByRole('combobox', { name: '有效期' });
+    expect(select).toHaveValue('86400');
+    await waitFor(() => expect(select).toBeEnabled());
+    await fireEvent.change(select, { target: { value: '21600' } });
+    expect(select).toHaveValue('21600');
+    const save = screen.getByRole('button', { name: '保存会话有效期' });
+    expect(save).toBeEnabled();
+    await fireEvent.click(save);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    expect(fetcher.mock.calls[1]?.[0]).toBe('/api/v1/me');
+    expect(fetcher.mock.calls[1]?.[1].method).toBe('PATCH');
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1].body))).toEqual({ session_ttl_seconds: 21600 });
+    await waitFor(() => expect(session.me).toEqual(updated));
+    expect(location.pathname).toBe('/app/settings');
   });
 
   it('confirms every timezone consequence before saving, replaces me and returns home', async () => {

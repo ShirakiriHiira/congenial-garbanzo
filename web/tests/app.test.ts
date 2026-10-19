@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import App from '../src/App.svelte';
 import { session } from '../src/lib/session.svelte';
 
-const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: false, created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z' };
+const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: false, session_ttl_seconds: null, created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z' };
 const categories = { data: [], next_cursor: null };
 const serviceOverview = { data: { counts: { total: 105, due_soon: 4, expired: 3, no_period: 1 }, items: [] }, next_cursor: null };
 

@@ -6,7 +6,7 @@ import { parseDisplayUser } from '../src/lib/telegram/initdata';
 
 const user: User = {
   id: '9007199254740993', telegram_user_id: '123', timezone: 'Asia/Taipei',
-  has_private_chat: false, created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
+  has_private_chat: false, session_ttl_seconds: null, created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
 
 beforeEach(() => {

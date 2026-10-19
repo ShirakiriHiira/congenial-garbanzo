@@ -57,12 +57,14 @@ CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o ./bin/remind .
 | `APP_TIMEZONE` | `Asia/Taipei` | 新用户默认 IANA 时区 |
 | `REMINDER_SCAN_INTERVAL` | `30s` | 调度扫描间隔 |
 | `REMINDER_CATCHUP_WINDOW` | `24h` | 补发窗口 |
-| `WEBAPP_AUTH_MAX_AGE` | `5m` | `initData` 最大有效期 |
+| `WEBAPP_AUTH_MAX_AGE` | `24h` | 用户未在 Mini App 设置会话有效期时的 `initData` 默认有效期 |
 | `HTTP_ADDR` | `127.0.0.1:8080` | HTTP 监听地址 |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `TELEGRAM_API_PROXY` | 空 | Telegram API 代理；空值沿用 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` |
 | `MINIAPP_HTTP_PORT` | `8081` | Compose 中 web 容器的本机回环端口 |
 | `REMIND_DATA_VOLUME` | `sim-reminder-data` | Compose 命名卷 |
+
+Mini App 设置页可选 1 小时、6 小时、24 小时或 7 天；选择保存在用户记录中，未选择时使用 `WEBAPP_AUTH_MAX_AGE`。
 
 ## Telegram Bot
 
@@ -100,7 +102,7 @@ CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o ./bin/remind .
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
-| GET, PATCH | `/me` | 当前用户；PATCH 时区 |
+| GET, PATCH | `/me` | 当前用户；PATCH 时区或 `session_ttl_seconds` |
 | GET, POST | `/categories` | 列出/创建本人自定义类别 |
 | PATCH | `/categories/{id}` | 改本人自定义类别名 |
 | GET, POST | `/services` | 列表/创建 |
@@ -126,7 +128,7 @@ CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o ./bin/remind .
 - Rule：`id,period_id,days_before,reminder_time,enabled,revision,created_at,updated_at`。
 - Renewal：`id,period_id,previous_cycle,previous_expires_at,new_expires_at,previous_date_precision,new_date_precision,previous_local_expires_date,new_local_expires_date,timezone,renewed_at,amount,currency,notes,created_at`。
 - Job：`id,period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,sent_at,telegram_message_id,last_error_code,created_at,updated_at`。
-- User：`id,telegram_user_id,timezone,has_private_chat,created_at,updated_at`。
+- User：`id,telegram_user_id,timezone,has_private_chat,session_ttl_seconds,created_at,updated_at`。
 - Category：`id,user_id,code,name,kind,created_at,updated_at`。
 
 创建有效期必须提供 `date_precision` 与 `expires_at`；`name`、`starts_at`、`terms` 可选。PATCH 有效期必须带 `expected_cycle`；包含 `terms` 时必须带 `expected_terms_revision`；`terms:null` 重置为 `mode=custom` 并递增 revision。规则创建未提供 `enabled` 时默认为 `true`；`(period_id,days_before,reminder_time)` 唯一。续期必须显式提交新截止，并使用 `expected_cycle`；相同周期相同参数重放返回既有历史（200）。

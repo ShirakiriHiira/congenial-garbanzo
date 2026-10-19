@@ -43,7 +43,7 @@ func New(s *service.Service, cfg Config) *Handler {
 		cfg.Now = time.Now
 	}
 	if cfg.AuthMaxAge <= 0 {
-		cfg.AuthMaxAge = 5 * time.Minute
+		cfg.AuthMaxAge = 24 * time.Hour
 	}
 	h := &Handler{service: s, config: cfg, mux: http.NewServeMux(), fallbacks: map[string]bool{}}
 
@@ -154,13 +154,27 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 			fail(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		telegramID, err := auth.VerifyInitData(raw, h.config.BotToken, h.config.Now(), h.config.AuthMaxAge)
+		now := h.config.Now()
+		telegramID, issued, err := auth.DecodeInitData(raw, h.config.BotToken, now)
 		if err != nil {
 			fail(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		if !h.service.Allowed(telegramID) {
 			fail(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		maxAge := h.config.AuthMaxAge
+		existing, found, err := h.service.UserByTelegramID(r.Context(), telegramID)
+		if err != nil {
+			serviceError(w, err)
+			return
+		}
+		if found && existing.SessionTTLSeconds != nil {
+			maxAge = time.Duration(*existing.SessionTTLSeconds) * time.Second
+		}
+		if !auth.Fresh(issued, now, maxAge) {
+			fail(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		u, err := h.service.Authenticate(r.Context(), telegramID, nil)

@@ -6,35 +6,42 @@
   import { Submitter } from '../lib/form.svelte';
   import { navigate } from '../lib/router';
   import { isValidTimeZone } from '../lib/domain/datetime';
-  import { errorMessage, labels, settingsLabels } from '../lib/domain/labels';
+  import { DEFAULT_SESSION_TTL, errorMessage, labels, sessionTTLOptions, settingsLabels } from '../lib/domain/labels';
   import AsyncState from '../components/AsyncState.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
   import TimeZoneSelect from '../components/TimeZoneSelect.svelte';
+  import FormField from '../components/FormField.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
 
   let me = $state<User | null>(session.me);
   let timezone = $state(session.me?.timezone ?? '');
+  let sessionTTL = $state(String(session.me?.session_ttl_seconds ?? DEFAULT_SESSION_TTL));
   let loading = $state(false);
   let loadError = $state('');
   let timezoneError = $state('');
   let confirmOpen = $state(false);
   const submitter = new Submitter();
+  const sessionSubmitter = new Submitter();
   let controller: AbortController | undefined;
   let request = 0;
   let mounted = false;
-  const dirty = $derived(me !== null && timezone !== me.timezone);
+  const timezoneDirty = $derived(me !== null && timezone !== me.timezone);
+  const sessionDirty = $derived(me !== null && sessionTTL !== String(me.session_ttl_seconds ?? DEFAULT_SESSION_TTL));
+  const dirty = $derived(timezoneDirty || sessionDirty);
   const readAllowed = $derived(session.auth !== 'missing' && session.auth !== 'expired' && session.auth !== 'forbidden');
-  const disabled = $derived(!canWrite() || loading || submitter.busy);
+  const disabled = $derived(!canWrite() || loading || submitter.busy || sessionSubmitter.busy);
+  const sessionDisabled = $derived(!canWrite() || loading || sessionSubmitter.busy);
 
   $effect(() => { session.dirty = dirty; });
 
   async function loadMe() {
-    if (!readAllowed || loading || submitter.busy) return;
+    if (!readAllowed || loading || submitter.busy || sessionSubmitter.busy) return;
     controller?.abort();
     controller = new AbortController();
     const signal = controller.signal;
     const current = ++request;
-    const preserveDraft = dirty;
+    const preserveTimezone = timezoneDirty;
+    const preserveSession = sessionDirty;
     loading = true;
     loadError = '';
     try {
@@ -42,7 +49,8 @@
       if (!mounted || signal.aborted || current !== request || !readAllowed) return;
       me = user;
       acceptMe(user);
-      if (!preserveDraft) timezone = user.timezone;
+      if (!preserveTimezone) timezone = user.timezone;
+      if (!preserveSession) sessionTTL = String(user.session_ttl_seconds ?? DEFAULT_SESSION_TTL);
     } catch (error) {
       if (mounted && !signal.aborted && current === request) loadError = errorMessage(error);
     } finally {
@@ -52,14 +60,14 @@
 
   function confirmChange(event: SubmitEvent) {
     event.preventDefault();
-    if (disabled || !dirty) return;
+    if (disabled || !timezoneDirty) return;
     submitter.clear();
     timezoneError = isValidTimeZone(timezone) ? '' : settingsLabels.invalidTimezone;
     if (!timezoneError) confirmOpen = true;
   }
 
   async function saveTimezone() {
-    if (disabled || !dirty || !isValidTimeZone(timezone)) {
+    if (disabled || !timezoneDirty || !isValidTimeZone(timezone)) {
       confirmOpen = false;
       return;
     }
@@ -74,11 +82,27 @@
       if (session.auth !== 'ready') return;
       me = user;
       timezone = user.timezone;
-      session.dirty = false;
+      session.dirty = sessionDirty;
     });
     if (!mounted) return;
     confirmOpen = false;
-    if (saved && !signal.aborted && session.auth === 'ready') navigate('/app/');
+    if (saved && !signal.aborted && session.auth === 'ready' && !sessionDirty) navigate('/app/');
+  }
+
+  function saveSession(event: SubmitEvent) {
+    event.preventDefault();
+    if (sessionDisabled || !sessionDirty) return;
+    sessionSubmitter.clear();
+    const value = Number(sessionTTL);
+    void sessionSubmitter.run(async () => {
+      const user = await api.updateMe({ session_ttl_seconds: value });
+      if (!mounted) return;
+      acceptMe(user);
+      if (session.auth !== 'ready') return;
+      me = user;
+      sessionTTL = String(user.session_ttl_seconds ?? DEFAULT_SESSION_TTL);
+      session.dirty = timezoneDirty;
+    });
   }
 
   onMount(() => {
@@ -105,14 +129,30 @@
         <form class="stack" onsubmit={confirmChange} novalidate>
           <TimeZoneSelect id="settings-timezone" bind:value={timezone} {disabled} error={timezoneError} />
           {#if submitter.error}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
-          <div class="actions"><button class="primary" type="submit" disabled={disabled || !dirty}>{settingsLabels.saveTimezone}</button></div>
+          <div class="actions"><button class="primary" type="submit" disabled={disabled || !timezoneDirty}>{settingsLabels.saveTimezone}</button></div>
+        </form>
+      </section>
+      <section class="section stack" aria-labelledby="session-heading">
+        <h2 id="session-heading">{settingsLabels.sessionValidity}</h2>
+        <form class="stack" onsubmit={saveSession}>
+          <FormField id="settings-session-ttl" label="有效期" hint={settingsLabels.sessionHint}>
+            {#snippet children(field)}
+              <select id={field.id} bind:value={sessionTTL} disabled={sessionDisabled}>
+                {#each sessionTTLOptions as option (option.value)}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+            {/snippet}
+          </FormField>
+          {#if sessionSubmitter.error}<ErrorBanner message={errorMessage(sessionSubmitter.error)} />{/if}
+          <div class="actions"><button class="primary" type="submit" disabled={sessionDisabled || !sessionDirty}>{settingsLabels.saveSession}</button></div>
         </form>
       </section>
       <section class="section stack" aria-labelledby="private-chat-heading">
         <h2 id="private-chat-heading">{settingsLabels.privateChat}</h2>
         <p role="status">{me.has_private_chat ? settingsLabels.bound : settingsLabels.unbound}</p>
         {#if !me.has_private_chat}<p>{settingsLabels.bindHint}</p>{/if}
-        <div class="actions"><button type="button" disabled={!readAllowed || loading || submitter.busy} onclick={() => { void loadMe(); }}>{loading ? labels.loading : settingsLabels.refreshBinding}</button></div>
+        <div class="actions"><button type="button" disabled={!readAllowed || loading || submitter.busy || sessionSubmitter.busy} onclick={() => { void loadMe(); }}>{loading ? labels.loading : settingsLabels.refreshBinding}</button></div>
       </section>
     {/if}
   </AsyncState>

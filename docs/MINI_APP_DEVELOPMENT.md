@@ -15,7 +15,7 @@
 | `/app/periods/:id/rules` | 提醒规则 | 添加、编辑、启用/禁用、永久删除 |
 | `/app/periods/:id/renew` | 确认续期 | 显式输入新截止；条款仅参考 |
 | `/app/reminders` | 提醒记录 | 状态筛选、取消任务 |
-| `/app/settings` | 设置 | 时区、私聊绑定 |
+| `/app/settings` | 设置 | 时区、会话有效期、私聊绑定 |
 
 使用 Telegram BackButton 与浏览器历史；有未保存修改时离开前确认。Svelte 5 runes；不引入组件库。
 

@@ -18,7 +18,7 @@ const rule: Rule = {
   id: '20', period_id: '10', days_before: 7, reminder_time: '09:00',
   enabled: true, revision: 4, created_at: stamp, updated_at: stamp,
 };
-const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: stamp, updated_at: stamp };
+const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, session_ttl_seconds: null, created_at: stamp, updated_at: stamp };
 const showModalDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
 const closeDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');
 

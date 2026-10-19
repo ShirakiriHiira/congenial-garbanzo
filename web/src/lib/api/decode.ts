@@ -128,11 +128,13 @@ function oneOf<T extends string>(value: unknown, values: readonly T[], path: str
 
 function decodeUser(value: unknown, path = "data"): User {
   const source = object(value, path);
+  const sessionTTL = field(source, "session_ttl_seconds", path);
   return {
     id: id(field(source, "id", path), `${path}.id`),
     telegram_user_id: id(field(source, "telegram_user_id", path), `${path}.telegram_user_id`),
     timezone: text(field(source, "timezone", path), `${path}.timezone`),
     has_private_chat: boolean(field(source, "has_private_chat", path), `${path}.has_private_chat`),
+    session_ttl_seconds: sessionTTL === null ? null : nonNegativeInteger(sessionTTL, `${path}.session_ttl_seconds`),
     created_at: timestamp(field(source, "created_at", path), `${path}.created_at`),
     updated_at: timestamp(field(source, "updated_at", path), `${path}.updated_at`),
   };
@@ -327,9 +329,12 @@ export const serviceOverview: Decoder<ServiceOverviewResponse> = (value) => {
     const path = `response.data.items[${index}]`;
     const item = object(entry, path);
     const primary = field(item, "primary_period", path);
+    const rawPeriods = field(item, "periods", path);
+    if (!Array.isArray(rawPeriods)) fail(`${path}.periods`, "expected an array");
     return {
       service: decodeService(field(item, "service", path), `${path}.service`),
       primary_period: primary === null ? null : decodePeriod(primary, `${path}.primary_period`),
+      periods: rawPeriods.map((period, periodIndex) => decodePeriod(period, `${path}.periods[${periodIndex}]`)),
     };
   });
   return {
