@@ -76,7 +76,7 @@ scripts/            本地测试/联调脚本
 - 严格 JSON：只接受单对象与 `application/json`，未知字段、重复查询参数、非法 ID 均拒绝。Bot 回调数据只含动作与十进制 ID。
 - 乐观并发：有效期 PATCH/DELETE 使用 `expected_cycle`；条款使用 `expected_terms_revision`；规则使用 `expected_revision`。冲突返回 409 或 Bot 提示，保留草稿，不自动重试。
 - 时间：内部 UTC；`date` 为当地日历日结束排他截止；`datetime` 为带 offset 的 RFC3339。修改时区时 `date` 重算、`datetime` 保持绝对时刻。
-- 提醒规则必须早于截止；金额与币种必须成对；金额非负整数最小货币单位；币种三位大写字母。
+- 提醒规则必须早于截止；金额与币种必须成对；API 金额为非负整数最小货币单位，Mini App 输入小数并按 ISO 4217 币种小数位换算；币种三位大写字母。
 - 备注、日志、URL、回调、截图不得包含密码、API Token、私钥、initData、完整号码或 ICCID。
 - Mini App 不信任后端消息直接展示；错误统一映射为受控中文文案。
 - 永久删除不可逆，前端与 Bot 必须二次确认并说明级联范围。

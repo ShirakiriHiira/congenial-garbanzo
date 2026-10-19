@@ -50,7 +50,7 @@
 - 归档/恢复使用 `PATCH /services/{id}` 的 `status`；永久删除使用 `DELETE`；规则禁用使用 `PATCH enabled:false`。
 - 有效期保存需要 `expected_cycle`；条款变更需要 `expected_terms_revision`；续期需要 `expected_cycle`。
 - 类别内联创建/改名保留；失败保留草稿；已存服务不能跨 kind。
-- 金额输入使用最小货币单位整数；切换条款模式保留金额，除非用户显式清除。
+- 金额输入接受小数，按 ISO 4217 币种小数位换算为整数最小货币单位提交；切换条款模式保留金额，除非用户显式清除。
 - 备注旁提示：不要保存密码、API Token 或私钥。
 
 ## 5. 移动端、反馈与状态

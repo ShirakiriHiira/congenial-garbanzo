@@ -10,7 +10,7 @@
   import { getInitData } from '../lib/telegram/sdk';
   import { instantToWallTime, isValidDate, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
-  import { parseMoney } from '../lib/domain/money';
+  import { formatMoneyInput, parseMoney } from '../lib/domain/money';
   import { errorMessage, intervalUnitLabels, periodLabel, labels, termsModeLabels } from '../lib/domain/labels';
   import MoneyInput from '../components/MoneyInput.svelte';
   import FormField from '../components/FormField.svelte';
@@ -48,7 +48,13 @@
   let notice = $state('');
   let stale = $state(false);
   function readTerms(): PeriodTermsInput {
-    return { mode: termsMode, interval_count: termsMode === 'recurring' ? Number(intervalCount) : null, interval_unit: termsMode === 'recurring' ? intervalUnit : null, amount: amount === '' ? null : Number(amount), currency: currency === '' ? null : currency };
+    const base = { mode: termsMode, interval_count: termsMode === 'recurring' ? Number(intervalCount) : null, interval_unit: termsMode === 'recurring' ? intervalUnit : null };
+    try {
+      const money = parseMoney(amount, currency);
+      return { ...base, amount: money.amount ?? null, currency: money.currency ?? null };
+    } catch {
+      return { ...base, amount: Number.NaN, currency: currency === '' ? null : currency };
+    }
   }
   function isExplicitUnsafeReset(terms: PeriodTermsInput): boolean {
     return unsafeTermsReset && terms.mode === 'custom' && terms.interval_count === null && terms.interval_unit === null && terms.amount === null && terms.currency === null;
@@ -63,7 +69,7 @@
     intervalUnit = terms.interval_unit ?? 'month';
     unsafeMoney = terms.amount !== null && !Number.isSafeInteger(terms.amount);
     unsafeTermsReset = false;
-    amount = terms.amount === null || unsafeMoney ? '' : String(terms.amount);
+    amount = terms.amount === null || unsafeMoney ? '' : formatMoneyInput(terms.amount, terms.currency);
     currency = amount === '' ? '' : terms.currency ?? '';
   }
   let alive = true;
@@ -216,7 +222,7 @@
       <fieldset class="terms stack"><legend>约定条款</legend>
         <FormField id="terms-mode" label="条款类型" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
         {#if termsMode === 'recurring'}<FormField id="terms-count" label="周期次数" required error={intervalError}>{#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={intervalCount} disabled={!canWrite() || submitter.busy} />{/snippet}</FormField><FormField id="terms-unit" label="周期单位" required>{#snippet children(field)}<select id={field.id} bind:value={intervalUnit} disabled={!canWrite() || submitter.busy}>{#each Object.entries(intervalUnitLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>{/if}
-        <MoneyInput id="period-terms-money" label="约定费用（最小货币单位）" bind:amount bind:currency disabled={!canWrite() || submitter.busy} error={termsError} />
+        <MoneyInput id="period-terms-money" label="约定费用" bind:amount bind:currency disabled={!canWrite() || submitter.busy} error={termsError} />
         {#if unsafeMoney && isExplicitUnsafeReset(readTerms())}<p class="notice">保存后将把约定条款重置为自定义且无费用；原金额不会被四舍五入写入。</p>
         {:else if unsafeMoney}<div class="unsafe-money"><p class="notice">{"已保存的约定费用无法精确编辑；保留空白可保存其他资料，修改条款请重新填写金额和币种，或明确重置为无费用条款。"}</p><button class="text-button" type="button" onclick={() => { termsMode = 'custom'; intervalCount = ''; intervalUnit = 'month'; amount = ''; currency = ''; termsError = ''; unsafeTermsReset = true; }} disabled={!canWrite() || submitter.busy}>重置约定条款</button></div>{/if}
       </fieldset>

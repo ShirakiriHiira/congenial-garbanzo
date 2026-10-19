@@ -178,7 +178,7 @@ describe('service detail', () => {
     expect(screen.getByText(/\+886.*5678/)).toBeInTheDocument();
     expect(screen.queryByText('8988600000000000000')).not.toBeInTheDocument();
     expect(await screen.findByText('约定周期：每 1 月')).toBeInTheDocument();
-    expect(await screen.findByText('约定费用：1299 USD（最小货币单位）')).toBeInTheDocument();
+    expect(await screen.findByText('约定费用：12.99 USD')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'https://manage.example/' });
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');

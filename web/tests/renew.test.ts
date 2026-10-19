@@ -103,8 +103,8 @@ describe('renewal route', () => {
   it('shows descriptive terms without inferring actual payment', async () => {
     const api = transport();
     render(Renew, { id: '11' });
-    expect(await screen.findByText('每 1 月 · 1299 USD（最小货币单位）')).toBeInTheDocument();
-    expect(screen.getByLabelText('金额（最小货币单位）')).toHaveValue('');
+    expect(await screen.findByText('每 1 月 · 12.99 USD')).toBeInTheDocument();
+    expect(screen.getByLabelText('金额')).toHaveValue('');
     expect(screen.getByLabelText('币种')).toHaveValue('');
     await fillDate();
     await send();
@@ -135,7 +135,7 @@ describe('renewal route', () => {
     const api = transport();
     render(Renew, { id: '11' });
     await fillDate();
-    await fireEvent.input(screen.getByLabelText('金额（最小货币单位）'), { target: { value: '1234' } });
+    await fireEvent.input(screen.getByLabelText('金额'), { target: { value: '12.34' } });
     await fireEvent.input(screen.getByLabelText('币种'), { target: { value: 'TWD' } });
     await fireEvent.input(screen.getByLabelText('备注'), { target: { value: '合成续费记录' } });
     await send();
@@ -215,12 +215,12 @@ describe('renewal route', () => {
     const api = transport();
     render(Renew, { id: '11' });
     await fillDate();
-    await fireEvent.input(screen.getByLabelText('金额（最小货币单位）'), { target: { value: '100' } });
+    await fireEvent.input(screen.getByLabelText('金额'), { target: { value: '100' } });
     expect(screen.getByText('金额和币种必须同时填写或同时留空')).toBeInTheDocument();
     await send();
     expect(api.writes).toHaveLength(0);
     await fireEvent.input(screen.getByLabelText('币种'), { target: { value: 'TWD' } });
-    await fireEvent.input(screen.getByLabelText('金额（最小货币单位）'), { target: { value: '9007199254740992' } });
+    await fireEvent.input(screen.getByLabelText('金额'), { target: { value: '9007199254740992' } });
     expect(screen.getByText(/金额超出可精确表示的范围/)).toBeInTheDocument();
     await send();
     expect(api.writes).toHaveLength(0);
@@ -364,7 +364,7 @@ describe('renewal route', () => {
       { ...historyEntry, id: '22', amount: 9007199254740992, currency: 'CNY' },
     ] });
     render(Renew, { id: '11' });
-    expect(await screen.findByText('1234 CNY（最小货币单位）')).toBeInTheDocument();
+    expect(await screen.findByText('12.34 CNY')).toBeInTheDocument();
     expect(screen.getByText('该金额不可精确显示')).toBeInTheDocument();
     expect(screen.queryByText(/9007199254740992/)).not.toBeInTheDocument();
   });

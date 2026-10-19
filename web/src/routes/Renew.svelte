@@ -8,7 +8,7 @@
   import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
   import { formatDateTime, isValidDate, localDateAt, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
-  import { formatMoney, parseMoney } from '../lib/domain/money';
+  import { formatMoney, formatMoneyInput, parseMoney } from '../lib/domain/money';
   import { formatTermsCycle } from '../lib/domain/terms';
   import { errorMessage, labels, periodLabel, renewalLabels as text } from '../lib/domain/labels';
   import AsyncState from '../components/AsyncState.svelte';
@@ -250,7 +250,7 @@
           <p class="muted">{text.expiryHint}</p>
           <p class="muted">{text.actualPaymentHint}</p>
           <MoneyInput id="renew-amount" bind:amount bind:currency disabled={!writable} />
-          {#if period.terms.amount !== null && period.terms.currency !== null}<div class="actions"><button type="button" onclick={() => { amount = String(period!.terms.amount); currency = period!.terms.currency ?? ''; dirty = true; }} disabled={!writable}>使用约定金额</button></div>{/if}
+          {#if period.terms.amount !== null && period.terms.currency !== null}<div class="actions"><button type="button" onclick={() => { amount = formatMoneyInput(period!.terms.amount, period!.terms.currency); currency = period!.terms.currency ?? ''; dirty = true; }} disabled={!writable}>使用约定金额</button></div>{/if}
           <FormField id="renew-notes" label={text.notes} error={notesError} hint={text.notesHint}>
             {#snippet action()}
               {#if notes}<button type="button" class="text-button" aria-label={text.clearNotes} disabled={!writable} onclick={() => { notes = ''; dirty = true; }}>清除</button>{/if}

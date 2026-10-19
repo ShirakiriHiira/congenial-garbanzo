@@ -87,12 +87,12 @@ describe('period form', () => {
       return json(++reads === 1 ? vpsPeriod : latest);
     });
     render(PeriodForm, { props: { id: '6', mode: 'edit' } });
-    const money = await screen.findByLabelText('约定费用（最小货币单位）');
-    await fireEvent.input(money, { target: { value: '1999' } });
+    const money = await screen.findByLabelText('约定费用');
+    await fireEvent.input(money, { target: { value: '19.99' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(dialog).toHaveTextContent('服务端名称'));
-    expect(money).toHaveValue('1999');
+    expect(money).toHaveValue('19.99');
     expect(writes).toBe(1);
     await fireEvent.click(within(dialog).getByRole('button', { name: '取最新值继续编辑' }));
     expect(writes).toBe(1);
@@ -115,11 +115,11 @@ describe('period form', () => {
     expect(screen.getByRole('combobox', { name: /^条款类型/ })).toHaveValue('recurring');
     expect(screen.getByLabelText(/^周期次数/)).toHaveValue('1');
     expect(screen.getByLabelText(/^周期单位/)).toHaveValue('month');
-    expect(screen.getByLabelText('约定费用（最小货币单位）')).toHaveValue('1299');
+    expect(screen.getByLabelText('约定费用')).toHaveValue('12.99');
     expect(screen.getByLabelText('币种')).toHaveValue('CNY');
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     expect(writeOf(fetcher, 'PATCH')).toBeUndefined();
-    await fireEvent.input(screen.getByLabelText('约定费用（最小货币单位）'), { target: { value: '1999' } });
+    await fireEvent.input(screen.getByLabelText('约定费用'), { target: { value: '19.99' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     await waitFor(() => expect(writeOf(fetcher, 'PATCH')).toBeDefined());
     expect(JSON.parse(String(writeOf(fetcher, 'PATCH')?.[1].body))).toEqual({
@@ -185,7 +185,7 @@ describe('period form', () => {
     await fireEvent.change(screen.getByRole('combobox', { name: /^条款类型/ }), { target: { value: 'recurring' } });
     await fireEvent.input(screen.getByLabelText(/^周期次数/), { target: { value: '3' } });
     await fireEvent.change(screen.getByLabelText(/^周期单位/), { target: { value: 'week' } });
-    await fireEvent.input(screen.getByLabelText('约定费用（最小货币单位）'), { target: { value: '1500' } });
+    await fireEvent.input(screen.getByLabelText('约定费用'), { target: { value: '15' } });
     await fireEvent.input(screen.getByLabelText('币种'), { target: { value: 'USD' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     await waitFor(() => expect(writeOf(fetcher, 'POST')).toBeDefined());
@@ -207,7 +207,7 @@ describe('period form', () => {
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     expect(await screen.findByText('周期次数必须是正整数')).toBeInTheDocument();
     await fireEvent.input(screen.getByLabelText(/^周期次数/), { target: { value: '2' } });
-    await fireEvent.input(screen.getByLabelText('约定费用（最小货币单位）'), { target: { value: '10' } });
+    await fireEvent.input(screen.getByLabelText('约定费用'), { target: { value: '10' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     expect(await screen.findByText('金额和币种必须同时填写或同时留空')).toBeInTheDocument();
     expect(writeOf(fetcher, 'POST')).toBeUndefined();
@@ -223,7 +223,7 @@ describe('period form', () => {
     });
     render(PeriodForm, { props: { id: '6', mode: 'edit' } });
     await screen.findByText('时区：Asia/Taipei');
-    expect(screen.getByLabelText('约定费用（最小货币单位）')).toHaveValue('');
+    expect(screen.getByLabelText('约定费用')).toHaveValue('');
     expect(screen.getByLabelText('币种')).toHaveValue('');
     await fireEvent.change(screen.getByRole('combobox', { name: /^条款类型/ }), { target: { value: 'once' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
@@ -241,10 +241,10 @@ describe('period form', () => {
     });
     render(PeriodForm, { props: { id: '6', mode: 'edit' } });
     await screen.findByText('已保存的约定费用无法精确编辑', { exact: false });
-    expect(screen.getByLabelText('约定费用（最小货币单位）')).toHaveValue('');
+    expect(screen.getByLabelText('约定费用')).toHaveValue('');
     await fireEvent.click(screen.getByRole('button', { name: '重置约定条款' }));
     expect(screen.getByRole('combobox', { name: /^条款类型/ })).toHaveValue('custom');
-    expect(screen.getByLabelText('约定费用（最小货币单位）')).toHaveValue('');
+    expect(screen.getByLabelText('约定费用')).toHaveValue('');
     expect(writeOf(fetcher, 'PATCH')).toBeUndefined();
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     await waitFor(() => expect(writeOf(fetcher, 'PATCH')).toBeDefined());
@@ -336,7 +336,7 @@ describe('service and period detail consumers', () => {
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     expect(screen.getByText('约定周期：每 1 月')).toBeInTheDocument();
-    expect(screen.getByText('约定费用：1299 CNY（最小货币单位）')).toBeInTheDocument();
+    expect(screen.getByText('约定费用：12.99 CNY')).toBeInTheDocument();
     expect(screen.queryByText('卡片类型')).not.toBeInTheDocument();
   });
 

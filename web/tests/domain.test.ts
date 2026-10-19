@@ -92,14 +92,20 @@ describe('号码隐私', () => {
   });
 });
 
-describe('最小货币单位整数', () => {
-  it('保留零值与最大安全整数，空值省略', () => {
+describe('带小数的金额', () => {
+  it('按币种标准小数位换算为整数最小单位', () => {
     expect(parseMoney('', '')).toEqual({});
     expect(parseMoney('0', 'CNY')).toEqual({ amount: 0, currency: 'CNY' });
-    expect(parseMoney('9007199254740991', 'USD').amount).toBe(Number.MAX_SAFE_INTEGER);
+    expect(parseMoney('12.34', 'CNY')).toEqual({ amount: 1234, currency: 'CNY' });
+    expect(parseMoney('12.3', 'CNY')).toEqual({ amount: 1230, currency: 'CNY' });
+    expect(parseMoney('100', 'JPY')).toEqual({ amount: 100, currency: 'JPY' });
+    expect(parseMoney('1.234', 'KWD')).toEqual({ amount: 1234, currency: 'KWD' });
+    expect(parseMoney('90071992547409.91', 'USD').amount).toBe(Number.MAX_SAFE_INTEGER);
+    expect(formatMoney(1234, 'CNY')).toBe('12.34 CNY');
+    expect(formatMoney(1200, 'CNY')).toBe('12 CNY');
   });
-  it.each(['1.5', '-1', '1e3', '9007199254740992', 'NaN'])('拒绝无效金额 %s', (amount) => {
-    expect(() => parseMoney(amount, 'CNY')).toThrow();
+  it.each(['-1', '1e3', 'NaN', '12.345', '1.5'])('拒绝无效金额 %s', (amount) => {
+    expect(() => parseMoney(amount, amount === '1.5' ? 'JPY' : 'CNY')).toThrow();
   });
   it('金额币种必须成对且币种为三位大写', () => {
     expect(() => parseMoney('1', '')).toThrow();
