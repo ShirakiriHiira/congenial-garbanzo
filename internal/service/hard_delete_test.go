@@ -173,9 +173,6 @@ func TestDeletedIdentifiersAreNotReused(t *testing.T) {
 	if err := s.CancelJob(ctx, a.ID, jobID); err != ErrNotFound {
 		t.Fatalf("stale reminder mutation: %v", err)
 	}
-	if _, err := s.PeriodForJob(ctx, a.ID, jobID); err != ErrNotFound {
-		t.Fatalf("stale callback: %v", err)
-	}
 }
 
 func TestOptionalPeriodName(t *testing.T) {

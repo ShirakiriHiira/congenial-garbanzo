@@ -13,7 +13,7 @@ import (
 
 // Sender is the only external delivery boundary used by the scheduler.
 type Sender interface {
-	SendReminder(ctx context.Context, chatID int64, text string, jobID int64) (messageID int64, err error)
+	SendReminder(ctx context.Context, chatID int64, text string, jobID, periodID int64) (messageID int64, err error)
 }
 
 // DeliveryError carries only a safe category, never SDK URLs or response bodies.

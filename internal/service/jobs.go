@@ -70,27 +70,3 @@ func (s *Service) CancelJob(ctx context.Context, uid, id int64) error {
 		return e
 	})
 }
-
-// PeriodForJob is the single ownership and cycle gate shared by both callback actions.
-func (s *Service) PeriodForJob(ctx context.Context, uid, jid int64) (Period, error) {
-	var p Period
-	e := s.transaction(ctx, uid, func(tx *sql.Tx) error {
-		j, e := getJob(ctx, tx, uid, jid)
-		if e != nil {
-			return e
-		}
-		p, e = s.getPeriod(ctx, tx, uid, j.ValidityPeriodID)
-		if e != nil {
-			return e
-		}
-		parent, e := getServiceItem(ctx, tx, uid, p.ServiceID)
-		if e != nil {
-			return e
-		}
-		if p.Cycle != j.Cycle || p.Status == "cancelled" || parent.Status != "active" {
-			return ErrConflict
-		}
-		return nil
-	})
-	return p, e
-}

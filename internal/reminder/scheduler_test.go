@@ -17,7 +17,7 @@ type fakeSender struct {
 	fn    func(int64) error
 }
 
-func (f *fakeSender) SendReminder(ctx context.Context, chatID int64, text string, id int64) (int64, error) {
+func (f *fakeSender) SendReminder(ctx context.Context, chatID int64, text string, id, periodID int64) (int64, error) {
 	f.calls++
 	if chatID != 101 || !strings.Contains(text, "测试卡") {
 		return 0, errors.New("unexpected delivery payload")

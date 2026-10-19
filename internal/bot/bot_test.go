@@ -377,10 +377,8 @@ func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
 	f.start(userA)
 	f.createSIM("卡")
 	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
-	f.createRule(1, 1, "09:00")
-	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 
-	f.callback(userA, "v1:renew:1", nil)
+	f.callback(userA, cb("period", "renew", "1"), nil)
 	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
 		t.Fatalf("dialog count %d", n)
 	}
@@ -450,22 +448,15 @@ func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
 		t.Fatalf("dialog not cleared: %d", n)
 	}
 
-	// Re-pressing the pre-renewal button must not open a new cycle.
-	f.callback(userA, "v1:renew:1", nil)
-	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
-		t.Fatalf("stale callback created renewal %d", n)
+	// A new renew wizard starts from the advanced cycle and can be cancelled.
+	f.callback(userA, cb("period", "renew", "1"), nil)
+	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
+		t.Fatalf("repeat renew did not open a dialog: %d", n)
 	}
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
-		t.Fatalf("stale callback opened dialog %d", n)
-	}
-	answers := f.stub.callsOf("answerCallbackQuery")
-	if got := answers[len(answers)-1].form.Get("text"); !strings.Contains(got, "周期已更新") {
-		t.Fatalf("stale answer %q", got)
-	}
+	f.send(userA, "/cancel")
 
 	// Expired wizard: advancing the injected clock invalidates it.
-	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,2,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
-	f.callback(userA, "v1:renew:2", nil)
+	f.callback(userA, cb("period", "renew", "1"), nil)
 	f.clock.advance(16 * time.Minute)
 	text := f.send(userA, "2027-05-01")
 	if !strings.Contains(text, "对话已过期") {
@@ -474,6 +465,19 @@ func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
 	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
 		t.Fatalf("expired dialog wrote renewal %d", n)
 	}
+
+	// A cancelled period is rejected before opening a wizard.
+	uid := f.serviceUser(userA).ID
+	if err := f.svc.CancelPeriod(context.Background(), uid, 1, 2); err != nil {
+		t.Fatal(err)
+	}
+	f.callback(userA, cb("period", "renew", "1"), nil)
+	if got := serviceLastAnswer(t, f); !strings.Contains(got, "已取消") {
+		t.Fatalf("cancelled period answer %q", got)
+	}
+	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
+		t.Fatalf("cancelled period opened dialog %d", n)
+	}
 }
 
 func TestDialogSurvivesRestart(t *testing.T) {
@@ -481,9 +485,7 @@ func TestDialogSurvivesRestart(t *testing.T) {
 	f.start(userA)
 	f.createSIM("卡")
 	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
-	f.createRule(1, 1, "09:00")
-	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
-	f.callback(userA, "v1:renew:1", nil)
+	f.callback(userA, cb("period", "renew", "1"), nil)
 	f.callback(userA, choiceCallback("precision", "date"), nil)
 
 	f.restart()
@@ -508,10 +510,8 @@ func TestWriteWizardRequiresExplicitReplacement(t *testing.T) {
 	f.start(userA)
 	f.createSIM("卡")
 	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
-	f.createRule(1, 1, "09:00")
-	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 
-	f.callback(userA, "v1:renew:1", nil)
+	f.callback(userA, cb("period", "renew", "1"), nil)
 	before := f.count("SELECT count(*) FROM bot_dialogs")
 	f.send(userA, "/service add")
 	text := f.stub.lastText()
@@ -548,8 +548,6 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 	f.start(userA)
 	f.createSIM("卡")
 	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
-	f.createRule(1, 1, "09:00")
-	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 
 	cases := []struct {
 		name string
@@ -558,13 +556,13 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 		msg  *models.Message
 		want string
 	}{
-		{"malformed", userA, "v1:renew:abc", nil, "未知操作"},
-		{"unknown action", userA, "v1:delete:1", nil, "未知操作"},
-		{"inline only", userA, "v1:view:1", nil, "请在私聊中使用"},
-		{"unauthorized", stranger, "v1:view:1", nil, "无权限"},
-		{"missing job", userA, "v1:view:999", nil, "不存在"},
-		{"group message", userA, "v1:view:1", &models.Message{ID: 60, Chat: models.Chat{ID: -100, Type: models.ChatTypeGroup}, Date: 1}, "请在私聊中使用"},
-		{"view", userA, "v1:view:1", nil, "详情已发送"},
+		{"malformed", userA, "v2:period:renew:abc", nil, "未知操作"},
+		{"unknown scope", userA, "v2:delete:view:1", nil, "未知操作"},
+		{"inline only", userA, "v2:period:view:1", nil, "请在私聊中使用"},
+		{"unauthorized", stranger, "v2:period:view:1", nil, "无权限"},
+		{"missing period", userA, "v2:period:view:999", nil, "不存在"},
+		{"group message", userA, "v2:period:view:1", &models.Message{ID: 60, Chat: models.Chat{ID: -100, Type: models.ChatTypeGroup}, Date: 1}, "请在私聊中使用"},
+		{"view", userA, "v2:period:view:1", nil, "详情已发送"},
 	}
 	for _, tc := range cases {
 		update := callbackUpdate(tc.uid, tc.data, tc.msg)
@@ -587,7 +585,7 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 }
 
 func TestCallbackDataLength(t *testing.T) {
-	for _, data := range []string{"v1:view:1", "v1:renew:9223372036854775807"} {
+	for _, data := range []string{"v2:period:view:1", "v2:period:renew:9223372036854775807", "v2:dialog:set:precision:2"} {
 		if len(data) >= 64 {
 			t.Fatalf("callback data too long: %q", data)
 		}
@@ -602,7 +600,7 @@ func TestSenderSuccessAndClassification(t *testing.T) {
 	}
 	sender := NewSender(b, slog.New(slog.DiscardHandler))
 
-	messageID, err := sender.SendReminder(context.Background(), userA, "提醒正文", 7)
+	messageID, err := sender.SendReminder(context.Background(), userA, "提醒正文", 7, 9)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,14 +615,14 @@ func TestSenderSuccessAndClassification(t *testing.T) {
 		t.Fatalf("form %+v", sent[0].form)
 	}
 	markup := sent[0].form.Get("reply_markup")
-	if !strings.Contains(markup, "v1:renew:7") || !strings.Contains(markup, "v1:view:7") {
+	if !strings.Contains(markup, "v2:period:renew:9") || !strings.Contains(markup, "v2:period:view:9") {
 		t.Fatalf("markup %q", markup)
 	}
 
 	stub.override("sendMessage", func(url.Values) string {
 		return `{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":7}}`
 	})
-	_, err = sender.SendReminder(context.Background(), userA, "x", 1)
+	_, err = sender.SendReminder(context.Background(), userA, "x", 1, 2)
 	var delivery *reminder.DeliveryError
 	if !errors.As(err, &delivery) || delivery.Code != "rate_limited" || delivery.RetryAfter != 7*time.Second || delivery.Permanent {
 		t.Fatalf("429 classification %#v", delivery)
@@ -633,7 +631,7 @@ func TestSenderSuccessAndClassification(t *testing.T) {
 	stub.override("sendMessage", func(url.Values) string {
 		return `{"ok":false,"error_code":403,"description":"Forbidden: bot was blocked by the user"}`
 	})
-	_, err = sender.SendReminder(context.Background(), userA, "x", 1)
+	_, err = sender.SendReminder(context.Background(), userA, "x", 1, 2)
 	if !errors.As(err, &delivery) || delivery.Code != "remote_rejected" || !delivery.Permanent {
 		t.Fatalf("403 classification %#v", delivery)
 	}
@@ -641,7 +639,7 @@ func TestSenderSuccessAndClassification(t *testing.T) {
 	stub.override("sendMessage", func(url.Values) string {
 		return `{"ok":false,"error_code":500,"description":"Internal Server Error"}`
 	})
-	_, err = sender.SendReminder(context.Background(), userA, "x", 1)
+	_, err = sender.SendReminder(context.Background(), userA, "x", 1, 2)
 	if !errors.As(err, &delivery) || delivery.Code != "remote_unavailable" || delivery.Permanent {
 		t.Fatalf("500 classification %#v", delivery)
 	}
@@ -671,7 +669,7 @@ func TestStoppedHandlerAcknowledgesCallbacksOnly(t *testing.T) {
 	}
 
 	before := len(f.stub.callsOf("answerCallbackQuery"))
-	f.callback(userA, "v1:view:1", nil)
+	f.callback(userA, cb("period", "view", "1"), nil)
 	answers := f.stub.callsOf("answerCallbackQuery")
 	if len(answers) != before+1 || !strings.Contains(answers[len(answers)-1].form.Get("text"), "重启") {
 		t.Fatalf("stopped callback was not acknowledged: %+v", answers)

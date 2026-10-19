@@ -275,42 +275,6 @@ func (s *Service) StartPeriodRenewDialog(ctx context.Context, uid, periodID, cha
 	return out, e
 }
 
-// StartRenewDialog keeps the v1 reminder-button contract: the job must still
-// belong to the current cycle of an active parent.
-func (s *Service) StartRenewDialog(ctx context.Context, uid, jid, chatID int64) (Dialog, error) {
-	var out Dialog
-	e := s.transaction(ctx, uid, func(tx *sql.Tx) error {
-		j, e := getJob(ctx, tx, uid, jid)
-		if e != nil {
-			return e
-		}
-		p, e := s.getPeriod(ctx, tx, uid, j.ValidityPeriodID)
-		if e != nil {
-			return e
-		}
-		parent, e := getServiceItem(ctx, tx, uid, p.ServiceID)
-		if e != nil {
-			return e
-		}
-		if p.Cycle != j.Cycle || p.Status == "cancelled" || parent.Status != "active" {
-			return ErrConflict
-		}
-		var private *int64
-		if e := tx.QueryRowContext(ctx, "SELECT private_chat_id FROM users WHERE id=?", uid).Scan(&private); e != nil {
-			return e
-		}
-		if private == nil || *private != chatID {
-			return ErrForbidden
-		}
-		cycle := p.Cycle
-		serviceID := p.ServiceID
-		d := Dialog{ServiceID: &serviceID, ValidityPeriodID: &p.ID, ExpectedCycle: &cycle}
-		out, e = s.startDialogTx(ctx, tx, uid, chatID, DialogRenew, "renew_choose_precision", d)
-		return e
-	})
-	return out, e
-}
-
 // startDialogTx shares the insert path between top-level and transactional
 // callers. Ownership targets were already validated by the caller.
 func (s *Service) startDialogTx(ctx context.Context, tx *sql.Tx, uid, chatID int64, action, step string, d Dialog) (Dialog, error) {

@@ -57,7 +57,7 @@ func (s *Scheduler) deliver(parent context.Context, job *storage.ReminderDeliver
 	case job.ChatID == nil:
 		deliveryErr = &DeliveryError{Code: "no_private_chat", Permanent: true}
 	default:
-		messageID, deliveryErr = s.sender.SendReminder(ctx, *job.ChatID, reminderText(job), job.ID)
+		messageID, deliveryErr = s.sender.SendReminder(ctx, *job.ChatID, reminderText(job), job.ID, job.PeriodID)
 	}
 	cancel()
 	now := s.now()

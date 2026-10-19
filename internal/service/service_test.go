@@ -176,20 +176,12 @@ func TestDialogPersistenceAndPagination(t *testing.T) {
 	if _, e := s.Authenticate(ctx, a.TelegramUserID, &chat); e != nil {
 		t.Fatal(e)
 	}
-	_, p, r := fixture(t, s, a)
-	res, e := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,created_at,updated_at) VALUES(?,?,1,1,1,?,'sent',1,1)`, p.ID, r.ID, p.ExpiresAt)
+	_, p, _ := fixture(t, s, a)
+	d, e := s.StartPeriodRenewDialog(ctx, a.ID, p.ID, chat)
 	if e != nil {
 		t.Fatal(e)
 	}
-	jid, e := res.LastInsertId()
-	if e != nil {
-		t.Fatal(e)
-	}
-	d, e := s.StartRenewDialog(ctx, a.ID, jid, chat)
-	if e != nil {
-		t.Fatal(e)
-	}
-	again, e := s.StartRenewDialog(ctx, a.ID, jid, chat)
+	again, e := s.StartPeriodRenewDialog(ctx, a.ID, p.ID, chat)
 	if e != nil || d.ExpiresAt != again.ExpiresAt {
 		t.Fatal("duplicate extends dialog", e)
 	}
@@ -199,9 +191,6 @@ func TestDialogPersistenceAndPagination(t *testing.T) {
 	}
 	if _, e = s.GetDialog(ctx, a.ID); e != ErrNotFound {
 		t.Fatal("dialog remains", e)
-	}
-	if _, e = s.PeriodForJob(ctx, a.ID, jid); e != ErrConflict {
-		t.Fatal("old callback", e)
 	}
 	for i := 0; i < 10; i++ {
 		if _, e = s.CreatePeriod(ctx, a.ID, p.ServiceID, PeriodInput{PeriodType: "custom", Name: "extra", DatePrecision: "date", ExpiresAt: "2027-03-01"}); e != nil {

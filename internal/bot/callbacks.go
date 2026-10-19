@@ -4,18 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"telegram.bot.remind/internal/service"
 
 	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-)
-
-const (
-	callbackPrefix = "v1:"
-	callbackView   = "view"
-	callbackRenew  = "renew"
 )
 
 // handleCallback treats the callback payload as untrusted input. It answers
@@ -30,80 +23,12 @@ func (h *Handler) handleCallback(ctx context.Context, b *telegram.Bot, cq *model
 			h.logger.Warn("telegram callback answer failed", "code", "telegram_error")
 		}
 	}()
-
-	if v2, ok := parseCallbackV2(cq.Data); ok {
-		answer = h.handleCallbackV2(ctx, b, cq, v2)
-		return
-	}
-	action, jobID, ok := parseCallback(cq.Data)
+	v2, ok := parseCallbackV2(cq.Data)
 	if !ok {
 		answer = "未知操作"
 		return
 	}
-	if cq.Message.Message == nil {
-		answer = "请在私聊中使用"
-		return
-	}
-	msg := cq.Message.Message
-	if msg.Chat.Type != models.ChatTypePrivate || cq.From.ID <= 0 || msg.Chat.ID != cq.From.ID {
-		answer = "请在私聊中使用"
-		return
-	}
-	uid := cq.From.ID
-	if !h.svc.Allowed(uid) {
-		answer = "无权限使用此机器人"
-		return
-	}
-	user, err := h.svc.Authenticate(ctx, uid, &msg.Chat.ID)
-	if err != nil {
-		answer = serviceMessage(err)
-		return
-	}
-	period, err := h.svc.PeriodForJob(ctx, user.ID, jobID)
-	if err != nil {
-		if service.Code(err) == "conflict" {
-			answer = "该提醒所属周期已更新"
-		} else {
-			answer = serviceMessage(err)
-		}
-		return
-	}
-	job, err := h.svc.GetJob(ctx, user.ID, jobID)
-	if err != nil {
-		answer = serviceMessage(err)
-		return
-	}
-	switch action {
-	case callbackView:
-		answer = "详情已发送"
-		h.send(ctx, b, msg.Chat.ID, fmt.Sprintf("提醒 #%s 状态 %s（已尝试 %d 次）\n\n%s", id(job.ID), job.Status, job.Attempts, periodDetail(period)))
-	case callbackRenew:
-		if live, lerr := h.svc.GetDialog(ctx, user.ID); lerr == nil {
-			w := h.wizard(ctx, b, user, live)
-			if live.Action == service.DialogRenew && live.ValidityPeriodID != nil && *live.ValidityPeriodID == period.ID {
-				w.renderRenew(ctx)
-				answer = "请输入新的截止日期"
-				return
-			}
-			w.promptReplaceStart(ctx, "renew:"+id(period.ID))
-			answer = "当前有未完成流程"
-			return
-		}
-		dialog, err := h.svc.StartRenewDialog(ctx, user.ID, jobID, msg.Chat.ID)
-		if err != nil {
-			if service.Code(err) == "conflict" {
-				answer = "该提醒所属周期已更新"
-			} else {
-				answer = serviceMessage(err)
-			}
-			return
-		}
-		answer = "请输入新的截止日期"
-		{
-			w := h.wizard(ctx, b, user, dialog)
-			w.renderRenew(ctx)
-		}
-	}
+	answer = h.handleCallbackV2(ctx, b, cq, v2)
 }
 
 // callbackV2Identity applies the transport and allowlist checks shared by all
@@ -545,26 +470,4 @@ func objectStateMessage(err error) string {
 		return "无权限使用此机器人"
 	}
 	return serviceMessage(err)
-}
-
-// parseCallback accepts only v1:view|renew:<decimal job id>.
-func parseCallback(data string) (action string, jobID int64, ok bool) {
-	if !strings.HasPrefix(data, callbackPrefix) {
-		return "", 0, false
-	}
-	rest := strings.TrimPrefix(data, callbackPrefix)
-	parts := strings.Split(rest, ":")
-	if len(parts) != 2 {
-		return "", 0, false
-	}
-	switch parts[0] {
-	case callbackView, callbackRenew:
-	default:
-		return "", 0, false
-	}
-	n, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil || n < 1 {
-		return "", 0, false
-	}
-	return parts[0], n, true
 }
