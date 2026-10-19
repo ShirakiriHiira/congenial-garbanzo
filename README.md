@@ -363,7 +363,9 @@ race 需要合适 C 工具链。真实投递需要测试 Token、本人白名单
 - 增加独立版本化的描述性有效期条款；条款不自动扣款/推算到期，terms-only 编辑不使提醒任务失效。
 - 增加服务端全量筛选/搜索/类别 overview、通用 Mini App 路由与表单，以及旧 SIM 深链跳转。
 - 加入迁移 003 与完整卷备份、禁止原地二进制回退、恢复到新卷的操作说明。
-- Bot 增加持久化多步对话（迁移 004）、Inline Keyboard 浏览/归档确认/任务取消、`/settings`，续期改为输入—预览—确认；旧命令与 v1 回调保持兼容。
+- Bot 增加持久化多步对话（迁移 004）、Inline Keyboard 浏览/归档确认/任务取消、`/settings`，续期改为输入—预览—确认。
+- 移除 Bot 旧 query 命令（`/add`、`/list`、`/view`、`/edit`、`/delete` 及 `/service` query 形式）与 `v1:` 回调；提醒按钮改用 `v2:period:*`。
+- 移除未被 Mini App 使用的旧 `/api/v1/overview`；`/api/v1/sims` 与 `/app/sims/*` 深链仍服务于 Mini App 兼容跳转。
 - 更新 API/Bot、安全、迁移、Mini App 和验证记录。Docker build、真实 Telegram、iOS/Android 原生行为及外部 HTTPS 按实际情况标为未验证。
 
 ## Git 提交规范
