@@ -37,7 +37,7 @@ type fixture struct {
 	store     *storage.Store
 	svc       *service.Service
 	user      service.User
-	sim       service.SIM
+	sim       service.ServiceItem
 	period    service.Period
 	rule      service.Rule
 	scheduler *Scheduler
@@ -71,7 +71,11 @@ func setup(t *testing.T, private bool) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.sim, err = f.svc.CreateSIM(context.Background(), f.user.ID, service.SIMInput{Name: "测试卡", CardType: "esim"})
+	var simCategory int64
+	if err = f.store.DB.QueryRow("SELECT id FROM service_categories WHERE code='sim'").Scan(&simCategory); err != nil {
+		t.Fatal(err)
+	}
+	f.sim, err = f.svc.CreateService(context.Background(), f.user.ID, service.ServiceInput{Name: "测试卡", CategoryID: simCategory, SIMDetails: &service.SIMDetails{CardType: "esim"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,11 +141,11 @@ func TestGenerationDeduplicationAndDelivery(t *testing.T) {
 	if f.sender.calls != 1 || sent != 1 {
 		t.Fatal("rule revision resent successful expiration")
 	}
-	if err := f.svc.ArchiveSIM(context.Background(), f.user.ID, f.sim.ID); err != nil {
+	if err := f.svc.ArchiveService(context.Background(), f.user.ID, f.sim.ID); err != nil {
 		t.Fatal(err)
 	}
 	active := "active"
-	if _, err := f.svc.UpdateSIM(context.Background(), f.user.ID, f.sim.ID, service.SIMPatch{Status: &active}); err != nil {
+	if _, err := f.svc.UpdateService(context.Background(), f.user.ID, f.sim.ID, service.ServicePatch{Status: &active}); err != nil {
 		t.Fatal(err)
 	}
 	f.scan(t)

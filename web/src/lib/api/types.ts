@@ -117,7 +117,6 @@ export interface User {
 export interface Period {
   id: ID;
   service_id: ID;
-  sim_id: ID | null;
   period_type: PeriodType;
   name: string;
   starts_at: string | null;

@@ -98,13 +98,6 @@ func TestGenericServicesMixedCategoriesAndFilters(t *testing.T) {
 	if _, err = s.GetService(ctx, b.ID, vps.ID); err != ErrNotFound {
 		t.Fatalf("foreign service: %v", err)
 	}
-	if _, err = s.GetSIM(ctx, a.ID, vps.ID); err != ErrNotFound {
-		t.Fatalf("generic read as SIM: %v", err)
-	}
-	legacy, err := s.ListSIMs(ctx, a.ID, 0, 1)
-	if err != nil || len(legacy.Data) != 1 || legacy.Data[0].ID != sim.ID || legacy.NextCursor != nil {
-		t.Fatalf("legacy page %+v %v", legacy, err)
-	}
 	if _, err = s.UpdateService(ctx, a.ID, sim.ID, ServicePatch{CategoryID: &vpsID}); err != ErrConflict {
 		t.Fatalf("cross-kind category: %v", err)
 	}

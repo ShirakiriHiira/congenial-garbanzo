@@ -53,14 +53,11 @@ func nullableID(v *int64) *string {
 func userView(v service.User) map[string]any {
 	return map[string]any{"id": identifier(v.ID), "telegram_user_id": identifier(v.TelegramUserID), "timezone": v.Timezone, "has_private_chat": v.PrivateChatID != nil, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
 }
-func simView(v service.SIM) map[string]any {
-	return map[string]any{"id": identifier(v.ID), "user_id": identifier(v.UserID), "name": v.Name, "card_type": v.CardType, "operator": v.Operator, "phone_number": v.PhoneNumber, "country_or_region": v.CountryOrRegion, "iccid": v.ICCID, "notes": v.Notes, "status": v.Status, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
-}
 func termsView(v service.PeriodTerms) map[string]any {
 	return map[string]any{"mode": v.Mode, "interval_count": v.IntervalCount, "interval_unit": v.IntervalUnit, "amount": v.Amount, "currency": v.Currency, "revision": v.Revision}
 }
 func periodView(v service.Period) map[string]any {
-	return map[string]any{"id": identifier(v.ID), "service_id": identifier(v.ServiceID), "sim_id": nullableID(v.SIMID), "period_type": v.PeriodType, "name": v.Name, "starts_at": nullableTime(v.StartsAt), "expires_at": timestamp(v.ExpiresAt), "date_precision": v.DatePrecision, "local_expires_date": v.LocalExpiresDate, "timezone": v.Timezone, "status": v.Status, "cycle": v.Cycle, "terms": termsView(v.Terms), "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
+	return map[string]any{"id": identifier(v.ID), "service_id": identifier(v.ServiceID), "period_type": v.PeriodType, "name": v.Name, "starts_at": nullableTime(v.StartsAt), "expires_at": timestamp(v.ExpiresAt), "date_precision": v.DatePrecision, "local_expires_date": v.LocalExpiresDate, "timezone": v.Timezone, "status": v.Status, "cycle": v.Cycle, "terms": termsView(v.Terms), "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
 }
 func ruleView(v service.Rule) map[string]any {
 	return map[string]any{"id": identifier(v.ID), "validity_period_id": identifier(v.ValidityPeriodID), "days_before": v.DaysBefore, "reminder_time": v.ReminderTime, "enabled": v.Enabled, "revision": v.Revision, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
@@ -83,25 +80,6 @@ func page[T any](w http.ResponseWriter, p service.Page[T], err error, view func(
 	writeJSON(w, http.StatusOK, map[string]any{"data": data, "next_cursor": cursor(p.NextCursor)})
 }
 
-type simCreateRequest struct {
-	Name            string  `json:"name"`
-	CardType        string  `json:"card_type"`
-	Operator        *string `json:"operator"`
-	PhoneNumber     *string `json:"phone_number"`
-	CountryOrRegion *string `json:"country_or_region"`
-	ICCID           *string `json:"iccid"`
-	Notes           *string `json:"notes"`
-}
-type simPatchRequest struct {
-	Name            *string          `json:"name"`
-	CardType        *string          `json:"card_type"`
-	Operator        optional[string] `json:"operator"`
-	PhoneNumber     optional[string] `json:"phone_number"`
-	CountryOrRegion optional[string] `json:"country_or_region"`
-	ICCID           optional[string] `json:"iccid"`
-	Notes           optional[string] `json:"notes"`
-	Status          *string          `json:"status"`
-}
 type periodCreateRequest struct {
 	PeriodType    string        `json:"period_type"`
 	Name          string        `json:"name"`

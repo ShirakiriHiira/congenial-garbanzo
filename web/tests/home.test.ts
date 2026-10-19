@@ -34,7 +34,7 @@ function sim(id: number, overrides: Partial<ServiceItem> = {}): ServiceItem {
 }
 function period(id: number, date: string, status: Period['status'] = 'active'): Period {
   return {
-    id: String(id), service_id: String(id), sim_id: null, period_type: 'custom', name: '有效期',
+    id: String(id), service_id: String(id), period_type: 'custom', name: '有效期',
     starts_at: null, expires_at: `${date}T16:00:00Z`, date_precision: 'date', local_expires_date: date,
     timezone: 'Asia/Taipei', status, cycle: 1,
     terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },

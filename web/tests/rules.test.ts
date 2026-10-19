@@ -8,7 +8,7 @@ import { failSession, session } from '../src/lib/session.svelte';
 
 const stamp = '2027-01-01T00:00:00Z';
 const period: Period = {
-  id: '10', service_id: '2', sim_id: null, period_type: 'custom', name: '合成有效期',
+  id: '10', service_id: '2', period_type: 'custom', name: '合成有效期',
   starts_at: null, expires_at: '2027-02-01T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-02-01', timezone: 'Asia/Taipei', status: 'active',
   cycle: 3, created_at: stamp, updated_at: stamp,

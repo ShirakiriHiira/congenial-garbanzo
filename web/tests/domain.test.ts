@@ -9,7 +9,7 @@ import { errorLabels, errorMessage, intervalUnitLabels, periodTypeLabel, termsMo
 import { formatTermsCycle } from '../src/lib/domain/terms';
 
 const period: Period = {
-  id: '1', service_id: '2', sim_id: '2', period_type: 'number_validity', name: '合成号码有效期',
+  id: '1', service_id: '2', period_type: 'number_validity', name: '合成号码有效期',
   starts_at: null, expires_at: '2027-01-08T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-01-08', timezone: 'Asia/Taipei', status: 'active', cycle: 1,
   terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },

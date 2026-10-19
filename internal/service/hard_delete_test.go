@@ -72,7 +72,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 			if ok, err := st.CheckReminder(ctx, jid, "delete-test", now, s.allowed); err != nil || !ok {
 				t.Fatalf("initial lease: allowed=%v err=%v", ok, err)
 			}
-			if err := s.DeleteSIM(ctx, b.ID, sim.ID); err != ErrNotFound {
+			if err := s.DeleteService(ctx, b.ID, sim.ID); err != ErrNotFound {
 				t.Fatalf("card owner: %v", err)
 			}
 			if err := s.DeletePeriod(ctx, b.ID, p.ID, p.Cycle); err != ErrNotFound {
@@ -82,7 +82,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 				t.Fatalf("stale cycle: %v", err)
 			}
 			if card {
-				err = s.DeleteSIM(ctx, a.ID, sim.ID)
+				err = s.DeleteService(ctx, a.ID, sim.ID)
 			} else {
 				err = s.DeletePeriod(ctx, a.ID, p.ID, p.Cycle)
 			}
@@ -95,7 +95,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 			if _, err := s.GetRule(ctx, a.ID, r.ID); err != ErrNotFound {
 				t.Fatalf("rule remains: %v", err)
 			}
-			if _, err := s.GetSIM(ctx, a.ID, sim.ID); (card && err != ErrNotFound) || (!card && err != nil) {
+			if _, err := s.GetService(ctx, a.ID, sim.ID); (card && err != ErrNotFound) || (!card && err != nil) {
 				t.Fatalf("card removal=%v: %v", card, err)
 			}
 			for _, table := range []string{"renewals", "reminder_jobs", "bot_dialogs"} {
@@ -116,7 +116,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 			if job, err := st.ClaimReminder(ctx, now, time.Hour, s.allowed, "after-delete"); err != nil || job != nil {
 				t.Fatalf("claimed deleted work: %+v %v", job, err)
 			}
-			if _, err := s.GetSIM(ctx, b.ID, keptSIM.ID); err != nil {
+			if _, err := s.GetService(ctx, b.ID, keptSIM.ID); err != nil {
 				t.Fatalf("unrelated card: %v", err)
 			}
 			if _, err := s.GetPeriod(ctx, b.ID, keptPeriod.ID); err != nil {
@@ -142,7 +142,7 @@ func TestDeletedIdentifiersAreNotReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteSIM(ctx, a.ID, sim.ID); err != nil {
+	if err := s.DeleteService(ctx, a.ID, sim.ID); err != nil {
 		t.Fatal(err)
 	}
 	nextSIM, nextPeriod, nextRule := fixture(t, s, a)
@@ -161,7 +161,7 @@ func TestDeletedIdentifiersAreNotReused(t *testing.T) {
 	if nextSIM.ID <= sim.ID || nextPeriod.ID <= p.ID || nextRule.ID <= rule.ID || nextRenewal.ID <= renewal.ID || nextJobID <= jobID {
 		t.Fatalf("identifiers reused: card %d/%d period %d/%d rule %d/%d renewal %d/%d job %d/%d", sim.ID, nextSIM.ID, p.ID, nextPeriod.ID, rule.ID, nextRule.ID, renewal.ID, nextRenewal.ID, jobID, nextJobID)
 	}
-	if err := s.ArchiveSIM(ctx, a.ID, sim.ID); err != ErrNotFound {
+	if err := s.ArchiveService(ctx, a.ID, sim.ID); err != ErrNotFound {
 		t.Fatalf("stale card mutation: %v", err)
 	}
 	if err := s.DeletePeriod(ctx, a.ID, p.ID, 2); err != ErrNotFound {
@@ -207,10 +207,10 @@ func TestHardDeleteRollbackAndAuthorization(t *testing.T) {
 	if _, err := st.DB.ExecContext(ctx, `CREATE TRIGGER fail_rule_delete BEFORE DELETE ON reminder_rules BEGIN SELECT RAISE(ABORT,'test failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteSIM(ctx, a.ID, sim.ID); err != ErrUnavailable {
+	if err := s.DeleteService(ctx, a.ID, sim.ID); err != ErrUnavailable {
 		t.Fatalf("cascade failure: %v", err)
 	}
-	if _, err := s.GetSIM(ctx, a.ID, sim.ID); err != nil {
+	if _, err := s.GetService(ctx, a.ID, sim.ID); err != nil {
 		t.Fatalf("card not rolled back: %v", err)
 	}
 	if _, err := s.GetPeriod(ctx, a.ID, p.ID); err != nil {
@@ -220,7 +220,7 @@ func TestHardDeleteRollbackAndAuthorization(t *testing.T) {
 		t.Fatalf("rule not rolled back: %v", err)
 	}
 	s.allowed = func(int64) bool { return false }
-	if err := s.DeleteSIM(ctx, a.ID, sim.ID); err != ErrForbidden {
+	if err := s.DeleteService(ctx, a.ID, sim.ID); err != ErrForbidden {
 		t.Fatalf("revoked card delete: %v", err)
 	}
 	if err := s.DeletePeriod(ctx, a.ID, p.ID, p.Cycle); err != ErrForbidden {

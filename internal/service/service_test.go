@@ -30,10 +30,19 @@ func setup(t *testing.T) (*Service, *storage.Store, User, User) {
 	}
 	return s, st, a, b
 }
-func fixture(t *testing.T, s *Service, u User) (SIM, Period, Rule) {
+func testSIMCategory(t *testing.T, s *Service) int64 {
+	t.Helper()
+	var category int64
+	if err := s.store.DB.QueryRow("SELECT id FROM service_categories WHERE code='sim'").Scan(&category); err != nil {
+		t.Fatal(err)
+	}
+	return category
+}
+
+func fixture(t *testing.T, s *Service, u User) (ServiceItem, Period, Rule) {
 	t.Helper()
 	ctx := context.Background()
-	sim, e := s.CreateSIM(ctx, u.ID, SIMInput{Name: "日本卡", CardType: "esim"})
+	sim, e := s.CreateService(ctx, u.ID, ServiceInput{Name: "日本卡", CategoryID: testSIMCategory(t, s), SIMDetails: &SIMDetails{CardType: "esim"}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -55,10 +64,10 @@ func TestOwnershipAndAuthorization(t *testing.T) {
 		t.Fatalf("unauthorized: %v", e)
 	}
 	checks := []func() error{
-		func() error { _, e := s.GetSIM(ctx, b.ID, sim.ID); return e },
+		func() error { _, e := s.GetService(ctx, b.ID, sim.ID); return e },
 		func() error { _, e := s.GetPeriod(ctx, b.ID, p.ID); return e },
 		func() error { _, e := s.GetRule(ctx, b.ID, r.ID); return e },
-		func() error { return s.ArchiveSIM(ctx, b.ID, sim.ID) },
+		func() error { return s.ArchiveService(ctx, b.ID, sim.ID) },
 		func() error { _, e := s.UpdatePeriod(ctx, b.ID, p.ID, PeriodPatch{ExpectedCycle: 1}); return e },
 		func() error { _, e := s.ListRules(ctx, b.ID, p.ID, 0, 10); return e },
 		func() error { _, e := s.ListRenewals(ctx, b.ID, p.ID, 0, 10); return e },
@@ -73,7 +82,7 @@ func TestOwnershipAndAuthorization(t *testing.T) {
 		}
 	}
 	s.allowed = func(int64) bool { return false }
-	if _, e := s.GetSIM(ctx, a.ID, sim.ID); e != ErrForbidden {
+	if _, e := s.GetService(ctx, a.ID, sim.ID); e != ErrForbidden {
 		t.Fatalf("revocation: %v", e)
 	}
 }

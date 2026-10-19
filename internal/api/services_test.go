@@ -227,17 +227,15 @@ func resourceTestError(t *testing.T, h http.Handler, method, path, body string, 
 	}
 }
 
-func TestServicesMixedLegacyAndGenericResources(t *testing.T) {
+func TestServicesSIMAndGenericShareOneResource(t *testing.T) {
 	h, _, _ := setupAPI(t)
 	categories := resourceTestCategories(t, h, 101)
-	legacy := resourceTestObject(t, request(t, h, "POST", "/api/v1/sims", `{"name":"legacy SIM","card_type":"physical_sim","operator":"legacy carrier","phone_number":"+886101","country_or_region":"TW","iccid":"legacy-secret","notes":"legacy notes"}`, 101, 201))
+	legacy := resourceTestObject(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"legacy SIM","category_id":%q,"provider":"legacy carrier","notes":"legacy notes","sim_details":{"card_type":"physical_sim","phone_number":"+886101","country_or_region":"TW","iccid":"legacy-secret"}}`, categories["sim"]), 101, 201))
 	legacyID := resourceTestID(t, legacy)
-	bridged := resourceTestObject(t, request(t, h, "GET", "/api/v1/services/"+legacyID, "", 101, 200))
-	resourceTestFields(t, bridged, map[string]any{"id": legacyID, "user_id": legacy["user_id"], "name": "legacy SIM", "category_id": categories["sim"], "provider": "legacy carrier", "identifier": nil, "management_url": nil, "notes": "legacy notes", "status": "active", "created_at": legacy["created_at"], "updated_at": legacy["updated_at"], "sim_details": map[string]any{"card_type": "physical_sim", "phone_number": "+886101", "country_or_region": "TW", "iccid": "legacy-secret"}})
+	resourceTestFields(t, legacy, map[string]any{"name": "legacy SIM", "category_id": categories["sim"], "provider": "legacy carrier", "notes": "legacy notes", "sim_details": map[string]any{"card_type": "physical_sim", "phone_number": "+886101", "country_or_region": "TW", "iccid": "legacy-secret"}})
 	newSIM := resourceTestObject(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"new SIM","category_id":%q,"provider":"new carrier","sim_details":{"card_type":"esim","phone_number":"+886202","country_or_region":"JP","iccid":"new-secret"}}`, categories["sim"]), 101, 201))
 	newID := resourceTestID(t, newSIM)
-	legacyNew := resourceTestObject(t, request(t, h, "GET", "/api/v1/sims/"+newID, "", 101, 200))
-	resourceTestFields(t, legacyNew, map[string]any{"id": newID, "name": "new SIM", "operator": "new carrier", "card_type": "esim", "phone_number": "+886202", "country_or_region": "JP", "iccid": "new-secret"})
+	resourceTestFields(t, newSIM, map[string]any{"sim_details": map[string]any{"card_type": "esim", "phone_number": "+886202", "country_or_region": "JP", "iccid": "new-secret"}})
 	custom := resourceTestObject(t, request(t, h, "POST", "/api/v1/categories", `{"name":"Infrastructure"}`, 101, 201))
 	allIDs := []string{legacyID, newID}
 	for _, entry := range []struct{ category, name string }{{categories["vps"], "VPS"}, {categories["subscription"], "AI subscription"}, {categories["domain"], "example domain"}, {resourceTestID(t, custom), "custom backup"}} {
@@ -248,11 +246,8 @@ func TestServicesMixedLegacyAndGenericResources(t *testing.T) {
 		if !reflect.DeepEqual(got, item) {
 			t.Fatalf("create/get mismatch: got=%v want=%v", got, item)
 		}
-		resourceTestError(t, h, "GET", "/api/v1/sims/"+id, "", 101, 404, "not_found")
-		resourceTestError(t, h, "GET", "/api/v1/sims/"+id+"/periods", "", 101, 404, "not_found")
 	}
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services", 101).Data, allIDs...)
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/sims", 101).Data, legacyID, newID)
 	summary := resourceTestSummary(t, h, "", 101)
 	resourceTestCounts(t, summary.Data.Counts, 6, 0, 0, 6)
 	if len(summary.Data.Items) != 6 || summary.Next != nil {
@@ -265,14 +260,12 @@ func TestServicesMixedLegacyAndGenericResources(t *testing.T) {
 	}
 	patched := resourceTestObject(t, request(t, h, "PATCH", "/api/v1/services/"+legacyID, `{"provider":"updated carrier","sim_details":{"phone_number":null}}`, 101, 200))
 	resourceTestFields(t, patched, map[string]any{"provider": "updated carrier", "sim_details": map[string]any{"card_type": "physical_sim", "phone_number": nil, "country_or_region": "TW", "iccid": "legacy-secret"}})
-	legacyRead := resourceTestObject(t, request(t, h, "GET", "/api/v1/sims/"+legacyID, "", 101, 200))
-	resourceTestFields(t, legacyRead, map[string]any{"operator": "updated carrier", "phone_number": nil, "iccid": "legacy-secret"})
-	legacyPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/sims/"+legacyID+"/periods", `{"period_type":"number_validity","name":"legacy validity","date_precision":"date","expires_at":"2027-02-01"}`, 101, 201))
-	resourceTestFields(t, legacyPeriod, map[string]any{"service_id": legacyID, "sim_id": legacyID})
+	legacyPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+legacyID+"/periods", `{"period_type":"number_validity","name":"legacy validity","date_precision":"date","expires_at":"2027-02-01"}`, 101, 201))
+	resourceTestFields(t, legacyPeriod, map[string]any{"service_id": legacyID})
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services/"+legacyID+"/periods", 101).Data, resourceTestID(t, legacyPeriod))
 	newPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+newID+"/periods", `{"period_type":"plan_validity","name":"new validity","date_precision":"date","expires_at":"2027-02-02"}`, 101, 201))
-	resourceTestFields(t, newPeriod, map[string]any{"service_id": newID, "sim_id": newID})
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/sims/"+newID+"/periods", 101).Data, resourceTestID(t, newPeriod))
+	resourceTestFields(t, newPeriod, map[string]any{"service_id": newID})
+	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services/"+newID+"/periods", 101).Data, resourceTestID(t, newPeriod))
 }
 
 func TestServicesCategoryOwnershipAndKinds(t *testing.T) {
@@ -344,8 +337,8 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 	first := resourceTestPeriod(t, h, id, "server billing", "2027-01-04", 101)
 	second := resourceTestPeriod(t, h, id, "backup storage", "2027-02-20", 101)
 	p1, p2 := resourceTestID(t, first), resourceTestID(t, second)
-	resourceTestFields(t, first, map[string]any{"sim_id": nil, "expires_at": "2027-01-04T16:00:00Z", "status": "active"})
-	resourceTestFields(t, second, map[string]any{"sim_id": nil, "expires_at": "2027-02-20T16:00:00Z", "status": "active"})
+	resourceTestFields(t, first, map[string]any{"expires_at": "2027-01-04T16:00:00Z", "status": "active"})
+	resourceTestFields(t, second, map[string]any{"expires_at": "2027-02-20T16:00:00Z", "status": "active"})
 	r1 := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p1+"/rules", `{"days_before":1,"reminder_time":"09:00"}`, 101, 201))
 	r2 := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p2+"/rules", `{"days_before":3,"reminder_time":"10:30"}`, 101, 201))
 	resourceTestFields(t, r1, map[string]any{"validity_period_id": p1, "days_before": float64(1), "enabled": true, "revision": float64(1)})
@@ -678,7 +671,7 @@ func TestServicesFieldValidationAndSearchableFields(t *testing.T) {
 	}
 	sim := resourceTestObject(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"sim","category_id":%q,"sim_details":{"card_type":"esim"}}`, categories["sim"]), 101, 201))
 	simPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+resourceTestID(t, sim)+"/periods", `{"period_type":"plan_validity","name":"sim plan","date_precision":"date","expires_at":"2027-08-01"}`, 101, 201))
-	resourceTestFields(t, simPeriod, map[string]any{"sim_id": resourceTestID(t, sim)})
+	resourceTestFields(t, simPeriod, map[string]any{"service_id": resourceTestID(t, sim)})
 	changed := resourceTestObject(t, request(t, h, "PATCH", "/api/v1/periods/"+resourceTestID(t, simPeriod), `{"expected_cycle":1,"period_type":"custom"}`, 101, 200))
-	resourceTestFields(t, changed, map[string]any{"period_type": "custom", "sim_id": resourceTestID(t, sim)})
+	resourceTestFields(t, changed, map[string]any{"period_type": "custom", "service_id": resourceTestID(t, sim)})
 }

@@ -21,7 +21,7 @@ function simService(): ServiceItem {
   return service({ name: '漫游卡', category_id: '1', provider: '运营商', management_url: 'https://manage.example/', sim_details: { card_type: 'esim', phone_number: '+886912345678', country_or_region: '台湾', iccid: '8988600000000000000' } });
 }
 function period(): Period {
-  return { id: '31', service_id: '42', sim_id: null, period_type: 'custom', name: '', starts_at: null, expires_at: '2026-02-01T00:00:00Z', date_precision: 'datetime', local_expires_date: null, timezone: 'Asia/Taipei', status: 'active', cycle: 1, terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'USD', revision: 1 }, created_at: now, updated_at: now };
+  return { id: '31', service_id: '42', period_type: 'custom', name: '', starts_at: null, expires_at: '2026-02-01T00:00:00Z', date_precision: 'datetime', local_expires_date: null, timezone: 'Asia/Taipei', status: 'active', cycle: 1, terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'USD', revision: 1 }, created_at: now, updated_at: now };
 }
 function json(data: unknown): Response { return Response.json({ data }); }
 function start(): void {
@@ -164,7 +164,7 @@ describe('service form and categories', () => {
 describe('service detail', () => {
   it('masks SIM phone data, hides ICCID, displays terms, and uses a safe external link', async () => {
     const current = simService();
-    const withPeriod = { ...period(), service_id: current.id, sim_id: current.id };
+    const withPeriod = { ...period(), service_id: current.id };
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       const url = new URL(input, location.origin);
       if (url.pathname.endsWith('/categories')) return page([simCategory, genericCategory]);

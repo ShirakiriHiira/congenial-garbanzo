@@ -24,11 +24,11 @@ const vpsService: ServiceItem = {
 };
 const defaultTerms = { mode: 'custom' as const, interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 };
 const period: Period = {
-  id: '5', service_id: '1', sim_id: '1', period_type: 'plan_validity', name: '合成套餐', starts_at: null,
+  id: '5', service_id: '1', period_type: 'plan_validity', name: '合成套餐', starts_at: null,
   expires_at: '2027-02-01T16:00:00Z', date_precision: 'date', local_expires_date: '2027-02-01', timezone: 'Asia/Taipei',
   status: 'active', cycle: 3, terms: defaultTerms, created_at: stamp, updated_at: stamp,
 };
-const vpsPeriod: Period = { ...period, id: '6', service_id: '2', sim_id: null, period_type: 'custom', name: '', terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'CNY', revision: 2 } };
+const vpsPeriod: Period = { ...period, id: '6', service_id: '2', period_type: 'custom', name: '', terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'CNY', revision: 2 } };
 const failure = (status: number) => Response.json({ error: { code: 'invalid_or_changed', message: 'private server detail' } }, { status });
 const json = (data: unknown, status = 200) => Response.json({ data }, { status });
 

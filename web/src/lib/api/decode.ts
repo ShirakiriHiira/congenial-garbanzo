@@ -210,7 +210,6 @@ function decodePeriod(value: unknown, path = "data"): Period {
   return {
     id: id(field(source, "id", path), `${path}.id`),
     service_id: id(field(source, "service_id", path), `${path}.service_id`),
-    sim_id: nullableID(field(source, "sim_id", path), `${path}.sim_id`),
     period_type: oneOf(field(source, "period_type", path), ["number_validity", "plan_validity", "data_package_validity", "custom"], `${path}.period_type`),
     name: text(field(source, "name", path), `${path}.name`),
     starts_at: nullableTimestamp(field(source, "starts_at", path), `${path}.starts_at`),

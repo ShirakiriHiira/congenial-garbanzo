@@ -112,7 +112,7 @@
       if (mode === 'edit') {
         const current = await api.period(id, controller.signal);
         const [user, service] = await Promise.all([session.me ? Promise.resolve(session.me) : api.me(controller.signal), api.service(current.service_id, controller.signal)]);
-        if (alive) { acceptMe(user); fill(current); serviceIsSIM = service.sim_details !== null || current.sim_id !== null; }
+        if (alive) { acceptMe(user); fill(current); serviceIsSIM = service.sim_details !== null; }
       } else {
         const [user, service] = await Promise.all([session.me ? Promise.resolve(session.me) : api.me(controller.signal), api.service(id, controller.signal)]);
         if (alive) { acceptMe(user); zone = user.timezone; serviceIsSIM = service.sim_details !== null; }

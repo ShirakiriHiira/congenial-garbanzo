@@ -98,15 +98,6 @@ func (h *Handler) apiMux() *http.ServeMux {
 	add("GET /services/{id}/periods", h.listServicePeriods)
 	add("POST /services/{id}/periods", h.createServicePeriod)
 
-	add("GET /sims", h.listSIMs)
-	add("POST /sims", h.createSIM)
-	add("GET /sims/{id}", h.getSIM)
-	add("PATCH /sims/{id}", h.patchSIM)
-	add("DELETE /sims/{id}", h.archiveSIM)
-	add("POST /sims/{id}/delete", h.deleteSIM)
-	add("GET /sims/{id}/periods", h.listPeriods)
-	add("POST /sims/{id}/periods", h.createPeriod)
-
 	add("GET /periods/{id}", h.getPeriod)
 	add("PATCH /periods/{id}", h.patchPeriod)
 	add("DELETE /periods/{id}", h.cancelPeriod)

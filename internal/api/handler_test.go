@@ -91,16 +91,17 @@ func TestResourceLifecycle(t *testing.T) {
 	if me["telegram_user_id"] != "101" || me["has_private_chat"] != false {
 		t.Fatalf("me=%v", me)
 	}
-	sim := data(t, request(t, h, "POST", "/api/v1/sims", `{"name":" 日本卡 ","card_type":"esim","notes":"private","operator":"carrier"}`, 101, 201))
+	categories := resourceTestCategories(t, h, 101)
+	sim := data(t, request(t, h, "POST", "/api/v1/services", `{"name":" 日本卡 ","category_id":"`+categories["vps"]+`","notes":"private","provider":"carrier"}`, 101, 201))
 	sid := sim["id"].(string)
 	if sim["name"] != "日本卡" {
-		t.Fatalf("sim=%v", sim)
+		t.Fatalf("service=%v", sim)
 	}
-	patched := data(t, request(t, h, "PATCH", "/api/v1/sims/"+sid, `{"notes":null}`, 101, 200))
-	if patched["notes"] != nil || patched["operator"] != "carrier" {
+	patched := data(t, request(t, h, "PATCH", "/api/v1/services/"+sid, `{"notes":null}`, 101, 200))
+	if patched["notes"] != nil || patched["provider"] != "carrier" {
 		t.Fatalf("null/absent patch=%v", patched)
 	}
-	period := data(t, request(t, h, "POST", "/api/v1/sims/"+sid+"/periods", `{"period_type":"number_validity","name":"number","date_precision":"date","expires_at":"2027-01-31"}`, 101, 201))
+	period := data(t, request(t, h, "POST", "/api/v1/services/"+sid+"/periods", `{"period_type":"custom","name":"number","date_precision":"date","expires_at":"2027-01-31"}`, 101, 201))
 	pid := period["id"].(string)
 	if period["expires_at"] != "2027-01-31T16:00:00Z" || period["local_expires_date"] != "2027-01-31" {
 		t.Fatalf("expiration=%v", period)
@@ -114,7 +115,7 @@ func TestResourceLifecycle(t *testing.T) {
 	request(t, h, "PATCH", "/api/v1/rules/"+rid, `{"expected_revision":1,"days_before":2}`, 101, 200)
 	request(t, h, "PATCH", "/api/v1/rules/"+rid, `{"expected_revision":1,"days_before":3}`, 101, 409)
 	request(t, h, "PATCH", "/api/v1/periods/"+pid, `{"expected_cycle":1,"name":"renamed"}`, 101, 200)
-	request(t, h, "GET", "/api/v1/sims/"+sid+"/periods", "", 101, 200)
+	request(t, h, "GET", "/api/v1/services/"+sid+"/periods", "", 101, 200)
 	request(t, h, "GET", "/api/v1/periods/"+pid+"/rules", "", 101, 200)
 
 	result, err := st.DB.Exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,1,2,1,1801411200,'pending',1,1,1)`, pid, rid)
@@ -145,8 +146,8 @@ func TestResourceLifecycle(t *testing.T) {
 	request(t, h, "PATCH", "/api/v1/periods/"+pid, `{"expected_cycle":1,"name":"stale"}`, 101, 409)
 	request(t, h, "DELETE", "/api/v1/rules/"+rid+"?expected_revision=2", "", 101, 204)
 	request(t, h, "DELETE", "/api/v1/periods/"+pid+"?expected_cycle=2", "", 101, 204)
-	request(t, h, "DELETE", "/api/v1/sims/"+sid, "", 101, 204)
-	request(t, h, "PATCH", "/api/v1/sims/"+sid, `{"status":"active"}`, 101, 200)
+	request(t, h, "DELETE", "/api/v1/services/"+sid, "", 101, 204)
+	request(t, h, "PATCH", "/api/v1/services/"+sid, `{"status":"active"}`, 101, 200)
 	request(t, h, "PATCH", "/api/v1/me", `{"timezone":"UTC"}`, 101, 200)
 }
 func TestAuthenticationOwnershipAndErrors(t *testing.T) {
@@ -154,8 +155,9 @@ func TestAuthenticationOwnershipAndErrors(t *testing.T) {
 	request(t, h, "GET", "/api/v1/me", "", 0, 401)
 	request(t, h, "GET", "/api/v1/me", "", 303, 403)
 	request(t, h, "GET", "/api/v1/me?initData="+url.QueryEscape(testAuth(101)), "", 0, 401)
-	sim := data(t, request(t, h, "POST", "/api/v1/sims", `{"name":"private","card_type":"esim","iccid":"secret-iccid"}`, 101, 201))
-	path := "/api/v1/sims/" + sim["id"].(string)
+	categories := resourceTestCategories(t, h, 101)
+	sim := data(t, request(t, h, "POST", "/api/v1/services", `{"name":"private","category_id":"`+categories["sim"]+`","sim_details":{"card_type":"esim","iccid":"secret-iccid"}}`, 101, 201))
+	path := "/api/v1/services/" + sim["id"].(string)
 	for _, suffix := range []string{"", "/periods"} {
 		w := request(t, h, "GET", path+suffix, "", 202, 404)
 		if strings.Contains(w.Body.String(), "secret-iccid") || strings.Contains(w.Body.String(), testToken) {
@@ -167,9 +169,9 @@ func TestAuthenticationOwnershipAndErrors(t *testing.T) {
 	for _, body := range []string{`{"name":null}`, `{"card_type":null}`, `{"status":null}`, `{"unknown":1}`, `{} {}`, `null`, `[]`, `{"user_id":"202"}`} {
 		request(t, h, "PATCH", path, body, 101, 400)
 	}
-	request(t, h, "POST", "/api/v1/sims", `{"name":"x","card_type":"esim","notes":"`+strings.Repeat("x", 65536)+`"}`, 101, 413)
-	request(t, h, "POST", "/api/v1/sims", `{"name":"`+strings.Repeat("中", 201)+`","card_type":"esim"}`, 101, 400)
-	r := httptest.NewRequest("POST", "/api/v1/sims", strings.NewReader(`{}`))
+	request(t, h, "POST", "/api/v1/services", `{"name":"x","category_id":"`+categories["vps"]+`","notes":"`+strings.Repeat("x", 65536)+`"}`, 101, 413)
+	request(t, h, "POST", "/api/v1/services", `{"name":"`+strings.Repeat("中", 201)+`","category_id":"`+categories["vps"]+`"}`, 101, 400)
+	r := httptest.NewRequest("POST", "/api/v1/services", strings.NewReader(`{}`))
 	r.Header.Set("Authorization", testAuth(101))
 	r.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
@@ -179,21 +181,22 @@ func TestAuthenticationOwnershipAndErrors(t *testing.T) {
 	}
 	request(t, h, "PUT", path, `{}`, 101, 405)
 	request(t, h, "GET", "/api/v1/not-a-route", "", 101, 404)
-	request(t, h, "GET", "/api/v1/sims/1.5", "", 101, 400)
+	request(t, h, "GET", "/api/v1/services/1.5", "", 101, 400)
 	for _, q := range []string{"limit=0", "limit=101", "limit=1&limit=2", "after_id=-1", "after_id=1.2", "after_id=%zz", "unknown=1", "limit=", "limit"} {
-		request(t, h, "GET", "/api/v1/sims?"+q, "", 101, 400)
+		request(t, h, "GET", "/api/v1/services?"+q, "", 101, 400)
 	}
 }
 func TestPaginationAndReadiness(t *testing.T) {
 	h, _, _ := setupAPI(t)
-	w := request(t, h, "GET", "/api/v1/sims", "", 101, 200)
+	categories := resourceTestCategories(t, h, 101)
+	w := request(t, h, "GET", "/api/v1/services", "", 101, 200)
 	if !strings.Contains(w.Body.String(), `"data":[]`) || !strings.Contains(w.Body.String(), `"next_cursor":null`) {
 		t.Fatalf("empty page=%s", w.Body.String())
 	}
 	for i := range 21 {
-		request(t, h, "POST", "/api/v1/sims", fmt.Sprintf(`{"name":"card %d","card_type":"esim"}`, i), 101, 201)
+		request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"card %d","category_id":"%s"}`, i, categories["vps"]), 101, 201)
 	}
-	w = request(t, h, "GET", "/api/v1/sims", "", 101, 200)
+	w = request(t, h, "GET", "/api/v1/services", "", 101, 200)
 	var first struct {
 		Data []map[string]any `json:"data"`
 		Next *string          `json:"next_cursor"`
@@ -204,7 +207,7 @@ func TestPaginationAndReadiness(t *testing.T) {
 	if len(first.Data) != 20 || first.Next == nil {
 		t.Fatalf("first=%+v", first)
 	}
-	w = request(t, h, "GET", "/api/v1/sims?after_id="+*first.Next, "", 101, 200)
+	w = request(t, h, "GET", "/api/v1/services?after_id="+*first.Next, "", 101, 200)
 	var second struct {
 		Data []map[string]any `json:"data"`
 		Next *string          `json:"next_cursor"`
@@ -240,7 +243,12 @@ func TestNestedOwnershipAndPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sim, err := s.CreateSIM(ctx, u.ID, service.SIMInput{Name: "nested", CardType: "esim"})
+	categories := resourceTestCategories(t, h, 101)
+	var categoryID int64
+	if _, err := fmt.Sscan(categories["sim"], &categoryID); err != nil {
+		t.Fatal(err)
+	}
+	sim, err := s.CreateService(ctx, u.ID, service.ServiceInput{Name: "nested", CategoryID: categoryID, SIMDetails: &service.SIMDetails{CardType: "esim"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +279,7 @@ func TestNestedOwnershipAndPagination(t *testing.T) {
 		}
 	}
 	for _, path := range []string{
-		"/api/v1/sims/" + identifier(sim.ID) + "/periods",
+		"/api/v1/services/" + identifier(sim.ID) + "/periods",
 		"/api/v1/periods/" + identifier(first.ID) + "/rules",
 		"/api/v1/periods/" + identifier(first.ID) + "/renewals",
 	} {

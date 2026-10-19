@@ -66,21 +66,6 @@ type User struct {
 	CreatedAt      int64
 	UpdatedAt      int64
 }
-type SIM struct {
-	ID              int64
-	UserID          int64
-	Name            string
-	CardType        string
-	Operator        *string
-	PhoneNumber     *string
-	CountryOrRegion *string
-	ICCID           *string
-	Notes           *string
-	Status          string
-	CreatedAt       int64
-	UpdatedAt       int64
-}
-
 type SIMDetails struct {
 	CardType        string
 	PhoneNumber     *string
@@ -239,25 +224,6 @@ type ServicePatch struct {
 	SIMDetails    Optional[SIMDetailsPatch]
 }
 
-type SIMInput struct {
-	Name            string
-	CardType        string
-	Operator        *string
-	PhoneNumber     *string
-	CountryOrRegion *string
-	ICCID           *string
-	Notes           *string
-}
-type SIMPatch struct {
-	Name            *string
-	CardType        *string
-	Operator        Optional[string]
-	PhoneNumber     Optional[string]
-	CountryOrRegion Optional[string]
-	ICCID           Optional[string]
-	Notes           Optional[string]
-	Status          *string
-}
 type TermsInput struct {
 	Mode          string
 	IntervalCount *int64

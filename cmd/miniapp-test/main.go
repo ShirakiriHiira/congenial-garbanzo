@@ -164,6 +164,10 @@ func seed(ctx context.Context, svc *service.Service) error {
 }
 
 func seedSIMs(ctx context.Context, svc *service.Service, uid int64, now time.Time) error {
+	categories, err := builtinCategories(ctx, svc, uid)
+	if err != nil {
+		return err
+	}
 	fixtures := []struct {
 		name, cardType, operator, region string
 		archived                         bool
@@ -196,9 +200,12 @@ func seedSIMs(ctx context.Context, svc *service.Service, uid int64, now time.Tim
 		},
 	}
 	for _, fixture := range fixtures {
-		card, err := svc.CreateSIM(ctx, uid, service.SIMInput{
-			Name: fixture.name, CardType: fixture.cardType,
-			Operator: &fixture.operator, CountryOrRegion: &fixture.region,
+		card, err := svc.CreateService(ctx, uid, service.ServiceInput{
+			Name: fixture.name, CategoryID: categories["sim"].ID,
+			Provider: &fixture.operator,
+			SIMDetails: &service.SIMDetails{
+				CardType: fixture.cardType, CountryOrRegion: &fixture.region,
+			},
 		})
 		if err != nil {
 			return err
@@ -214,7 +221,7 @@ func seedSIMs(ctx context.Context, svc *service.Service, uid int64, now time.Tim
 		}
 		if fixture.archived {
 			status := "archived"
-			if _, err := svc.UpdateSIM(ctx, uid, card.ID, service.SIMPatch{Status: &status}); err != nil {
+			if _, err := svc.UpdateService(ctx, uid, card.ID, service.ServicePatch{Status: &status}); err != nil {
 				return err
 			}
 		}

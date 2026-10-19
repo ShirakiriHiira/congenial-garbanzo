@@ -43,7 +43,6 @@ const terms: PeriodTerms = {
 const period = {
   id: '4',
   service_id: '9007199254740993',
-  sim_id: null,
   period_type: 'custom',
   name: '',
   starts_at: null,
@@ -270,12 +269,10 @@ describe('decoder boundaries', () => {
     expect(() => categoriesDecoder({ data: [{ ...personal, kind: 'plugin' }], next_cursor: null })).toThrow(TypeError);
   });
 
-  it('requires period service linkage and accepts a null legacy SIM ID', () => {
+  it('requires period service linkage', () => {
     const decoded = periodDecoder({ data: period });
     expect(decoded.service_id).toBe('9007199254740993');
-    expect(decoded.sim_id).toBeNull();
     expect(decoded.terms).toEqual(terms);
-    expect(periodDecoder({ data: { ...period, sim_id: '5' } }).sim_id).toBe('5');
     expect(() => periodDecoder({ data: { ...period, service_id: '0' } })).toThrow(TypeError);
     const { service_id: _service, ...missing } = period;
     expect(() => periodDecoder({ data: missing })).toThrow(TypeError);

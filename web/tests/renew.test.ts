@@ -5,7 +5,7 @@ import { session } from '../src/lib/session.svelte';
 import type { Period, Renewal, RenewalCreateInput } from '../src/lib/api/types';
 
 const initialPeriod: Period = {
-  id: '11', service_id: '3', sim_id: null, period_type: 'custom', name: '合成测试有效期',
+  id: '11', service_id: '3', period_type: 'custom', name: '合成测试有效期',
   starts_at: null, expires_at: '2027-01-31T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-01-31', timezone: 'Asia/Taipei', status: 'active', cycle: 4,
   terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'USD', revision: 2 },
@@ -115,7 +115,7 @@ describe('renewal route', () => {
   });
 
   it('uses the generic fallback for an unnamed period', async () => {
-    transport({ period: { ...initialPeriod, name: '', sim_id: null, period_type: 'custom' } });
+    transport({ period: { ...initialPeriod, name: '', period_type: 'custom' } });
     render(Renew, { id: '11' });
     expect(await screen.findByRole('heading', { name: '有效期' })).toBeInTheDocument();
   });

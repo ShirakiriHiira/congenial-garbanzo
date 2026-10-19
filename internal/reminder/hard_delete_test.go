@@ -23,7 +23,7 @@ func TestDeletedLeasedReminderIsNeverSent(t *testing.T) {
 				t.Fatalf("claim: %+v %v", job, err)
 			}
 			if card {
-				err = f.svc.DeleteSIM(ctx, f.user.ID, f.sim.ID)
+				err = f.svc.DeleteService(ctx, f.user.ID, f.sim.ID)
 			} else {
 				err = f.svc.DeletePeriod(ctx, f.user.ID, f.period.ID, f.period.Cycle)
 			}
