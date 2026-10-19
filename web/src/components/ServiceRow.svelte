@@ -6,9 +6,9 @@
   import ExpiryBadge from './ExpiryBadge.svelte';
   import IconTile from './IconTile.svelte';
 
-  let { service, period, category, onopen }: {
+  let { service, periods, category, onopen }: {
     service: ServiceItem;
-    period: Period | null;
+    periods: Period[];
     category: Category | undefined;
     onopen: (id: string) => void;
   } = $props();
@@ -25,9 +25,15 @@
       {#if service.status === 'archived'}<span class="archive-badge">{serviceStatusLabels.archived}</span>{/if}
     </span>
     {#if secondary}<span class="secondary">{secondary}</span>{/if}
-    {#if period}
-      <span class="expiry">{periodLabel(period)}：{formatExpiry(period)}</span>
-      <span class="status-line"><ExpiryBadge {period} /></span>
+    {#if periods.length > 0}
+      <span class="periods">
+        {#each periods as period (period.id)}
+          <span class="period-line">
+            <span class="expiry">{periodLabel(period)}：{formatExpiry(period)}</span>
+            <ExpiryBadge {period} />
+          </span>
+        {/each}
+      </span>
     {:else}
       <span class="expiry">{labels.noPeriod}</span>
     {/if}
@@ -46,6 +52,7 @@
   .archive-badge{font-size:10px;font-weight:600;padding:2px 6px;border-radius:999px;color:var(--text-secondary);background:var(--border)}
   .secondary{font-size:12px;line-height:1.4;color:var(--text-secondary);white-space:pre-wrap}
   .expiry{font-size:11px;line-height:1.4;color:var(--text-secondary)}
-  .status-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .periods{display:grid;gap:3px}
+  .period-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
   .chevron{flex:0 0 14px;color:var(--text-secondary)}
 </style>

@@ -42,7 +42,7 @@ function period(id: number, date: string, status: Period['status'] = 'active'): 
   };
 }
 function item(id: number, primary: Period | null = null, value: ServiceItem = service(id)): ServiceOverviewItem {
-  return { service: value, primary_period: primary };
+  return { service: value, primary_period: primary, periods: primary ? [primary] : [] };
 }
 function page(items: ServiceOverviewItem[], next: string | null = null, value = counts): ServiceOverviewResponse {
   return { data: { counts: value, items }, next_cursor: next };
@@ -335,5 +335,19 @@ describe('home filters and service rows', () => {
     expect(screen.getByText('合成服务 2')).toBeInTheDocument();
     expect(overviewCalls().at(-1)?.searchParams.get('status')).toBe('due_soon');
     expect(within(screen.getByRole('button', { name: /合成服务 1/ })).getByText('7 天后到期')).toBeInTheDocument();
+  });
+
+  it('shows every period badge instead of collapsing to the primary period', async () => {
+    const traffic = { ...period(1, '2027-01-01'), name: '流量包' };
+    const number = { ...period(2, '2027-01-12'), name: '号码' };
+    const value = item(1, traffic);
+    value.periods = [traffic, number];
+    transport(() => Response.json(page([value])));
+    render(App);
+    const row = await screen.findByRole('button', { name: /合成服务 1/ });
+    expect(within(row).getByText('流量包：2027-01-01')).toBeInTheDocument();
+    expect(within(row).getByText('今天到期')).toBeInTheDocument();
+    expect(within(row).getByText('号码：2027-01-12')).toBeInTheDocument();
+    expect(within(row).getByText('剩余 11 天')).toBeInTheDocument();
   });
 });

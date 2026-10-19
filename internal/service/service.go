@@ -273,6 +273,7 @@ type ServiceFilter struct {
 type ServiceOverviewItem struct {
 	Service       ServiceItem
 	PrimaryPeriod *Period
+	Periods       []Period
 }
 type ServiceOverview struct {
 	Counts OverviewCounts

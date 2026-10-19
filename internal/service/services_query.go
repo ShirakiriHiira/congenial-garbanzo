@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,22 @@ type OverviewCounts struct {
 	DueSoon  int
 	Expired  int
 	NoPeriod int
+}
+
+// sortPeriods keeps the most urgent unexpired period first and falls back to
+// the most recently expired one, matching the primary-period ordering.
+func sortPeriods(periods []Period, now int64) {
+	sort.SliceStable(periods, func(i, j int) bool {
+		a, b := periods[i], periods[j]
+		aActive, bActive := a.ExpiresAt > now, b.ExpiresAt > now
+		if aActive != bActive {
+			return aActive
+		}
+		if aActive {
+			return a.ExpiresAt < b.ExpiresAt
+		}
+		return a.ExpiresAt > b.ExpiresAt
+	})
 }
 
 // The primary period is the earliest unexpired period; when every period has
@@ -218,7 +235,8 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 	if err != nil {
 		return out, dbError(err)
 	}
-	periodIDs := make([]any, 0, limit+1)
+	serviceIDs := make([]any, 0, limit+1)
+	primaryIDs := make(map[int64]int64, limit+1)
 	for rows.Next() {
 		var sr serviceRow
 		var p primarySummary
@@ -245,8 +263,9 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 		}
 		if sr.item.ID > after && len(out.Items.Data) < limit+1 {
 			out.Items.Data = append(out.Items.Data, ServiceOverviewItem{Service: sr.value()})
+			serviceIDs = append(serviceIDs, sr.item.ID)
 			if p.id.Valid {
-				periodIDs = append(periodIDs, p.id.Int64)
+				primaryIDs[sr.item.ID] = p.id.Int64
 			}
 		}
 	}
@@ -255,12 +274,12 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 	if err != nil {
 		return out, dbError(err)
 	}
-	// Fetch the selected periods in one batch after closing the count cursor.
-	// Both queries use the same read snapshot and the same captured clock.
-	if len(periodIDs) > 0 {
-		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(periodIDs)), ",")
-		periodArgs := append([]any{uid}, periodIDs...)
-		rows, err = tx.QueryContext(ctx, "SELECT "+periodColumns+periodJoins+"WHERE s.user_id=? AND p.id IN ("+placeholders+")", periodArgs...)
+	// Fetch every period for the selected rows in one batch after closing the
+	// count cursor. Both queries use the same read snapshot and clock.
+	if len(serviceIDs) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(serviceIDs)), ",")
+		periodArgs := append([]any{uid}, serviceIDs...)
+		rows, err = tx.QueryContext(ctx, "SELECT "+periodColumns+periodJoins+"WHERE s.user_id=? AND p.service_id IN ("+placeholders+") ORDER BY p.service_id,p.expires_at,p.id", periodArgs...)
 		if err != nil {
 			return out, dbError(err)
 		}
@@ -278,10 +297,17 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 			if !ok {
 				return out, ErrUnavailable
 			}
-			out.Items.Data[i].PrimaryPeriod = &p
+			if primaryIDs[p.ServiceID] == p.ID {
+				value := p
+				out.Items.Data[i].PrimaryPeriod = &value
+			}
+			out.Items.Data[i].Periods = append(out.Items.Data[i].Periods, p)
 		}
 		if err = rows.Err(); err != nil {
 			return out, dbError(err)
+		}
+		for i := range out.Items.Data {
+			sortPeriods(out.Items.Data[i].Periods, now.Unix())
 		}
 	}
 	out.Items = finishPage(out.Items.Data, limit, func(v ServiceOverviewItem) int64 { return v.Service.ID })

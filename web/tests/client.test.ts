@@ -246,14 +246,15 @@ describe('decoder boundaries', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('decodes service overview counts and nullable primary periods', () => {
+  it('decodes service overview counts, primary and all periods', () => {
     const counts = { total: 4, due_soon: 1, expired: 1, no_period: 1 };
+    const second = { ...period, id: '5', name: '流量包', expires_at: '2027-03-01T00:00:00Z', local_expires_date: '2027-03-01' };
     const response = {
-      data: { counts, items: [{ service, primary_period: null }] },
+      data: { counts, items: [{ service, primary_period: period, periods: [period, second] }] },
       next_cursor: '7',
     };
     expect(serviceOverviewDecoder(response)).toEqual({
-      data: { counts, items: [{ service, primary_period: null }] },
+      data: { counts, items: [{ service, primary_period: period, periods: [period, second] }] },
       next_cursor: '7',
     });
   });

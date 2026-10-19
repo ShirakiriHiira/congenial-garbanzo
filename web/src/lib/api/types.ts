@@ -128,6 +128,7 @@ export interface Period {
 export interface ServiceOverviewItem {
   service: ServiceItem;
   primary_period: Period | null;
+  periods: Period[];
 }
 
 export interface ServiceOverviewResponse {

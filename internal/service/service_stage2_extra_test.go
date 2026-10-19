@@ -22,6 +22,12 @@ func TestServicePrimaryOrdering(t *testing.T) {
 	if got := overview.Items.Data[0].PrimaryPeriod.ID; got != future.ID || got == expiredFirst.ID {
 		t.Fatalf("primary %d want %d", got, future.ID)
 	}
+	if got := len(overview.Items.Data[0].Periods); got != 3 {
+		t.Fatalf("period count %d want 3", got)
+	}
+	if got := overview.Items.Data[0].Periods[0].ID; got != future.ID {
+		t.Fatalf("first period %d want %d", got, future.ID)
+	}
 
 	expiredService := stageTwoService(t, s, a.ID, category, "expired ties")
 	stageTwoPeriod(t, s, a.ID, expiredService.ID, "2026-10-01", nil)

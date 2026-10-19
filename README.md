@@ -104,7 +104,7 @@ CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o ./bin/remind .
 | GET, POST | `/categories` | 列出/创建本人自定义类别 |
 | PATCH | `/categories/{id}` | 改本人自定义类别名 |
 | GET, POST | `/services` | 列表/创建 |
-| GET | `/services/overview` | counts + 服务/主有效期分页 |
+| GET | `/services/overview` | counts + 服务/主有效期与全部有效期摘要分页 |
 | GET, PATCH | `/services/{id}` | 读取/更新；PATCH `status=archived` 归档，`status=active` 恢复 |
 | DELETE | `/services/{id}` | 永久级联删除 |
 | GET, POST | `/services/{id}/periods` | 列表/创建有效期 |
@@ -131,7 +131,7 @@ CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o ./bin/remind .
 
 创建有效期必须提供 `date_precision` 与 `expires_at`；`name`、`starts_at`、`terms` 可选。PATCH 有效期必须带 `expected_cycle`；包含 `terms` 时必须带 `expected_terms_revision`；`terms:null` 重置为 `mode=custom` 并递增 revision。规则创建未提供 `enabled` 时默认为 `true`；`(period_id,days_before,reminder_time)` 唯一。续期必须显式提交新截止，并使用 `expected_cycle`；相同周期相同参数重放返回既有历史（200）。
 
-状态筛选为 `active,due_soon,expired,no_period,archived,all`。`due_soon` 按用户时区日历日 0–7 天。主有效期优先选择未过期中最早的一条；若全部过期，选择最近过期的一条；同截止取最大 ID。
+状态筛选为 `active,due_soon,expired,no_period,archived,all`。`due_soon` 按用户时区日历日 0–7 天。主有效期优先选择未过期中最早的一条；若全部过期，选择最近过期的一条；同截止取最大 ID。Mini App 首页逐条展示服务的全部有效期；统计与筛选仍按主有效期。
 
 ## 时间、条款与提醒
 

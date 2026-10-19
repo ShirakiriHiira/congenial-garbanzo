@@ -12,7 +12,7 @@
 
 <ul class="service-list">
   {#each items as item (item.service.id)}
-    <li><ServiceRow service={item.service} period={item.primary_period} category={categoriesById.get(item.service.category_id)} {onopen} /></li>
+    <li><ServiceRow service={item.service} periods={item.periods} category={categoriesById.get(item.service.category_id)} {onopen} /></li>
   {/each}
 </ul>
 

@@ -249,7 +249,11 @@ func serviceOverviewView(v service.ServiceOverview) map[string]any {
 		if item.PrimaryPeriod != nil {
 			period = periodView(*item.PrimaryPeriod)
 		}
-		items = append(items, map[string]any{"service": serviceView(item.Service), "primary_period": period})
+		periods := make([]map[string]any, 0, len(item.Periods))
+		for _, value := range item.Periods {
+			periods = append(periods, periodView(value))
+		}
+		items = append(items, map[string]any{"service": serviceView(item.Service), "primary_period": period, "periods": periods})
 	}
 	return map[string]any{"counts": map[string]int{"total": v.Counts.Total, "due_soon": v.Counts.DueSoon, "expired": v.Counts.Expired, "no_period": v.Counts.NoPeriod}, "items": items}
 }

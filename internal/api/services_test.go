@@ -24,8 +24,9 @@ type resourceTestOverview struct {
 	Data struct {
 		Counts map[string]int `json:"counts"`
 		Items  []struct {
-			Service       map[string]any `json:"service"`
-			PrimaryPeriod map[string]any `json:"primary_period"`
+			Service       map[string]any   `json:"service"`
+			PrimaryPeriod map[string]any   `json:"primary_period"`
+			Periods       []map[string]any `json:"periods"`
 		} `json:"items"`
 	} `json:"data"`
 	Next *string `json:"next_cursor"`
@@ -353,6 +354,7 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 		t.Fatalf("overview=%+v", before)
 	}
 	resourceTestFields(t, before.Data.Items[0].PrimaryPeriod, map[string]any{"id": p1, "service_id": id})
+	resourceTestIDs(t, before.Data.Items[0].Periods, p1, p2)
 	body := `{"expected_cycle":1,"date_precision":"date","expires_at":"2027-04-01","amount":1200,"currency":"TWD","notes":"server renewed"}`
 	renewed := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p1+"/renewals", body, 101, 201))
 	resourceTestFields(t, renewed, map[string]any{"period_id": p1, "previous_cycle": float64(1), "previous_expires_at": "2027-01-04T16:00:00Z", "new_expires_at": "2027-04-01T16:00:00Z", "amount": float64(1200), "currency": "TWD", "notes": "server renewed"})
@@ -374,6 +376,7 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 	}
 	after := resourceTestSummary(t, h, "", 101)
 	resourceTestFields(t, after.Data.Items[0].PrimaryPeriod, map[string]any{"id": p2})
+	resourceTestIDs(t, after.Data.Items[0].Periods, p1, p2)
 	secondRenewal := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p2+"/renewals", `{"expected_cycle":1,"date_precision":"date","expires_at":"2027-03-01","amount":300,"currency":"TWD"}`, 101, 201))
 	resourceTestFields(t, secondRenewal, map[string]any{"period_id": p2, "previous_cycle": float64(1), "previous_expires_at": "2027-02-20T16:00:00Z", "new_expires_at": "2027-03-01T16:00:00Z", "amount": float64(300)})
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/periods/"+p1+"/renewals", 101).Data, resourceTestID(t, renewed))
