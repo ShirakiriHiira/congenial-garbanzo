@@ -80,6 +80,25 @@ func (h *Handler) apiMux() *http.ServeMux {
 	add("GET /me", h.getMe)
 	add("PATCH /me", h.patchMe)
 	add("GET /overview", h.overview)
+	add("GET /categories", h.listCategories)
+	add("POST /categories", h.createCategory)
+	add("PATCH /categories/{id}", h.patchCategory)
+	// The literal overview path overlaps the more general item pattern. Register
+	// every method /services/{id} serves so the literal path stays strictly more
+	// specific, and skip the generic no-method fallback that would overlap it.
+	m.HandleFunc("GET /services/overview", h.serviceOverview)
+	m.HandleFunc("POST /services/overview", methodNotAllowed)
+	m.HandleFunc("PATCH /services/overview", methodNotAllowed)
+	m.HandleFunc("DELETE /services/overview", methodNotAllowed)
+	add("GET /services", h.listServices)
+	add("POST /services", h.createService)
+	add("GET /services/{id}", h.getService)
+	add("PATCH /services/{id}", h.patchService)
+	add("DELETE /services/{id}", h.archiveService)
+	add("POST /services/{id}/delete", h.deleteService)
+	add("GET /services/{id}/periods", h.listServicePeriods)
+	add("POST /services/{id}/periods", h.createServicePeriod)
+
 	add("GET /sims", h.listSIMs)
 	add("POST /sims", h.createSIM)
 	add("GET /sims/{id}", h.getSIM)
@@ -402,4 +421,54 @@ func cursor(value *int64) *string {
 	}
 	text := strconv.FormatInt(*value, 10)
 	return &text
+}
+
+func servicePagination(w http.ResponseWriter, r *http.Request) (int, int64, service.ServiceFilter, bool) {
+	filter := service.ServiceFilter{Status: "active"}
+	values, ok := queryOnly(w, r, "q", "category_id", "status", "limit", "after_id")
+	if !ok {
+		return 0, 0, filter, false
+	}
+	invalid := func() (int, int64, service.ServiceFilter, bool) {
+		fail(w, 400, "invalid_input")
+		return 0, 0, filter, false
+	}
+	limit, after := 20, int64(0)
+	if raw, present := values["limit"]; present {
+		v, valid := decimal(raw[0], false)
+		if !valid || v > 100 {
+			return invalid()
+		}
+		limit = int(v)
+	}
+	if raw, present := values["after_id"]; present {
+		v, valid := decimal(raw[0], true)
+		if !valid {
+			return invalid()
+		}
+		after = v
+	}
+	if raw, present := values["category_id"]; present {
+		v, valid := decimal(raw[0], false)
+		if !valid {
+			return invalid()
+		}
+		filter.CategoryID = &v
+	}
+	if raw, present := values["status"]; present {
+		if raw[0] == "" {
+			return invalid()
+		}
+		filter.Status = raw[0]
+	}
+	switch filter.Status {
+	case "active", "due_soon", "expired", "no_period", "archived", "all":
+	default:
+		return invalid()
+	}
+	filter.Query = strings.TrimSpace(values.Get("q"))
+	if len([]rune(filter.Query)) > 200 {
+		return invalid()
+	}
+	return limit, after, filter, true
 }

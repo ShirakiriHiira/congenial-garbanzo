@@ -204,15 +204,15 @@ func TestDialogPersistenceAndPagination(t *testing.T) {
 		t.Fatal("old callback", e)
 	}
 	for i := 0; i < 10; i++ {
-		if _, e = s.CreatePeriod(ctx, a.ID, p.SIMID, PeriodInput{PeriodType: "custom", Name: "extra", DatePrecision: "date", ExpiresAt: "2027-03-01"}); e != nil {
+		if _, e = s.CreatePeriod(ctx, a.ID, p.ServiceID, PeriodInput{PeriodType: "custom", Name: "extra", DatePrecision: "date", ExpiresAt: "2027-03-01"}); e != nil {
 			t.Fatal(e)
 		}
 	}
-	page, e := s.ListPeriods(ctx, a.ID, p.SIMID, 0, 10)
+	page, e := s.ListPeriods(ctx, a.ID, p.ServiceID, 0, 10)
 	if e != nil || len(page.Data) != 10 || page.NextCursor == nil {
 		t.Fatalf("page %+v %v", page, e)
 	}
-	last, e := s.ListPeriods(ctx, a.ID, p.SIMID, *page.NextCursor, 10)
+	last, e := s.ListPeriods(ctx, a.ID, p.ServiceID, *page.NextCursor, 10)
 	if e != nil || len(last.Data) != 1 || last.NextCursor != nil {
 		t.Fatalf("last %+v %v", last, e)
 	}

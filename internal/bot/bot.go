@@ -167,6 +167,14 @@ func (h *Handler) handleCommand(ctx context.Context, b *telegram.Bot, user servi
 		run = func(_ context.Context, u service.User, _ string) (string, error) {
 			return helpText(u.Timezone), nil
 		}
+	case "service":
+		run = h.commandService
+		// Terms have their own revision and do not change the renewal cycle.
+		// Preserve a live dialog so users can record terms before confirming it.
+		args := strings.Fields(rest)
+		if len(args) > 0 && args[0] == "terms" {
+			business = false
+		}
 	case "add":
 		run = h.commandAdd
 	case "list":

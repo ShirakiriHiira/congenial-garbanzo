@@ -252,7 +252,7 @@ func TestAuthorizedPrivateFlow(t *testing.T) {
 	if text := f.send(userA, "/add name=日本卡&card_type=esim&operator=NTT&notes=hello+world"); !strings.Contains(text, "日本卡") {
 		t.Fatalf("add: %q", text)
 	}
-	if n := f.count("SELECT count(*) FROM sims"); n != 1 {
+	if n := f.count("SELECT count(*) FROM service_items"); n != 1 {
 		t.Fatalf("sim count %d", n)
 	}
 	if text := f.send(userA, "/edit period new 1 period_type=number_validity&name=号码&date_precision=date&expires_at=2027-01-31"); !strings.Contains(text, "有效期 #1") {
@@ -288,7 +288,7 @@ func TestAuthorizedPrivateFlow(t *testing.T) {
 	if text := f.send(userA, "/delete sim 1"); !strings.Contains(text, "归档") {
 		t.Fatalf("archive: %q", text)
 	}
-	if n := f.count("SELECT count(*) FROM sims WHERE status='archived'"); n != 1 {
+	if n := f.count("SELECT count(*) FROM service_items WHERE status='archived'"); n != 1 {
 		t.Fatalf("archived %d", n)
 	}
 
@@ -319,7 +319,7 @@ func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
 	if text := f.stub.lastText(); !strings.Contains(text, "私聊") || strings.Contains(text, "secret") {
 		t.Fatalf("group: %q", text)
 	}
-	if n := f.count("SELECT count(*) FROM sims"); n != 0 {
+	if n := f.count("SELECT count(*) FROM service_items"); n != 0 {
 		t.Fatalf("group wrote data %d", n)
 	}
 	if n := f.count("SELECT count(*) FROM users"); n != 0 {
@@ -376,7 +376,7 @@ func TestInvalidCommandInputWritesNothing(t *testing.T) {
 			t.Fatalf("%q did not get a single reply", input)
 		}
 	}
-	if n := f.count("SELECT count(*) FROM sims"); n != 0 {
+	if n := f.count("SELECT count(*) FROM service_items"); n != 0 {
 		t.Fatalf("invalid input created sims: %d", n)
 	}
 	if n := f.count("SELECT count(*) FROM validity_periods"); n != 0 {

@@ -40,10 +40,10 @@ func TestHardDeleteMigrationPreservesAndCascades(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.Migrate(ctx); err != nil {
+	if err := s.migrate(ctx, storageMigrationSource(t, 1, 2)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Migrate(ctx); err != nil {
+	if err := s.migrate(ctx, storageMigrationSource(t, 1, 2)); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {

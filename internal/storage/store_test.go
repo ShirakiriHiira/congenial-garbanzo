@@ -90,7 +90,7 @@ func TestOpenPragmasPermissionsAndReopen(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("persisted users = %d", count)
 	}
-	if _, err := s.DB.Exec("INSERT INTO sims(user_id,name,card_type,status,created_at,updated_at) VALUES(999,'x','esim','active',1,1)"); err == nil {
+	if _, err := s.DB.Exec("INSERT INTO service_items(user_id,name,category_id,status,created_at,updated_at) VALUES(999,'x',(SELECT id FROM service_categories WHERE code='sim'),'active',1,1)"); err == nil {
 		t.Fatal("foreign key violation accepted after reopen")
 	}
 }
@@ -158,8 +158,9 @@ func TestInitialSchemaConstraints(t *testing.T) {
 	}
 	fixtures := []string{
 		"INSERT INTO users(id,telegram_user_id,timezone,created_at,updated_at) VALUES(1,123,'Asia/Taipei',1,1)",
-		"INSERT INTO sims(id,user_id,name,card_type,status,created_at,updated_at) VALUES(1,1,'card','esim','active',1,1)",
-		"INSERT INTO validity_periods(id,sim_id,period_type,name,expires_at,date_precision,timezone,status,created_at,updated_at) VALUES(1,1,'custom','first',200,'datetime','Asia/Taipei','active',1,1),(2,1,'custom','second',200,'datetime','Asia/Taipei','active',1,1)",
+		"INSERT INTO service_items(id,user_id,name,category_id,status,created_at,updated_at) VALUES(1,1,'card',(SELECT id FROM service_categories WHERE code='sim'),'active',1,1)",
+		"INSERT INTO sim_details(service_id,card_type) VALUES(1,'esim')",
+		"INSERT INTO validity_periods(id,service_id,period_type,name,expires_at,date_precision,timezone,status,created_at,updated_at) VALUES(1,1,'custom','first',200,'datetime','Asia/Taipei','active',1,1),(2,1,'custom','second',200,'datetime','Asia/Taipei','active',1,1)",
 		"INSERT INTO reminder_rules(id,validity_period_id,days_before,reminder_time,enabled,created_at,updated_at) VALUES(1,1,0,'09:00',1,1,1)",
 		"INSERT INTO reminder_jobs(id,validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(1,1,1,1,1,100,200,'pending',100,1,1)",
 	}
@@ -170,7 +171,7 @@ func TestInitialSchemaConstraints(t *testing.T) {
 	}
 	invalid := []string{
 		"DELETE FROM users WHERE id=1",
-		"UPDATE sims SET card_type='bad' WHERE id=1",
+		"UPDATE sim_details SET card_type='bad' WHERE service_id=1",
 		"UPDATE validity_periods SET date_precision='date' WHERE id=1",
 		"UPDATE validity_periods SET cycle=0 WHERE id=1",
 		"UPDATE reminder_rules SET reminder_time='24:00' WHERE id=1",

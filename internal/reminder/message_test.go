@@ -14,7 +14,7 @@ import (
 func TestReminderTextShowsLocalCutoff(t *testing.T) {
 	date := "2027-01-31"
 	text := reminderText(&storage.ReminderDelivery{
-		ID: 4, PeriodID: 9, SIMName: "日本卡", PeriodName: "号码有效期",
+		ID: 4, PeriodID: 9, ServiceName: "日本卡", PeriodName: "号码有效期",
 		Expiration: domain.Expiration{
 			ExpiresAt:        time.Date(2027, 1, 31, 16, 0, 0, 0, time.UTC),
 			DatePrecision:    domain.PrecisionDate,
@@ -22,7 +22,7 @@ func TestReminderTextShowsLocalCutoff(t *testing.T) {
 			Timezone:         "Asia/Taipei",
 		},
 	})
-	for _, want := range []string{"日本卡", "号码有效期", "2027-01-31", "Asia/Taipei", "项目 ID：9"} {
+	for _, want := range []string{"服务：日本卡", "号码有效期", "2027-01-31", "Asia/Taipei", "项目 ID：9"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("message %q missing %q", text, want)
 		}

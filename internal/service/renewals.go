@@ -45,7 +45,7 @@ func (s *Service) renew(ctx context.Context, tx *sql.Tx, uid, pid int64, in Rene
 	if e != nil {
 		return out, e
 	}
-	existing, e := scanRenewal(tx.QueryRowContext(ctx, "SELECT "+renewalColumns+" FROM renewals n JOIN validity_periods p ON p.id=n.validity_period_id JOIN sims s ON s.id=p.sim_id WHERE s.user_id=? AND n.validity_period_id=? AND n.previous_cycle=?", uid, pid, in.ExpectedCycle))
+	existing, e := scanRenewal(tx.QueryRowContext(ctx, "SELECT "+renewalColumns+" FROM renewals n JOIN validity_periods p ON p.id=n.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND n.validity_period_id=? AND n.previous_cycle=?", uid, pid, in.ExpectedCycle))
 	if e == nil {
 		ex, err := domain.ParseExpiration(in.DatePrecision, in.ExpiresAt, existing.Timezone)
 		if err != nil {
@@ -104,7 +104,7 @@ func (s *Service) ListRenewals(ctx context.Context, uid, pid, after int64, limit
 	if _, e := s.GetPeriod(ctx, uid, pid); e != nil {
 		return out, e
 	}
-	rows, e := s.store.DB.QueryContext(ctx, "SELECT "+renewalColumns+" FROM renewals n JOIN validity_periods p ON p.id=n.validity_period_id JOIN sims s ON s.id=p.sim_id WHERE s.user_id=? AND p.id=? AND n.id>? ORDER BY n.id LIMIT ?", uid, pid, after, limit+1)
+	rows, e := s.store.DB.QueryContext(ctx, "SELECT "+renewalColumns+" FROM renewals n JOIN validity_periods p ON p.id=n.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND p.id=? AND n.id>? ORDER BY n.id LIMIT ?", uid, pid, after, limit+1)
 	if e != nil {
 		return out, ErrUnavailable
 	}

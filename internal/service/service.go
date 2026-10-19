@@ -80,9 +80,52 @@ type SIM struct {
 	CreatedAt       int64
 	UpdatedAt       int64
 }
+
+type SIMDetails struct {
+	CardType        string
+	PhoneNumber     *string
+	CountryOrRegion *string
+	ICCID           *string
+}
+
+type ServiceItem struct {
+	ID            int64
+	UserID        int64
+	Name          string
+	CategoryID    int64
+	Provider      *string
+	Identifier    *string
+	ManagementURL *string
+	Notes         *string
+	Status        string
+	CreatedAt     int64
+	UpdatedAt     int64
+	SIMDetails    *SIMDetails
+}
+
+type Category struct {
+	ID        int64
+	UserID    *int64
+	Code      *string
+	Name      string
+	Kind      string
+	CreatedAt int64
+	UpdatedAt int64
+}
+
+type PeriodTerms struct {
+	Mode          string
+	IntervalCount *int64
+	IntervalUnit  *string
+	Amount        *int64
+	Currency      *string
+	Revision      int64
+}
+
 type Period struct {
 	ID               int64
-	SIMID            int64
+	ServiceID        int64
+	SIMID            *int64
 	PeriodType       string
 	Name             string
 	StartsAt         *int64
@@ -94,7 +137,9 @@ type Period struct {
 	Cycle            int64
 	CreatedAt        int64
 	UpdatedAt        int64
+	Terms            PeriodTerms
 }
+
 type Rule struct {
 	ID               int64
 	ValidityPeriodID int64
@@ -157,6 +202,34 @@ type Optional[T any] struct {
 	Set   bool
 	Value *T
 }
+
+type SIMDetailsPatch struct {
+	CardType        Optional[string]
+	PhoneNumber     Optional[string]
+	CountryOrRegion Optional[string]
+	ICCID           Optional[string]
+}
+
+type ServiceInput struct {
+	Name          string
+	CategoryID    int64
+	Provider      *string
+	Identifier    *string
+	ManagementURL *string
+	Notes         *string
+	SIMDetails    *SIMDetails
+}
+type ServicePatch struct {
+	Name          *string
+	CategoryID    *int64
+	Provider      Optional[string]
+	Identifier    Optional[string]
+	ManagementURL Optional[string]
+	Notes         Optional[string]
+	Status        *string
+	SIMDetails    Optional[SIMDetailsPatch]
+}
+
 type SIMInput struct {
 	Name            string
 	CardType        string
@@ -176,20 +249,30 @@ type SIMPatch struct {
 	Notes           Optional[string]
 	Status          *string
 }
+type TermsInput struct {
+	Mode          string
+	IntervalCount *int64
+	IntervalUnit  *string
+	Amount        *int64
+	Currency      *string
+}
 type PeriodInput struct {
 	PeriodType    string
 	Name          string
 	StartsAt      *string
 	DatePrecision string
 	ExpiresAt     string
+	Terms         *TermsInput
 }
 type PeriodPatch struct {
-	ExpectedCycle int64
-	PeriodType    *string
-	Name          *string
-	StartsAt      Optional[string]
-	DatePrecision *string
-	ExpiresAt     *string
+	ExpectedCycle         int64
+	PeriodType            *string
+	Name                  *string
+	StartsAt              Optional[string]
+	DatePrecision         *string
+	ExpiresAt             *string
+	ExpectedTermsRevision *int64
+	Terms                 Optional[TermsInput]
 }
 type RuleInput struct {
 	DaysBefore   int
@@ -210,6 +293,21 @@ type RenewInput struct {
 	Currency      *string
 	Notes         *string
 }
+
+type ServiceFilter struct {
+	Query      string
+	CategoryID *int64
+	Status     string
+}
+type ServiceOverviewItem struct {
+	Service       ServiceItem
+	PrimaryPeriod *Period
+}
+type ServiceOverview struct {
+	Counts OverviewCounts
+	Items  Page[ServiceOverviewItem]
+}
+
 type Page[T any] struct {
 	Data       []T
 	NextCursor *int64
@@ -219,6 +317,7 @@ type queryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
+type scanner interface{ Scan(...any) error }
 
 func (s *Service) transaction(ctx context.Context, uid int64, fn func(*sql.Tx) error) error {
 	tx, e := s.store.DB.BeginTx(ctx, nil)

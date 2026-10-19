@@ -157,6 +157,13 @@ func seed(ctx context.Context, svc *service.Service) error {
 		return err
 	}
 	now := time.Now().Truncate(time.Second)
+	if err := seedSIMs(ctx, svc, user.ID, now); err != nil {
+		return err
+	}
+	return seedServices(ctx, svc, user.ID, now)
+}
+
+func seedSIMs(ctx context.Context, svc *service.Service, uid int64, now time.Time) error {
 	fixtures := []struct {
 		name, cardType, operator, region string
 		archived                         bool
@@ -189,7 +196,7 @@ func seed(ctx context.Context, svc *service.Service) error {
 		},
 	}
 	for _, fixture := range fixtures {
-		card, err := svc.CreateSIM(ctx, user.ID, service.SIMInput{
+		card, err := svc.CreateSIM(ctx, uid, service.SIMInput{
 			Name: fixture.name, CardType: fixture.cardType,
 			Operator: &fixture.operator, CountryOrRegion: &fixture.region,
 		})
@@ -197,20 +204,179 @@ func seed(ctx context.Context, svc *service.Service) error {
 			return err
 		}
 		for _, input := range fixture.periods {
-			period, err := svc.CreatePeriod(ctx, user.ID, card.ID, input)
+			period, err := svc.CreatePeriod(ctx, uid, card.ID, input)
 			if err != nil {
 				return err
 			}
-			if _, err := svc.CreateRule(ctx, user.ID, period.ID, service.RuleInput{DaysBefore: 1, ReminderTime: "09:00"}); err != nil {
+			if _, err := svc.CreateRule(ctx, uid, period.ID, service.RuleInput{DaysBefore: 1, ReminderTime: "09:00"}); err != nil {
 				return err
 			}
 		}
 		if fixture.archived {
 			status := "archived"
-			if _, err := svc.UpdateSIM(ctx, user.ID, card.ID, service.SIMPatch{Status: &status}); err != nil {
+			if _, err := svc.UpdateSIM(ctx, uid, card.ID, service.SIMPatch{Status: &status}); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func seedServices(ctx context.Context, svc *service.Service, uid int64, now time.Time) error {
+	categories, err := builtinCategories(ctx, svc, uid)
+	if err != nil {
+		return err
+	}
+	custom, err := svc.CreateCategory(ctx, uid, "自架服務")
+	if err != nil {
+		return fmt.Errorf("custom category: %w", err)
+	}
+
+	vps, err := svc.CreateService(ctx, uid, service.ServiceInput{
+		Name:          "雲端主機 · 東京",
+		CategoryID:    categories["vps"].ID,
+		Provider:      new("Example Cloud"),
+		Identifier:    new("tokyo-web-01"),
+		ManagementURL: new("https://console.example.com/instances/101"),
+		Notes:         new("每月自動備份；登入憑證請勿寫在備註。"),
+	})
+	if err != nil {
+		return err
+	}
+	vpsPeriod, err := svc.CreatePeriod(ctx, uid, vps.ID, service.PeriodInput{
+		PeriodType: "custom", Name: "主機租期", DatePrecision: "date",
+		ExpiresAt: now.AddDate(0, 0, 45).Format(time.DateOnly),
+		Terms:     recurringTerms(1, "month", 4800, "USD"),
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := svc.CreateRule(ctx, uid, vpsPeriod.ID, service.RuleInput{DaysBefore: 7, ReminderTime: "10:30"}); err != nil {
+		return err
+	}
+
+	subscription, err := svc.CreateService(ctx, uid, service.ServiceInput{
+		Name:          "AI 寫作助手 · 訂閱",
+		CategoryID:    categories["subscription"].ID,
+		Provider:      new("Example AI"),
+		Identifier:    new("team-plan"),
+		ManagementURL: new("https://example.com/ai/billing"),
+		Notes:         new("年度方案；續期前確認團隊席次。"),
+	})
+	if err != nil {
+		return err
+	}
+	annual, err := svc.CreatePeriod(ctx, uid, subscription.ID, service.PeriodInput{
+		PeriodType: "custom", Name: "年度授權", DatePrecision: "date",
+		ExpiresAt: now.AddDate(0, 0, 10).Format(time.DateOnly),
+		Terms:     onceTerms(19900, "USD"),
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := svc.Renew(ctx, uid, annual.ID, service.RenewInput{
+		ExpectedCycle: annual.Cycle,
+		DatePrecision: "date",
+		ExpiresAt:     now.AddDate(0, 0, 15).Format(time.DateOnly),
+		Amount:        new(int64(19900)),
+		Currency:      new("USD"),
+		Notes:         new("手動續期：年度方案"),
+	}); err != nil {
+		return fmt.Errorf("seed renewal: %w", err)
+	}
+	if _, err := svc.CreateRule(ctx, uid, annual.ID, service.RuleInput{DaysBefore: 5, ReminderTime: "09:30"}); err != nil {
+		return err
+	}
+	quota, err := svc.CreatePeriod(ctx, uid, subscription.ID, service.PeriodInput{
+		PeriodType: "custom", Name: "月度點數加購", DatePrecision: "date",
+		ExpiresAt: now.AddDate(0, 0, 25).Format(time.DateOnly),
+		Terms:     recurringTerms(1, "month", 500, "USD"),
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := svc.CreateRule(ctx, uid, quota.ID, service.RuleInput{DaysBefore: 3, ReminderTime: "18:00"}); err != nil {
+		return err
+	}
+
+	domain, err := svc.CreateService(ctx, uid, service.ServiceInput{
+		Name:          "主網域 · example.com",
+		CategoryID:    categories["domain"].ID,
+		Provider:      new("Example Registrar"),
+		Identifier:    new("example.com"),
+		ManagementURL: new("https://dash.example-registrar.test/domain/example.com"),
+		Notes:         new("到期前確認 DNS 與自動續約設定。"),
+	})
+	if err != nil {
+		return err
+	}
+	domainPeriod, err := svc.CreatePeriod(ctx, uid, domain.ID, service.PeriodInput{
+		PeriodType: "custom", Name: "網域註冊", DatePrecision: "date",
+		ExpiresAt: now.AddDate(0, 0, 200).Format(time.DateOnly),
+		Terms:     onceTerms(1500, "USD"),
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := svc.CreateRule(ctx, uid, domainPeriod.ID, service.RuleInput{DaysBefore: 14, ReminderTime: "11:00"}); err != nil {
+		return err
+	}
+
+	home, err := svc.CreateService(ctx, uid, service.ServiceInput{
+		Name:          "自架 Home Assistant",
+		CategoryID:    custom.ID,
+		Provider:      new("Home Lab"),
+		Identifier:    new("home.lab.example"),
+		ManagementURL: new("https://home.example.com"),
+		Notes:         new("僅供本機測試資料；秘密請放在密碼管理器。"),
+	})
+	if err != nil {
+		return err
+	}
+	homePeriod, err := svc.CreatePeriod(ctx, uid, home.ID, service.PeriodInput{
+		PeriodType: "custom", Name: "硬體保養週期", DatePrecision: "date",
+		ExpiresAt: now.AddDate(0, 0, 120).Format(time.DateOnly),
+		Terms:     recurringTerms(1, "year", 0, "TWD"),
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := svc.CreateRule(ctx, uid, homePeriod.ID, service.RuleInput{DaysBefore: 7, ReminderTime: "08:00"}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func builtinCategories(ctx context.Context, svc *service.Service, uid int64) (map[string]service.Category, error) {
+	out := map[string]service.Category{}
+	var after int64
+	for {
+		page, err := svc.ListCategories(ctx, uid, after, 100)
+		if err != nil {
+			return nil, err
+		}
+		for _, category := range page.Data {
+			if category.Code != nil {
+				out[*category.Code] = category
+			}
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		after = *page.NextCursor
+	}
+	for _, code := range []string{"sim", "vps", "subscription", "domain"} {
+		if _, ok := out[code]; !ok {
+			return nil, fmt.Errorf("builtin category %q missing", code)
+		}
+	}
+	return out, nil
+}
+
+func recurringTerms(count int64, unit string, amount int64, currency string) *service.TermsInput {
+	return &service.TermsInput{Mode: "recurring", IntervalCount: new(count), IntervalUnit: new(unit), Amount: new(amount), Currency: new(currency)}
+}
+
+func onceTerms(amount int64, currency string) *service.TermsInput {
+	return &service.TermsInput{Mode: "once", Amount: new(amount), Currency: new(currency)}
 }

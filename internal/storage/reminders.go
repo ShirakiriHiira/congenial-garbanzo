@@ -15,7 +15,7 @@ type ReminderDelivery struct {
 	ID, PeriodID, RuleID, Cycle, Revision, Attempts int64
 	TelegramUserID                                  int64
 	ChatID                                          *int64
-	SIMName, PeriodName                             string
+	ServiceName, PeriodName                         string
 	Expiration                                      domain.Expiration
 	Token                                           string
 }
@@ -24,10 +24,10 @@ type ReminderDelivery struct {
 var ErrReminderStore = errors.New("reminder storage unavailable")
 
 const reminderJoins = ` FROM reminder_jobs j
-	JOIN validity_periods p ON p.id=j.validity_period_id
-	JOIN reminder_rules r ON r.id=j.reminder_rule_id AND r.validity_period_id=p.id
-	JOIN sims s ON s.id=p.sim_id
-	JOIN users u ON u.id=s.user_id `
+    JOIN validity_periods p ON p.id=j.validity_period_id
+    JOIN reminder_rules r ON r.id=j.reminder_rule_id AND r.validity_period_id=p.id
+    JOIN service_items s ON s.id=p.service_id
+    JOIN users u ON u.id=s.user_id `
 
 // A job is current only while every ownership and version gate still matches.
 const currentReminder = `p.status='active' AND s.status='active' AND r.enabled=1
@@ -111,7 +111,7 @@ func (s *Store) ScanReminderJobs(ctx context.Context, now time.Time, window time
 				`UPDATE reminder_jobs SET status='cancelled',next_attempt_at=NULL,last_error_code='unauthorized',updated_at=?
 				 WHERE (status IN ('pending','sending') OR (status='failed' AND next_attempt_at IS NOT NULL))
 				   AND validity_period_id IN (
-					SELECT p.id FROM validity_periods p JOIN sims s ON s.id=p.sim_id WHERE s.user_id=?)`,
+                    SELECT p.id FROM validity_periods p JOIN service_items s ON s.id=p.service_id WHERE s.user_id=?)`,
 				n, id); err != nil {
 				return err
 			}
@@ -145,9 +145,9 @@ func (s *Store) ScanReminderJobs(ctx context.Context, now time.Time, window time
 			       p.expires_at,p.date_precision,p.local_expires_date,p.timezone,u.telegram_user_id
 			FROM validity_periods p
 			JOIN reminder_rules r ON r.validity_period_id=p.id
-			JOIN sims s ON s.id=p.sim_id
-			JOIN users u ON u.id=s.user_id
-			WHERE p.status='active' AND p.expires_at>? AND s.status='active' AND r.enabled=1`,
+            JOIN service_items s ON s.id=p.service_id
+            JOIN users u ON u.id=s.user_id
+            WHERE p.status='active' AND p.expires_at>? AND s.status='active' AND r.enabled=1`,
 			n)
 		if err != nil {
 			return err
@@ -304,12 +304,12 @@ func readReminderDelivery(ctx context.Context, tx *sql.Tx, id int64, token strin
 	var v ReminderDelivery
 	var expiry int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT j.id,j.validity_period_id,j.reminder_rule_id,j.cycle,j.rule_revision,j.attempts,
-		       u.telegram_user_id,u.private_chat_id,s.name,p.name,j.expires_at_snapshot,
-		       p.date_precision,p.local_expires_date,p.timezone,j.attempt_token`+reminderJoins+`
-		WHERE j.id=? AND j.attempt_token=?`, id, token).
+        SELECT j.id,j.validity_period_id,j.reminder_rule_id,j.cycle,j.rule_revision,j.attempts,
+               u.telegram_user_id,u.private_chat_id,s.name,p.name,j.expires_at_snapshot,
+               p.date_precision,p.local_expires_date,p.timezone,j.attempt_token`+reminderJoins+`
+        WHERE j.id=? AND j.attempt_token=?`, id, token).
 		Scan(&v.ID, &v.PeriodID, &v.RuleID, &v.Cycle, &v.Revision, &v.Attempts,
-			&v.TelegramUserID, &v.ChatID, &v.SIMName, &v.PeriodName, &expiry,
+			&v.TelegramUserID, &v.ChatID, &v.ServiceName, &v.PeriodName, &expiry,
 			&v.Expiration.DatePrecision, &v.Expiration.LocalExpiresDate,
 			&v.Expiration.Timezone, &v.Token)
 	v.Expiration.ExpiresAt = time.Unix(expiry, 0).UTC()

@@ -264,6 +264,9 @@ func (h *Handler) commandEdit(ctx context.Context, user service.User, raw string
 			if err != nil {
 				return "", fail("卡片 ID 必须是正整数。")
 			}
+			if _, err = h.svc.GetSIM(ctx, user.ID, simID); err != nil {
+				return "", err
+			}
 			v, err := query(strings.Join(args[3:], " "), "period_type", "name", "date_precision", "expires_at", "starts_at")
 			if err != nil {
 				return "", err
@@ -308,7 +311,13 @@ func (h *Handler) commandEdit(ctx context.Context, user service.User, raw string
 		if s, ok := v["name"]; ok {
 			x := strings.TrimSpace(s[0])
 			if x == "" {
-				return "", fail("name 不能为空。")
+				p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
+				if err != nil {
+					return "", err
+				}
+				if p.SIMID != nil {
+					return "", fail("name 不能为空。")
+				}
 			}
 			patch.Name = &x
 		}
@@ -718,6 +727,7 @@ func periodDetail(p service.Period) string {
 	if p.StartsAt != nil {
 		fmt.Fprintf(&b, "开始：%s\n", stamp(*p.StartsAt, p.Timezone))
 	}
+	b.WriteString(termsText(p.Terms) + "\n")
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -743,6 +753,7 @@ func renewalText(ctx context.Context, svc *service.Service, user service.User, r
 	}
 	if p, err := svc.GetPeriod(ctx, user.ID, r.ValidityPeriodID); err == nil {
 		fmt.Fprintf(&b, "当前状态：%s，版本 %d\n", p.Status, p.Cycle)
+		b.WriteString(termsText(p.Terms) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -754,11 +765,24 @@ func appendNext(b *strings.Builder, next *int64, prefix string) {
 }
 
 func helpText(zone string) string {
-	return `SIM/eSIM 有效期提醒机器人
+	return `服务与订阅有效期提醒机器人（兼容 SIM/eSIM）
 
 当前时区：` + zone + `
 命令（私聊使用）：
 /start、/help — 帮助
+/service categories [after_id] — 类别列表（每页 10 条）
+/service category name=名称 — 新建自定义类别
+/service category-edit <id> name=新名称 — 改名本人自定义类别
+/service add name=名称&category_id=类别ID[&provider=服务商&identifier=公开标识&management_url=https%3A%2F%2Fexample.com&notes=普通备注] — 添加服务
+/service list [after_id] — 活跃服务列表（每页 10 条）
+/service view <id> — 服务详情、多有效期及条款
+/service edit <id> <query> — 修改服务；status=active 恢复归档服务
+/service archive <id> — 归档服务
+/service period new <service_id> period_type=custom&name=名称&date_precision=date&expires_at=2027-01-31 — 新建有效期（名称可空）
+/service terms <period_id> expected_cycle=1&expected_terms_revision=1&mode=recurring&interval_count=1&interval_unit=month[&amount=100&currency=USD] — 整体替换约定条款；mode=custom 重置
+通用字段：name/category_id/provider/identifier/management_url/notes；SIM 类别额外使用扁平 card_type/phone_number/country_or_region/iccid。
+条款 mode=once|recurring|custom；recurring 的 interval_count 为正整数、interval_unit=day|week|month|year；金额为最小货币单位，与 currency 成对。周期仅记录，续期须明确提供新截止及实际金额。
+旧 SIM 命令（保持原语义）：
 /add name=日本卡&card_type=esim&operator=... — 新建卡片（card_type 为 esim 或 physical_sim）
 /list [after_id] — 卡片列表（每页 10 条）
 /view sim <id> [periods [after_id]] — 卡片详情/有效期列表
@@ -778,5 +802,6 @@ func helpText(zone string) string {
 /cancel rule <id> <expected_revision> — 禁用规则
 
 提醒示例：提前 30/7/3/1/0 天的 09:00。未配置规则的项目不会发送提醒。
+备注只存普通说明，不要保存密码、API Token 或私钥。
 编码：空格用 +，&、= 等字符需百分号编码；date 精度格式 YYYY-MM-DD，datetime 精度使用带时区的 RFC3339。`
 }

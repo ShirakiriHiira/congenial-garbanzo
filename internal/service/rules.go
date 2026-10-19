@@ -14,7 +14,7 @@ func scanRule(row scanner) (Rule, error) {
 	return v, e
 }
 func getRule(ctx context.Context, q queryer, uid, id int64) (Rule, error) {
-	v, e := scanRule(q.QueryRowContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN validity_periods p ON p.id=r.validity_period_id JOIN sims s ON s.id=p.sim_id WHERE s.user_id=? AND r.id=?", uid, id))
+	v, e := scanRule(q.QueryRowContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN validity_periods p ON p.id=r.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND r.id=?", uid, id))
 	return v, dbError(e)
 }
 func validRule(v Rule, p Period) error {
@@ -87,7 +87,7 @@ func (s *Service) ListRules(ctx context.Context, uid, pid, after int64, limit in
 	if _, e := s.GetPeriod(ctx, uid, pid); e != nil {
 		return out, e
 	}
-	rows, e := s.store.DB.QueryContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN validity_periods p ON p.id=r.validity_period_id JOIN sims s ON s.id=p.sim_id WHERE s.user_id=? AND p.id=? AND r.id>? ORDER BY r.id LIMIT ?", uid, pid, after, limit+1)
+	rows, e := s.store.DB.QueryContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN validity_periods p ON p.id=r.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND p.id=? AND r.id>? ORDER BY r.id LIMIT ?", uid, pid, after, limit+1)
 	if e != nil {
 		return out, ErrUnavailable
 	}

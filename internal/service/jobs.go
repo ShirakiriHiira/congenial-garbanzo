@@ -13,7 +13,7 @@ func scanJob(row scanner) (Job, error) {
 	return v, e
 }
 func getJob(ctx context.Context, q queryer, uid, id int64) (Job, error) {
-	v, e := scanJob(q.QueryRowContext(ctx, "SELECT "+jobColumns+" FROM reminder_jobs j JOIN validity_periods p ON p.id=j.validity_period_id JOIN sims s ON s.id=p.sim_id WHERE s.user_id=? AND j.id=?", uid, id))
+	v, e := scanJob(q.QueryRowContext(ctx, "SELECT "+jobColumns+" FROM reminder_jobs j JOIN validity_periods p ON p.id=j.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND j.id=?", uid, id))
 	return v, dbError(e)
 }
 func (s *Service) GetJob(ctx context.Context, uid, id int64) (Job, error) {
@@ -35,7 +35,7 @@ func (s *Service) ListJobs(ctx context.Context, uid int64, filter string, after 
 	if e := s.authorize(ctx, s.store.DB, uid); e != nil {
 		return out, e
 	}
-	query := "SELECT " + jobColumns + " FROM reminder_jobs j JOIN validity_periods p ON p.id=j.validity_period_id JOIN sims s ON s.id=p.sim_id WHERE s.user_id=? AND j.id>?"
+	query := "SELECT " + jobColumns + " FROM reminder_jobs j JOIN validity_periods p ON p.id=j.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND j.id>?"
 	args := []any{uid, after}
 	if filter != "" && filter != "all" {
 		query += " AND j.status=?"
@@ -76,7 +76,7 @@ func scanDialog(row scanner) (Dialog, error) {
 	return d, e
 }
 func (s *Service) getDialog(ctx context.Context, q queryer, uid int64) (Dialog, error) {
-	d, e := scanDialog(q.QueryRowContext(ctx, `SELECT d.user_id,d.chat_id,d.action,d.validity_period_id,d.expected_cycle,d.expires_at,d.created_at FROM bot_dialogs d JOIN validity_periods p ON p.id=d.validity_period_id JOIN sims s ON s.id=p.sim_id WHERE d.user_id=? AND s.user_id=?`, uid, uid))
+	d, e := scanDialog(q.QueryRowContext(ctx, `SELECT d.user_id,d.chat_id,d.action,d.validity_period_id,d.expected_cycle,d.expires_at,d.created_at FROM bot_dialogs d JOIN validity_periods p ON p.id=d.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE d.user_id=? AND s.user_id=?`, uid, uid))
 	if e != nil {
 		return d, dbError(e)
 	}
@@ -117,11 +117,11 @@ func (s *Service) PeriodForJob(ctx context.Context, uid, jid int64) (Period, err
 		if e != nil {
 			return e
 		}
-		sim, e := getSIM(ctx, tx, uid, p.SIMID)
+		parent, e := getServiceItem(ctx, tx, uid, p.ServiceID)
 		if e != nil {
 			return e
 		}
-		if p.Cycle != j.Cycle || p.Status == "cancelled" || sim.Status != "active" {
+		if p.Cycle != j.Cycle || p.Status == "cancelled" || parent.Status != "active" {
 			return ErrConflict
 		}
 		return nil
@@ -146,11 +146,11 @@ func (s *Service) StartRenewDialog(ctx context.Context, uid, jid, chatID int64) 
 		if e != nil {
 			return e
 		}
-		sim, e := getSIM(ctx, tx, uid, p.SIMID)
+		parent, e := getServiceItem(ctx, tx, uid, p.ServiceID)
 		if e != nil {
 			return e
 		}
-		if p.Cycle != j.Cycle || p.Status == "cancelled" || sim.Status != "active" {
+		if p.Cycle != j.Cycle || p.Status == "cancelled" || parent.Status != "active" {
 			return ErrConflict
 		}
 		old, e := s.getDialog(ctx, tx, uid)
