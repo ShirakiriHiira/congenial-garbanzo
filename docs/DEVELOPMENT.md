@@ -1,83 +1,119 @@
-# 服务与订阅提醒开发规范
+# 开发规范
 
-## 目标与职责
+本文件是权威开发规范。HTTP 字段清单只在 `README.md` 维护，这里不重复精确定义。
 
-本项目是单实例 Go 应用，用于管理服务项目、多个有效期、提醒规则、续期历史及 Telegram 提醒。SIM/eSIM 是完整支持的兼容子集；通用项目涵盖 VPS/云服务器、软件与 AI 订阅、域名及自定义类别。周期条款只记录用户约定，不自动扣款、不推算新到期日，也不代表已付款。
+## 1. 产品定位与边界
 
-本文件维护总体定位、系统模型、安全边界、兼容要求和后端验收。[Mini App 专项规范](MINI_APP_DEVELOPMENT.md)仅维护页面、组件、交互、视觉与 Mini App 验收。[README](../README.md)是 API/Bot 精确契约、运行、升级、回退及实际验证记录的唯一来源，避免重复维护字段清单。
+通用服务与订阅到期管理器。一个服务可有多个有效期；每个有效期可配置提醒规则、约定条款和续期历史。明确不做自动扣款、自动续费、外部账号集成、支付、动态字段引擎、Redis/PostgreSQL/ORM/微服务。备注只存普通说明，不保存密码、API Token 或私钥。
 
-## 架构与约束
+## 2. 领域模型
 
-- Go、`net/http`、`database/sql`、SQLite、版本化 SQL migration、现有 Telegram Bot SDK。
-- `web/` 使用 Svelte、Vite、TypeScript、原生 CSS 与 Telegram Mini App 接口。
-- 单实例、单 SQLite 数据库、单调度器；保留 app + nginx、`/app/` 与同源 API 代理部署方式。
-- 沿用现有鉴权、事务、分页、时间与错误处理模式；不引入 ORM、插件/动态字段引擎、自动扣款、自动续费、支付/外部账号集成或无关基础设施。
-- 内部时间戳使用 UTC；日期精度到期表示用户时区日历日结束。按用户 IANA 时区计算日历日与提醒，不依赖容器时区或固定 24 小时秒数。
-- 只有实际运行过的构建、测试、迁移、部署或外部集成才能记为已验证；实际结果与限制见 README。
+| 实体 | 关键关系与语义 |
+| --- | --- |
+| User | Telegram 用户、时区、私聊绑定；所有数据按用户隔离 |
+| Category | 内置类别（`sim`/`vps`/`subscription`/`domain`/`other`）或单用户自定义 generic 类别；类别名称只用于展示 |
+| ServiceItem | 属于用户与类别；状态 `active`/`archived`；`provider`、`identifier`、`management_url`、`notes` 承载通用类型信息 |
+| SIMDetails | 仅 SIM 类别：卡类型、号码、国家/地区、ICCID；与 ServiceItem 一对一 |
+| Period | 属于服务；名称可空、开始可空、截止必填、日期精度、用户时区、`cycle` |
+| PeriodTerms | 每个有效期始终一行；`once`/`recurring`/`custom`、周期、金额、币种、独立 `revision` |
+| ReminderRule | 属于有效期；提前天数、提醒时刻、启用状态、`revision` |
+| Renewal | 属于有效期；续期前后截止快照、周期、金额/币种、备注 |
+| ReminderJob | 属于有效期与规则；周期、规则版本、计划时间、到期快照、租约、重试、结果 |
+| BotDialog | 每用户最多一条持久向导草稿；15 分钟 TTL；动作/步骤白名单 |
 
-## 数据模型
+关系：
 
-### 用户与类别
+```text
+User 1─N ServiceItem 1─N Period 1─1 PeriodTerms
+                      └1─1 SIMDetails (仅 sim)
+Period 1─N ReminderRule 1─N ReminderJob
+Period 1─N Renewal
+User 1─0..1 BotDialog
+```
 
-用户以内部 ID 隔离；Telegram 用户 ID 不是业务表主键。用户保存 IANA 时区与私聊绑定状态。
+有效期状态不落库，读取时由 `expires_at` 与当前时间计算为 `active`/`expired`。主有效期优先选择未过期中最早的一条；全部过期时选择最近过期的一条；同截止取最大 ID。
 
-`service_categories` 存放内置类别与用户类别。内置类别为 `sim`（SIM 与 eSIM）、`vps`（VPS 与云服务器）、`subscription`（软件与 AI 订阅）、`domain`（域名）、`other`（其他）；内置类别无 owner。自定义类别属于单一用户且为 generic，同一用户重名返回 409，只支持创建和改名，不支持删除或动态字段。数据库约束保护内置类别不可变，并阻止类别所有者、code、kind 的变化破坏已有项目归属；服务项目触发器拒绝 NULL 类别、他人私有类别及 SIM/generic kind 切换。
+## 3. 技术栈与架构
 
-### 通用服务与 SIM 专属资料
+- Go 1.27.1、`net/http`、`database/sql`、`modernc.org/sqlite`。
+- Svelte 5 + Vite + TypeScript；原生 CSS、Telegram 主题与 BackButton。
+- 版本化 SQL migration；IANA 时区数据嵌入二进制。
+- 单实例、单写者：SQLite 连接池限制为一个连接；不引入分布式锁。
 
-`service_items` 是通用父资源，包含用户、名称、类别、服务商、公开标识、管理链接、普通备注、状态及时间。类别必填，且必须为内置类别或归属该项目用户的类别。已使用类别不能在 SIM/generic kind 间切换。
+## 4. 职责边界
 
-SIM 专属字段保存在 `sim_details`，以 service item 为主键并级联删除：卡类型、号码、国家/地区、ICCID。通用项目没有 SIM detail 行。SIM 标识与普通备注不是秘密存储；任何字段均不得保存密码、API Token、私钥。
+| 模块 | 职责 |
+| --- | --- |
+| `internal/bot` | Telegram 传输校验、Inline Keyboard、分步向导、消息渲染；只调用 `internal/service` |
+| `internal/api` | JSON API、initData 鉴权、严格 JSON/查询解析、状态码映射 |
+| `internal/service` | 领域规则、授权、事务、乐观并发、时间/条款/续期语义 |
+| `internal/storage` | SQLite 连接、迁移、提醒任务扫描/租约/结果写回 |
+| `internal/reminder` | 调度循环、Telegram 发送、重试/补发 |
+| `web/` | Mini App 页面、路由、表单、API 客户端；不复制业务规则 |
+| `cmd/miniapp-test` | 隔离测试 API、临时数据库、假签名；不启动 Bot/投递 |
+| `main.go` | 启动装配、HTTP、Bot、调度器、优雅关闭 |
 
-SIM 是普通 service：类别为 `sim`，专属资料存于 `sim_details`，不提供独立 SIM API 或资源 ID。共享有效期、规则、续期、提醒任务与回调通过通用 service item 关系归属。
+## 5. 代码组织
 
-### 有效期、条款、规则与续期
+```text
+internal/api        HTTP 边界
+internal/auth       initData 校验
+internal/bot        Telegram 命令/回调/向导
+internal/config     环境配置
+internal/domain     时间、精度、提醒时刻计算
+internal/reminder   调度与发送
+internal/service    领域服务
+internal/storage    SQLite 与迁移
+migrations          单一干净基线 001_initial.sql
+web/                Mini App
+cmd/miniapp-test    隔离测试 API
+scripts/            本地测试/联调脚本
+```
 
-`validity_periods` 关联 `service_id`。SIM 保留原四种有效期类型；非 SIM 使用 `custom`。名称允许为空。迁移必须保留有效期 ID、cycle、日期、状态、提醒规则、续期快照、提醒任务及持久化续期对话。
+## 6. 错误、校验、并发与安全
 
-`period_terms` 存放可选模式（`once`、`recurring`、`custom`）、周期数量/单位、非负整数最小货币单位金额与大写三字母币种，以及独立 revision。旧有效期没有 terms 行时读取为 custom、revision 1。terms revision 独立于 period cycle 与 reminder-rule revision。仅改条款不改变 cycle、不取消或重建任务、不改规则版本，也不重新激活已取消或永久失败任务。乐观并发检查也必须拒绝陈旧的 no-op 写入。条款仅供参考；续期金额/币种必须由用户显式提交，不从条款推断。
+- 业务错误使用固定 code：`invalid_input`、`not_found`、`conflict`、`forbidden`、`unavailable`；API 映射为稳定 HTTP 状态与通用消息。
+- 严格 JSON：只接受单对象与 `application/json`，未知字段、重复查询参数、非法 ID 均拒绝。Bot 回调数据只含动作与十进制 ID。
+- 乐观并发：有效期 PATCH/DELETE 使用 `expected_cycle`；条款使用 `expected_terms_revision`；规则使用 `expected_revision`。冲突返回 409 或 Bot 提示，保留草稿，不自动重试。
+- 时间：内部 UTC；`date` 为当地日历日结束排他截止；`datetime` 为带 offset 的 RFC3339。修改时区时 `date` 重算、`datetime` 保持绝对时刻。
+- 提醒规则必须早于截止；金额与币种必须成对；金额非负整数最小货币单位；币种三位大写字母。
+- 备注、日志、URL、回调、截图不得包含密码、API Token、私钥、initData、完整号码或 ICCID。
+- Mini App 不信任后端消息直接展示；错误统一映射为受控中文文案。
+- 永久删除不可逆，前端与 Bot 必须二次确认并说明级联范围。
 
-规则、续期历史、任务、尝试次数、租约、fencing token 与 sent 去重保持原有语义。调度器使用持久任务与有限重试。SQLite 事务与 Telegram 发送无法原子提交，因此不保证 exactly-once。
+## 7. 数据库与迁移
 
-## HTTP API 与 Bot
+- 干净基线：`migrations/001_initial.sql`。所有实体表使用 `INTEGER PRIMARY KEY AUTOINCREMENT`，避免回调 ID 复用。
+- 外键统一 `ON DELETE CASCADE`，用户与类别归属关系除外；服务删除级联有效期、条款、规则、任务、续期历史、对话；有效期删除级联条款、规则、任务、历史；规则删除级联任务。
+- `period_terms` 每个有效期始终一行；创建时写入 `mode=custom`、`revision=1`。
+- `service_periods` 无状态列；API 状态由截止时间计算。
+- `schema_migrations` 保存版本与 SHA-256 checksum。旧库/checksum 不匹配时启动失败，不自动迁移、删库或降级。
+- schema 变更流程：新增版本化 migration；禁止修改已应用版本；开发阶段需要重建基线时明确记录并归档旧库（仅重命名，不删除）。
+- 开发/测试/生产数据严格分离：测试使用临时目录；生产升级使用新空卷/新路径；禁止自动删库、删表、清空 sequence。
+- `bot_dialogs.action` 白名单在 schema 中固定，步骤名由代码注册表校验。
 
-API 位于 `/api/v1`，使用 Telegram Mini App `initData` 鉴权、字符串资源 ID、严格 JSON/查询解析、用户隔离、keyset 分页与乐观并发版本。精确实现路径、字段、状态码、Bot 语法和示例只在 README 维护，不在本文件或 Mini App 文档复制 API 字段清单。
+## 8. 测试与验收
 
-通用 API 提供类别管理、服务 CRUD/列表、全量过滤 overview 及服务有效期操作。overview 的筛选在分页前执行，items/counts 使用同一读快照及当前时间。搜索仅检索公开 name/provider/identifier，通配符按字面处理；不能搜索备注、号码、ICCID 等敏感 SIM 信息。counts 是完整筛选集统计，不随 cursor/limit 改变。
+- Go：`go test ./...`、`go test -race ./...`、`CGO_ENABLED=0 go build -trimpath`。
+- 前端：`npm run check`、`npm test`、`npm run build`。
+- 迁移/存储：空库初始化、旧 schema 拒绝、checksum 不匹配拒绝、失败回滚、外键级联、AUTOINCREMENT 高水位保留。
+- API：严格校验、新字段、删除/归档语义、跨用户 404、版本冲突 409、分页。
+- Bot：新命令面、无 ID 交互、回调前缀 `v3:`、旧按钮拒绝、删除确认、续期冲突、只读命令不清草稿。
+- Mini App：SIM/VPS/域名/订阅/自定义类别、四类场景、空/错误/只读/冲突、无内部版本展示。
+- 移动端：320/375/430 CSS px 无横向溢出；触控区不小于 44×44；双主题与安全区。
+- 验收前运行冒烟路径：创建服务 → 添加有效期 → 续期 → 添加规则 → 删除服务，并观察实际界面/数据库结果。
 
-API 只暴露通用 service 资源；SIM 创建/更新通过 `category_id` 与嵌套 `sim_details` 完成，period 只返回 `service_id`。共享 period/rule/renewal/reminder/callback 采用通用所有权关联。
+常用命令：
 
-Bot 只保留按钮与分步向导：`/service` 管理服务、有效期、条款与规则，`/renew` 走“输入—预览—确认”，`/reminders`、`/settings`、`/cancel` 提供直接操作。不再接受 query 字符串或旧 SIM 命令；所有写入都调用同一 `internal/service` 方法。详细语法仅见 README。
+```sh
+GOTOOLCHAIN=local go test ./...
+GOTOOLCHAIN=local go test -race ./...
+cd web && npm run check && npm test && npm run build
+./scripts/test-miniapp.sh
+```
 
-Bot 交互层（`internal/bot`）只做传输校验、渲染与流程编排，所有写入仍调用 `internal/service` 的现有方法。`bot_dialogs` 每个用户最多一行，保存动作、固定步骤名、上限 16 KiB 的 JSON 草案、可选目标 ID 与版本（service/period/rule 外键、cycle、terms revision、rule revision）及 15 分钟 TTL；动作与步骤由代码白名单固定，不接受用户提交的名称。草案写入失败或过期后不写业务数据；业务失败保留草案，成功提交在同一事务内删除。读取命令不得清除草案；启动其他写流程前必须先经用户确认替换。权限与对象状态在每次消息、回调与提交事务内重新校验，按钮 ID 视为不可信输入；`v2:` 回调只携带动作与十进制 ID，不携带草案或敏感字段。回调只使用 `v2:` 动作与十进制 ID；每次回调重新校验私聊、白名单、所有权与对象状态。
+`scripts/dev-miniapp.sh` 会启动真实 Bot 轮询、调度器并设置菜单按钮；默认 `data/miniapp-test.db`，检测到生产库或已有业务数据时拒绝启动，除非 `MINIAPP_ALLOW_EXISTING_DB=1`。
 
-## 安全与隐私
+## 9. Git Commit Convention
 
-- 验证 Telegram Mini App HMAC 与 `auth_date`；拒绝畸形、重复、过期凭据。不得信任客户端身份或 `initDataUnsafe`。
-- 一致执行 Telegram 白名单与资源所有权检查，按契约区分未认证、无权限和不存在/他人资源。
-- Token、initData、手机号、ICCID、备注及请求体不得写入日志、URL、错误输出或截图。备注不得存凭据。
-- 管理链接只允许无内嵌凭据的绝对 HTTP(S) URL。服务端不抓取链接；前端安全打开时使用 `noopener noreferrer`。
-- 生产环境不得有鉴权绕过、固定测试用户、测试路由或测试凭据。独立 Mini App 测试进程可使用每进程随机签名密钥，但业务请求仍经过正常鉴权；测试入口不得进入生产。
-- 部署使用同源 HTTPS，不直接公开 Go API。
-- 备份含敏感用户数据，应限制访问并按运维策略加密。
-
-## 迁移、升级与回退
-
-`004_bot_dialog_steps.sql` 将单用途续期对话表泛化为多步流程（保留原行并映射为 `renew`/`await_expiration`），以 CHECK 约束动作、步骤与草案长度，并用 `ON DELETE CASCADE` 外键在服务、有效期或规则硬删除时清理悬挂对话；不可映射的旧行使迁移整体回滚。
-
-`003_service_items.sql` 将 SIM 父表推广为通用服务、拆分 SIM 专属资料、重命名有效期父关联、增加类别和可选条款，并以 SQLite 约束保护类别归属/kind。必须保留 row ID、所有者、日期、cycle/revision、续期历史、规则、任务状态及租约/token、持久化对话与 AUTOINCREMENT 高水位。迁移事务任一步失败必须回滚。不可改写旧 migration 或其 checksum。
-
-数据库升级到 003 后旧二进制不能原地运行；迁移器会拒绝高版本 schema，且 003 改变了表结构。回退只能先停写、保留升级后的卷，再把升级前完整卷备份恢复到一个新空卷，并用升级前二进制运行该恢复副本。升级后有写入时，先停写并另存新卷备份；决定如何保留新增记录后再恢复。不得删表、清库、重置 sequence、覆盖活动卷或静默丢弃升级后写入。
-
-正式升级前须确认单实例停写、制作并验证包含 DB/WAL/SHM 的完整卷备份，并在可丢弃副本验证迁移和应用。缺少备份、停写未确认或迁移/完整性检查失败时不得升级正式卷。README 维护具体运维步骤。
-
-## 后端验收
-
-- 迁移测试覆盖空库/v1/v2、重复迁移、失败回滚、外键与 integrity 检查、SIM 字段完整映射、关联记录和 sequence 高水位保留；不得修改 001/002 迁移来绕过测试。
-- 旧 SIM 专用 Bot 命令与 API 已移除；共享所有权 JOIN 不依赖 `sim_details`。
-- 混合 SIM/通用 API 覆盖类别、跨用户、类别归属与 kind 校验、分页前筛选、全量统计、字面搜索、严格嵌套 JSON 与 terms 版本冲突。
-- terms-only 修改前后 period cycle 与 reminder job 状态、attempts、token、cycle 不变；续期重放与回调 cycle fencing 保留既有行为。
-- Bot 测试覆盖通用服务创建、独立有效期/规则、服务名称提醒、回调重放、持久化续期对话及归档/删除生命周期，同时覆盖 SIM 类别流程。
-- Bot 交互测试覆盖：分步服务/有效期/条款/规则/时区向导最终只调用一次既有 service 方法；读取命令不清除草案；写流程替换必须确认；v2 按钮的私聊、所有权、过期、归档、取消与重复点击分支每次只应答一次且不越权写入；续期预览取消不写、确认只写一条、陈旧 cycle 拒绝且保留草案；条款修改不改变 cycle 或任务；时区修改重算 date 且保持 datetime 绝对时刻。断言基于 Telegram stub 请求与 SQLite 状态，不以源码字符串或“未 panic”作为验收。
-- 生产不提供测试身份入口或鉴权绕过。本地浏览器模式不能证明真实 Telegram 投递或原生 WebView 行为。
-- Mini App 页面和人工验收仅由 [专项规范](MINI_APP_DEVELOPMENT.md)定义；实现 API 字段仅由 README 定义。
+`type: concise English description`，类型包括 `feat,fix,refactor,docs,test,style,build,ci,perf,chore`。每次只提交逻辑相关内容，不提交密钥、用户数据或临时文件。未经明确授权不执行 commit、amend、reset 或历史重写。
