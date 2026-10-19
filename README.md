@@ -134,10 +134,6 @@ SQLite 数据目录权限 0700、文件权限 0600；启用 WAL、外键、5 秒
 | POST | `/api/v1/services/{id}/delete` | 永久级联删除，无 body/query |
 | GET, POST | `/api/v1/services/{id}/periods` | 列表/创建有效期 |
 | GET | `/api/v1/services/overview` | 全筛选集 counts 与服务/主有效期分页 |
-| GET, POST | `/api/v1/sims` | 旧 SIM 专用列表/创建 |
-| GET, PATCH, DELETE | `/api/v1/sims/{id}` | 旧 SIM 读取/更新/归档 |
-| POST | `/api/v1/sims/{id}/delete` | 永久删除 SIM 及级联数据，无 body/query |
-| GET, POST | `/api/v1/sims/{id}/periods` | 旧 SIM 有效期列表/创建 |
 | GET, PATCH, DELETE | `/api/v1/periods/{id}` | 读取/更新/取消；PATCH 要 `expected_cycle` |
 | POST | `/api/v1/periods/{id}/delete?expected_cycle=N` | 永久删除有效期及关联记录，无 body |
 | GET, POST | `/api/v1/periods/{id}/rules` | 列出/创建提醒规则 |
@@ -152,7 +148,7 @@ SQLite 数据目录权限 0700、文件权限 0600；启用 WAL、外键、5 秒
 
 资源 ID 是十进制字符串；cycle/revision/金额为整数。列表按 ID 升序 keyset 分页，limit 默认 20、范围 1–100；`after_id` 为非负十进制字符串。列表响应 `{"data":...,"next_cursor":...}`，单对象 `{"data":...}`，错误 `{"error":{"code":"...","message":"..."}}`。创建 201、读取/修改 200、归档/取消/删除 204；新续期 201，同参数重放 200。非法输入 400、未认证 401、白名单外 403、缺失/他人资源 404、版本冲突 409、超大请求 413、Content-Type 错误 415、不可用 503、内部错误 500。JSON 上限 64 KiB，必须 `application/json`，拒绝未知字段/尾随 JSON。查询串拒绝未知、重复、空键。
 
-`DELETE` 服务/SIM 是归档，period DELETE 是取消，rule DELETE 是禁用；不可逆删除必须使用无 body 的 `POST .../delete`。period 删除须带正的当前 cycle，rule 删除须带正的当前 revision。跨用户资源返回 404；删除 ID 不复用。
+`DELETE` 服务是归档，period DELETE 是取消，rule DELETE 是禁用；不可逆删除必须使用无 body 的 `POST .../delete`。period 删除须带正的当前 cycle，rule 删除须带正的当前 revision。跨用户资源返回 404；删除 ID 不复用。
 
 归档服务不能新建有效期（409）；恢复为 active 后再创建。真实删除服务会级联删除其有效期、规则、任务、续期历史及续期对话；删除有效期保留所属服务与其他有效期。
 
@@ -176,7 +172,7 @@ SQLite 数据目录权限 0700、文件权限 0600；启用 WAL、外键、5 秒
 {"name":"Travel SIM","category_id":"1","provider":"Carrier","sim_details":{"card_type":"esim","phone_number":null,"country_or_region":"Japan","iccid":null}}
 ```
 
-SIM detail 形状为 `card_type,phone_number,country_or_region,iccid`。PATCH 可传 `name,category_id,status` 及可清空的 `provider,identifier,management_url,notes,sim_details`。缺省保持不变；嵌套 sim_details 对象只更新提供字段，card_type 不可 null，其他子字段可 null 清空；SIM 上 `sim_details:null` 非法。嵌套未知字段拒绝。Bot 使用扁平 SIM 键；只有 HTTP 请求/响应使用嵌套对象。
+SIM detail 形状为 `card_type,phone_number,country_or_region,iccid`。PATCH 可传 `name,category_id,status` 及可清空的 `provider,identifier,management_url,notes,sim_details`。缺省保持不变；嵌套 sim_details 对象只更新提供字段，card_type 不可 null，其他子字段可 null 清空；SIM 上 `sim_details:null` 非法。嵌套未知字段拒绝。
 
 服务 PATCH 示例（省略字段不变，`null` 清除可空字段）：
 
@@ -192,7 +188,7 @@ SIM 子对象 PATCH 只发送需要改的子字段，例如 `{"sim_details":{"ph
 {"id":"1","user_id":null,"code":"sim","name":"SIM 与 eSIM","kind":"sim","created_at":"2026-10-19T00:00:00Z","updated_at":"2026-10-19T00:00:00Z"}
 ```
 
-period 创建必需 `period_type,date_precision,expires_at`；`name` 省略时为空字符串，`starts_at` 可 null，`terms` 可省略或 null。有效期响应字段完整为 `id,service_id,sim_id,period_type,name,starts_at,expires_at,date_precision,local_expires_date,timezone,status,cycle,terms,created_at,updated_at`。SIM 的 `sim_id` 是字符串，非 SIM 为 null。terms 响应总有 `mode,interval_count,interval_unit,amount,currency,revision`。
+period 创建必需 `period_type,date_precision,expires_at`；`name` 省略时为空字符串，`starts_at` 可 null，`terms` 可省略或 null。有效期响应字段完整为 `id,service_id,period_type,name,starts_at,expires_at,date_precision,local_expires_date,timezone,status,cycle,terms,created_at,updated_at`。terms 响应总有 `mode,interval_count,interval_unit,amount,currency,revision`。
 
 ```json
 {"period_type":"custom","name":"Monthly plan","starts_at":null,"date_precision":"date","expires_at":"2027-03-31","terms":{"mode":"recurring","interval_count":1,"interval_unit":"month","amount":1200,"currency":"USD"}}
@@ -201,7 +197,7 @@ period 创建必需 `period_type,date_precision,expires_at`；`name` 省略时�
 可写 terms 对象**必须包含全部五个键**：`mode,interval_count,interval_unit,amount,currency`；不适用值传 JSON null。revision 仅响应，不可写。示例：一次性无费用 `{"mode":"once","interval_count":null,"interval_unit":null,"amount":null,"currency":null}`；custom 保留价格时 interval 两字段为 null，amount/currency 成对。recurring 要正整数数量与 `day|week|month|year` 单位；金额非负 int64，币种三位大写字母。
 
 ```json
-{"id":"20","service_id":"12","sim_id":null,"period_type":"custom","name":"Monthly plan","starts_at":null,"expires_at":"2027-03-31T16:00:00Z","date_precision":"date","local_expires_date":"2027-03-31","timezone":"Asia/Taipei","status":"active","cycle":1,"terms":{"mode":"recurring","interval_count":1,"interval_unit":"month","amount":1200,"currency":"USD","revision":1},"created_at":"2026-10-19T00:00:00Z","updated_at":"2026-10-19T00:00:00Z"}
+{"id":"20","service_id":"12","period_type":"custom","name":"Monthly plan","starts_at":null,"expires_at":"2027-03-31T16:00:00Z","date_precision":"date","local_expires_date":"2027-03-31","timezone":"Asia/Taipei","status":"active","cycle":1,"terms":{"mode":"recurring","interval_count":1,"interval_unit":"month","amount":1200,"currency":"USD","revision":1},"created_at":"2026-10-19T00:00:00Z","updated_at":"2026-10-19T00:00:00Z"}
 ```
 
 period PATCH 必带 `expected_cycle`；若包含 terms，还必带 `expected_terms_revision`。有 expected terms revision 而没有 terms 是非法输入。`terms:null` 重置为 custom，但不会重置 revision。陈旧版本即使 no-op 也冲突；版本匹配且条款无变化时不增加 revision。terms-only 只增加 terms revision，不改 cycle 或 job。续期不能自动采用约定费用。
@@ -212,7 +208,7 @@ period PATCH 必带 `expected_cycle`；若包含 terms，还必带 `expected_ter
 {"data":{"counts":{"total":0,"due_soon":0,"expired":0,"no_period":0},"items":[]},"next_cursor":null}
 ```
 
-旧 SIM 创建 payload 保持 `{ "name":"Travel SIM", "card_type":"esim", "operator":"Carrier", "phone_number":null, "country_or_region":null, "iccid":null, "notes":null }`，响应字段仍为 `id,user_id,name,card_type,operator,phone_number,country_or_region,iccid,notes,status,created_at,updated_at`。通用 service 用 `provider`。period 以 `service_id` 为规范父键，旧 `sim_id` 仅对 SIM 返回数字字符串，绝不伪造。精确模型不在 MINI_APP 文档重复。
+SIM 是普通 service：通过 `category_id` 选择 SIM 类别，并在嵌套 `sim_details` 中提交 `card_type` 等字段；没有独立 SIM 端点或 `sim_id` 响应字段。period 以 `service_id` 为规范父键。精确模型不在 MINI_APP 文档重复。
 
 其他共用资源响应字段：规则 `id,validity_period_id,days_before,reminder_time,enabled,revision,created_at,updated_at`；续期 `id,validity_period_id,previous_cycle,previous_expires_at,new_expires_at,previous_date_precision,new_date_precision,previous_local_expires_date,new_local_expires_date,timezone,renewed_at,amount,currency,notes,created_at`；提醒任务 `id,validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,sent_at,telegram_message_id,last_error_code,created_at,updated_at`。规则创建接受 `days_before,reminder_time,enabled`（enabled 默认 true）；PATCH 要 `expected_revision`。续期请求必需 `expected_cycle,date_precision,expires_at`，可选 `amount,currency,notes`，金额/币种同时提供或省略。me 响应字段为 `id,telegram_user_id,timezone,has_private_chat,created_at,updated_at`，PATCH 接受 IANA `timezone`。
 
@@ -339,7 +335,7 @@ docker compose logs --tail=100 app web
 - 完成目录式完整备份 → 恢复到空目录 → 升级至 003 → API 检查与重启后历史/sent 完整性检查。Docker 命名卷流程未执行。
 - 旧二进制不能读取迁移 003；回退需完整备份恢复到新空卷。
 - 前端 180 tests 通过，`svelte-check` 零错误零警告，生产构建完成。
-- 浏览器实际走查服务和旧 SIM 流程、冲突处理、响应宽度/主题、旧深链和通用 seed 数据。
+- 浏览器实际走查服务与 SIM 类别流程、冲突处理、响应宽度/主题和通用 seed 数据。
 - 浏览器实际验证“重置约定条款”：持久化 int64 最大值费用重置为 custom/null、terms revision 2，period cycle 保持 1。分页实测 22 项：计数在翻页间稳定，第二页包含名称为“分页验收 22”的条目。
 - Docker Compose build 未运行：环境没有 Docker 可执行文件且没有可用 Docker socket。真实 Telegram 投递、iOS/Android 原生 WebView/返回行为及外部 HTTPS 未验证。
 - Bot 命令交互改造：迁移 004、通用对话草案、v2 按钮与分步向导在 `internal/storage`、`internal/service`、`internal/bot` 的 SQLite + Telegram HTTP stub 上验证（服务/有效期/条款/规则/时区向导、只读命令不打断、替换确认、v1 回调兼容、重复确认与陈旧周期拒绝）。未在真实 Telegram 客户端或移动端验证按钮排版与投递。
@@ -365,7 +361,7 @@ race 需要合适 C 工具链。真实投递需要测试 Token、本人白名单
 - 加入迁移 003 与完整卷备份、禁止原地二进制回退、恢复到新卷的操作说明。
 - Bot 增加持久化多步对话（迁移 004）、Inline Keyboard 浏览/归档确认/任务取消、`/settings`，续期改为输入—预览—确认。
 - 移除 Bot 旧 query 命令（`/add`、`/list`、`/view`、`/edit`、`/delete` 及 `/service` query 形式）与 `v1:` 回调；提醒按钮改用 `v2:period:*`。
-- 移除未被 Mini App 使用的旧 `/api/v1/overview`；`/api/v1/sims` 与 `/app/sims/*` 深链仍服务于 Mini App 兼容跳转。
+- 移除未被 Mini App 使用的旧 `/api/v1/overview`，以及旧 `/api/v1/sims` API、`sim_id` 响应字段和 `/app/sims/*` 深链；SIM 统一为 service 类别。
 - 更新 API/Bot、安全、迁移、Mini App 和验证记录。Docker build、真实 Telegram、iOS/Android 原生行为及外部 HTTPS 按实际情况标为未验证。
 
 ## Git 提交规范

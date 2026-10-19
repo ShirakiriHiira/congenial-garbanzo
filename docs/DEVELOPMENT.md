@@ -29,7 +29,7 @@
 
 SIM 专属字段保存在 `sim_details`，以 service item 为主键并级联删除：卡类型、号码、国家/地区、ICCID。通用项目没有 SIM detail 行。SIM 标识与普通备注不是秘密存储；任何字段均不得保存密码、API Token、私钥。
 
-兼容边界：旧 `/sims` 及其请求/响应字段仅面向 SIM，绝不返回通用项目或伪造 SIM ID。共享有效期、规则、续期、提醒任务与回调通过通用 service item 关系归属，不依赖 SIM detail 表。既有 ID 与旧字段含义保持稳定。
+SIM 是普通 service：类别为 `sim`，专属资料存于 `sim_details`，不提供独立 SIM API 或资源 ID。共享有效期、规则、续期、提醒任务与回调通过通用 service item 关系归属。
 
 ### 有效期、条款、规则与续期
 
@@ -45,7 +45,7 @@ API 位于 `/api/v1`，使用 Telegram Mini App `initData` 鉴权、字符串资
 
 通用 API 提供类别管理、服务 CRUD/列表、全量过滤 overview 及服务有效期操作。overview 的筛选在分页前执行，items/counts 使用同一读快照及当前时间。搜索仅检索公开 name/provider/identifier，通配符按字面处理；不能搜索备注、号码、ICCID 等敏感 SIM 信息。counts 是完整筛选集统计，不随 cursor/limit 改变。
 
-兼容 API 仍仅限 SIM，保留旧路由、`operator` 等字段、响应结构、归档/删除语义。旧 SIM 有效期路由在创建前必须验证 SIM 身份。共享 period/rule/renewal/reminder/callback 使用稳定旧 ID，并采用通用所有权关联。
+API 只暴露通用 service 资源；SIM 创建/更新通过 `category_id` 与嵌套 `sim_details` 完成，period 只返回 `service_id`。共享 period/rule/renewal/reminder/callback 采用通用所有权关联。
 
 Bot 只保留按钮与分步向导：`/service` 管理服务、有效期、条款与规则，`/renew` 走“输入—预览—确认”，`/reminders`、`/settings`、`/cancel` 提供直接操作。不再接受 query 字符串或旧 SIM 命令；所有写入都调用同一 `internal/service` 方法。详细语法仅见 README。
 
@@ -74,10 +74,10 @@ Bot 交互层（`internal/bot`）只做传输校验、渲染与流程编排，�
 ## 后端验收
 
 - 迁移测试覆盖空库/v1/v2、重复迁移、失败回滚、外键与 integrity 检查、SIM 字段完整映射、关联记录和 sequence 高水位保留；不得修改 001/002 迁移来绕过测试。
-- 旧 SIM 专用 Bot 命令已移除；共享所有权 JOIN 不依赖 `sim_details`。
+- 旧 SIM 专用 Bot 命令与 API 已移除；共享所有权 JOIN 不依赖 `sim_details`。
 - 混合 SIM/通用 API 覆盖类别、跨用户、类别归属与 kind 校验、分页前筛选、全量统计、字面搜索、严格嵌套 JSON 与 terms 版本冲突。
 - terms-only 修改前后 period cycle 与 reminder job 状态、attempts、token、cycle 不变；续期重放与回调 cycle fencing 保留既有行为。
-- Bot 测试覆盖通用服务创建、独立有效期/规则、服务名称提醒、回调重放、持久化续期对话及归档/删除生命周期，同时保留旧 SIM 流程。
+- Bot 测试覆盖通用服务创建、独立有效期/规则、服务名称提醒、回调重放、持久化续期对话及归档/删除生命周期，同时覆盖 SIM 类别流程。
 - Bot 交互测试覆盖：分步服务/有效期/条款/规则/时区向导最终只调用一次既有 service 方法；读取命令不清除草案；写流程替换必须确认；v2 按钮的私聊、所有权、过期、归档、取消与重复点击分支每次只应答一次且不越权写入；续期预览取消不写、确认只写一条、陈旧 cycle 拒绝且保留草案；条款修改不改变 cycle 或任务；时区修改重算 date 且保持 datetime 绝对时刻。断言基于 Telegram stub 请求与 SQLite 状态，不以源码字符串或“未 panic”作为验收。
 - 生产不提供测试身份入口或鉴权绕过。本地浏览器模式不能证明真实 Telegram 投递或原生 WebView 行为。
 - Mini App 页面和人工验收仅由 [专项规范](MINI_APP_DEVELOPMENT.md)定义；实现 API 字段仅由 README 定义。
