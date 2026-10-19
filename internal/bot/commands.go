@@ -130,6 +130,6 @@ func helpText(zone string) string {
 
 所有对象都从列表或详情按钮进入，不需要输入任何内部编号。每一步都可返回、跳过可选资料或取消；发起另一个写流程前会确认是否丢弃草稿。
 
-date 精度格式 YYYY-MM-DD；datetime 使用带 offset 的 RFC3339。约定费用只作记录，不代表已付款。
+date 精度格式 YYYY-MM-DD；datetime 直接发送本地时间，例如 2027-02-28 23:59（按当前时区），也接受带 offset 的 RFC3339。约定费用只作记录，不代表已付款。
 备注只存普通说明，不要保存密码、API Token 或私钥。`
 }

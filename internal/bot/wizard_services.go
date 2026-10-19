@@ -526,9 +526,9 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 			button("精确时间", choiceCallback("precision", "datetime")),
 		), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
 	case "period_expires":
-		w.reply(ctx, "第 3 步，输入截止（"+w.dr.Values["precision"]+"，时区 "+w.user.Timezone+"）。\n"+expirationHelp, navRows(true, false)...)
+		w.reply(ctx, "第 3 步，输入截止（"+precisionLabel(w.dr.Values["precision"])+"，时区 "+w.user.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
 	case "period_starts":
-		w.reply(ctx, "第 4 步，开始时间（可选，带 offset 的 RFC3339，必须早于截止）。\n示例：2027-01-01T00:00:00+08:00", optionalNav(true)...)
+		w.reply(ctx, "第 4 步，开始时间（可选，按你的时区，必须早于截止）。\n示例：2027-01-01 00:00", optionalNav(true)...)
 	case "terms_mode":
 		w.reply(ctx, "第 5 步，续费约定（可选，只作记录，不会自动扣款或推算日期）。", pair(
 			button("一次性", choiceCallback("mode", "once")),
@@ -540,7 +540,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	case "terms_amount":
 		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 120000 JPY；金额为最小货币单位整数。\n约定费用不代表已付款。", optionalNav(true)...)
 	case "period_preview":
-		w.reply(ctx, periodAddPreviewText(item, w.dr), pair(button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
+		w.reply(ctx, periodAddPreviewText(item, w.dr, w.user.Timezone), pair(button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
 	default:
 		w.abort(ctx, "添加有效期流程状态无效")
 	}
@@ -577,9 +577,14 @@ func termsFromDraft(d draft) *service.TermsInput {
 	return &service.TermsInput{Mode: t.Mode, IntervalCount: t.IntervalCount, IntervalUnit: t.IntervalUnit, Amount: t.Amount, Currency: t.Currency}
 }
 
-func periodAddPreviewText(item service.ServiceItem, d draft) string {
+func periodAddPreviewText(item service.ServiceItem, d draft, zone string) string {
+	expires := wallClockDisplay(d.Values["expires_at"], zone)
+	starts := shown(d, "starts_at")
+	if value := d.Values["starts_at"]; strings.TrimSpace(value) != "" {
+		starts = wallClockDisplay(value, zone)
+	}
 	return fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n约定：%s\n\n创建后不会自动创建提醒规则。",
-		item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), d.Values["expires_at"], shown(d, "starts_at"), termsText(termsDraft(d)))
+		item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), expires, starts, termsText(termsDraft(d)))
 }
 
 func precisionLabel(value string) string {
@@ -602,23 +607,26 @@ func (w *wizard) textPeriodAdd(ctx context.Context, text string) {
 		}
 		w.dr.set("name", value)
 	case "period_expires":
-		if err := parsePrecisionValue(w.dr.Values["precision"], value); err != nil {
+		normalized, err := normalizePrecisionValue(w.dr.Values["precision"], value, w.user.Timezone)
+		if err != nil {
 			w.stepError(ctx, err.Error(), true, false)
 			return
 		}
-		w.dr.set("expires_at", value)
+		w.dr.set("expires_at", normalized)
 	case "period_starts":
 		if value != "" {
-			at, err := time.Parse(time.RFC3339, value)
+			normalized, err := normalizeDateTime(value, w.user.Timezone)
 			if err != nil {
-				w.stepError(ctx, "开始时间必须是带 offset 的 RFC3339，例如 2027-01-01T00:00:00+08:00。", true, true)
+				w.stepError(ctx, err.Error(), true, true)
 				return
 			}
+			at, _ := time.Parse(time.RFC3339, normalized)
 			expires, err := parseExpiryForStarts(w.dr.Values["precision"], w.dr.Values["expires_at"], w.user.Timezone)
 			if err != nil || !at.Before(expires) {
 				w.stepError(ctx, "开始时间必须早于截止时间。", true, true)
 				return
 			}
+			value = normalized
 		}
 		w.dr.set("starts_at", value)
 	case "terms_interval":
@@ -754,7 +762,7 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 			if p.StartsAt != nil {
 				rows = append([][]models.InlineKeyboardButton{pair(button("清除开始时间", cb("dialog", "clear_value")))}, rows...)
 			}
-			w.reply(ctx, "当前开始："+startValue(p.StartsAt)+"\n请输入带 offset 的 RFC3339。\n示例：2027-01-01T00:00:00+08:00", rows...)
+			w.reply(ctx, "当前开始："+startValue(p.StartsAt, p.Timezone)+"\n请输入本地时间，例如 2027-01-01 00:00（按 "+p.Timezone+"）；也接受带 offset 的 RFC3339。", rows...)
 		}
 	case "period_precision":
 		w.reply(ctx, "选择新的截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。", pair(
@@ -762,7 +770,7 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 			button("精确时间", choiceCallback("precision", "datetime")),
 		), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
 	case "period_expires":
-		w.reply(ctx, "当前截止："+periodExpiry(p)+"\n请输入新的截止（"+w.dr.Values["precision"]+"，时区 "+p.Timezone+"）。\n"+expirationHelp, navRows(true, false)...)
+		w.reply(ctx, "当前截止："+periodExpiry(p)+"\n请输入新的截止（"+precisionLabel(w.dr.Values["precision"])+"，时区 "+p.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
 	case "terms_mode":
 		w.reply(ctx, "当前约定："+termsText(p.Terms)+"\n请选择新的条款模式；条款只作记录，不会自动扣款或改变截止。", pair(
 			button("一次性", choiceCallback("mode", "once")),
@@ -787,11 +795,11 @@ func shownValue(v string) string {
 	return v
 }
 
-func startValue(v *int64) string {
+func startValue(v *int64, zone string) string {
 	if v == nil {
 		return "（未设置）"
 	}
-	return time.Unix(*v, 0).UTC().Format(time.RFC3339)
+	return wallClockDisplay(time.Unix(*v, 0).UTC().Format(time.RFC3339), zone)
 }
 
 func periodEditPreviewText(p service.Period, d draft) string {
@@ -801,9 +809,9 @@ func periodEditPreviewText(p service.Period, d draft) string {
 	case "name":
 		old, next = shownValue(p.Name), shownValue(d.Values["value"])
 	case "starts":
-		old, next = startValue(p.StartsAt), shownValue(d.Values["value"])
+		old, next = startValue(p.StartsAt, p.Timezone), shownValue(wallClockDisplay(d.Values["value"], p.Timezone))
 	case "expires":
-		old, next = periodExpiry(p), d.Values["expires_at"]+"（"+precisionLabel(d.Values["precision"])+"）"
+		old, next = periodExpiry(p), wallClockDisplay(d.Values["expires_at"], p.Timezone)+"（"+precisionLabel(d.Values["precision"])+"）"
 	case "terms":
 		old, next = termsText(p.Terms), termsText(termsDraft(d))
 	}
@@ -827,6 +835,18 @@ func periodFieldLabel(field string) string {
 
 func (w *wizard) textPeriodEdit(ctx context.Context, text string) {
 	value := trimmed(text)
+	loadPeriod := func() (service.Period, bool) {
+		if w.d.PeriodID == nil {
+			w.abort(ctx, "编辑流程缺少有效期")
+			return service.Period{}, false
+		}
+		p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
+		if err != nil {
+			w.abort(ctx, "有效期已不存在")
+			return service.Period{}, false
+		}
+		return p, true
+	}
 	switch w.d.Step {
 	case "edit_value":
 		field := w.dr.Values["field"]
@@ -836,18 +856,34 @@ func (w *wizard) textPeriodEdit(ctx context.Context, text string) {
 				return
 			}
 		} else if field == "starts" && value != "" {
-			if _, err := time.Parse(time.RFC3339, value); err != nil {
-				w.stepError(ctx, "开始时间必须是带 offset 的 RFC3339，例如 2027-01-01T00:00:00+08:00。", true, false)
+			p, ok := loadPeriod()
+			if !ok {
 				return
 			}
+			normalized, err := normalizeDateTime(value, p.Timezone)
+			if err != nil {
+				w.stepError(ctx, err.Error(), true, false)
+				return
+			}
+			at, _ := time.Parse(time.RFC3339, normalized)
+			if !at.Before(time.Unix(p.ExpiresAt, 0)) {
+				w.stepError(ctx, "开始时间必须早于截止时间。", true, false)
+				return
+			}
+			value = normalized
 		}
 		w.dr.set("value", value)
 	case "period_expires":
-		if err := parsePrecisionValue(w.dr.Values["precision"], value); err != nil {
+		p, ok := loadPeriod()
+		if !ok {
+			return
+		}
+		normalized, err := normalizePrecisionValue(w.dr.Values["precision"], value, p.Timezone)
+		if err != nil {
 			w.stepError(ctx, err.Error(), true, false)
 			return
 		}
-		w.dr.set("expires_at", value)
+		w.dr.set("expires_at", normalized)
 	case "terms_interval":
 		count, unit, err := parseInterval(value)
 		if err != nil {

@@ -121,6 +121,46 @@ func TestPeriodAddWizardAndNoImplicitRule(t *testing.T) {
 	}
 }
 
+func TestWizardAcceptsLocalWallClockTimes(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	item := f.createService("Host", "vps")
+	f.callback(userA, cb("period", "add", id(item.ID)), nil)
+	f.send(userA, "精确套餐")
+	f.callback(userA, choiceCallback("precision", "datetime"), nil)
+	f.send(userA, "2027-03-32 23:59")
+	if text := f.stub.lastText(); !strings.Contains(text, "不存在") {
+		t.Fatalf("invalid local time reply: %q", text)
+	}
+	f.send(userA, "2027-03-31 23:59")
+	f.send(userA, "2027-03-01 00:00")
+	if text := f.stub.lastText(); !strings.Contains(text, "续费约定") {
+		t.Fatalf("starts accepted but flow stopped: %q", text)
+	}
+	f.callback(userA, choiceCallback("mode", "custom"), nil)
+	if text := f.stub.lastText(); !strings.Contains(text, "2027-03-31 23:59") || strings.Contains(text, "+08:00") {
+		t.Fatalf("preview did not render local time: %q", text)
+	}
+	f.callback(userA, cb("dialog", "confirm"), nil)
+	if got := serviceLookupString(t, f, "SELECT date_precision||':'||expires_at FROM service_periods WHERE id=1"); got != "datetime:1806508740" {
+		t.Fatalf("stored cutoff=%q", got)
+	}
+	if got := serviceLookupString(t, f, "SELECT CAST(starts_at AS TEXT) FROM service_periods WHERE id=1"); got != "1803830400" {
+		t.Fatalf("stored start=%q", got)
+	}
+
+	// Renewal uses the same local-time entry and stores the absolute instant.
+	f.callback(userA, cb("period", "renew", "1"), nil)
+	f.callback(userA, choiceCallback("precision", "datetime"), nil)
+	f.send(userA, "2027-05-01 12:30")
+	f.callback(userA, cb("dialog", "skip"), nil)
+	f.callback(userA, cb("dialog", "skip"), nil)
+	f.callback(userA, cb("dialog", "confirm"), nil)
+	if got := serviceLookupString(t, f, "SELECT CAST(new_expires_at AS TEXT) FROM renewals WHERE period_id=1"); got != "1809145800" {
+		t.Fatalf("renewed cutoff=%q", got)
+	}
+}
+
 func TestPeriodEditWizardFieldsAndConflict(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)

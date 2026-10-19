@@ -24,6 +24,10 @@ type Expiration struct {
 	Timezone         string
 }
 
+// wallClockPattern matches a local wall-clock timestamp without an offset.
+// Minutes are required; seconds are optional and default to zero.
+var wallClockPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?$`)
+
 var timestampPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$`)
 
 // ParseExpiration parses a date or offset-qualified RFC3339 timestamp. A date is
@@ -76,6 +80,41 @@ func ParseStartsAt(value string, expiresAt time.Time) (time.Time, error) {
 		return time.Time{}, invalid("starts_at must precede expires_at")
 	}
 	return start, nil
+}
+
+// ParseLocalDateTime resolves a wall-clock timestamp such as
+// "2027-01-31 23:59" in an IANA timezone. A wall time skipped by a DST gap is
+// rejected instead of silently moving; a wall time repeated by a DST overlap
+// selects the earlier instant. Callers convert the result to RFC3339 with the
+// zone's offset before handing it to the service layer.
+func ParseLocalDateTime(value, timezone string) (time.Time, error) {
+	if timezone == "" || timezone == "Local" || !wallClockPattern.MatchString(value) {
+		return time.Time{}, invalid("local datetime must be YYYY-MM-DD HH:MM in an IANA timezone")
+	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return time.Time{}, invalid("timezone must be an IANA timezone")
+	}
+	normalized := value[:10] + "T" + value[11:]
+	if len(normalized) == 16 {
+		normalized += ":00"
+	}
+	wall, err := time.Parse("2006-01-02T15:04:05", normalized)
+	if err != nil {
+		return time.Time{}, invalid("local datetime must be an existing date and time")
+	}
+	// resolveWall moves a skipped wall time forward. Requested cutoffs must not
+	// silently move, so the resolved fields must match the input exactly.
+	at, ok := resolveWall(wall, loc, false)
+	if !ok {
+		return time.Time{}, invalid("local datetime does not exist in timezone")
+	}
+	actual := at.In(loc)
+	if actual.Year() != wall.Year() || actual.Month() != wall.Month() || actual.Day() != wall.Day() ||
+		actual.Hour() != wall.Hour() || actual.Minute() != wall.Minute() || actual.Second() != wall.Second() {
+		return time.Time{}, invalid("local datetime does not exist in timezone")
+	}
+	return at.UTC(), nil
 }
 
 // ReminderAt subtracts calendar days, then resolves the requested local HH:MM.

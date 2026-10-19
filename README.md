@@ -137,7 +137,7 @@ Mini App 设置页可选 1 小时、6 小时、24 小时或 7 天；选择保存
 
 ## 时间、条款与提醒
 
-- 内部时间 UTC。`date` 表示用户时区当地日历日结束的排他截止；`datetime` 是带 offset 的 RFC3339。
+- 内部时间 UTC。`date` 表示用户时区当地日历日结束的排他截止；`datetime` 是带 offset 的 RFC3339。Bot 向导的精确时间直接接受本地时间 `YYYY-MM-DD HH:MM`（按用户时区换算），也接受 RFC3339；DST 跳过的时间被拒绝，重复时间取较早时刻。
 - 提前天数按当地日历计算；DST 不存在时刻顺延，重复时刻取较早候选。
 - 任务幂等键 `(period_id, rule_id, cycle, rule_revision)`；成功发送按 `(period_id, rule_id, expires_at_snapshot)` 去重。
 - 补发窗口、有限重试、租约、fencing token、取消/在途发送竞态语义保留；不承诺 exactly-once。

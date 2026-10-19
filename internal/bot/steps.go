@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"telegram.bot.remind/internal/domain"
 	"telegram.bot.remind/internal/service"
 )
 
@@ -268,34 +269,79 @@ func optionalStep(step string) bool {
 	return false
 }
 
-var datePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+// localDateTimePattern matches a wall-clock timestamp without an offset, for
+// example "2027-02-28 23:59" or "2027-02-28T23:59:30".
+var localDateTimePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?$`)
 
-// parsePrecisionValue validates the shared date/datetime contract locally so
-// the wizard can explain the exact format before the service call.
-func parsePrecisionValue(precision, value string) error {
+const dateTimeHelp = "精确时间请发送本地时间，例如 2027-02-28 23:59（按你的时区）；也接受带 offset 的 RFC3339。"
+
+// normalizeDateTime turns an offset-qualified RFC3339 timestamp or a local
+// wall-clock timestamp in zone into RFC3339 with the zone's offset. Drafts and
+// the service layer always receive an absolute instant, so the user never has
+// to type or look up an offset; a wall time skipped by a DST gap is rejected
+// instead of silently moving.
+func normalizeDateTime(value, zone string) (string, error) {
+	if localDateTimePattern.MatchString(value) {
+		loc, err := time.LoadLocation(zone)
+		if err != nil {
+			return "", fail("时区无效，请先在设置中重新选择时区。")
+		}
+		at, err := domain.ParseLocalDateTime(value, zone)
+		if err != nil {
+			return "", fail("该本地时间在 " + zone + " 不存在（日期无效或因夏令时跳过）。" + dateTimeHelp)
+		}
+		return at.In(loc).Format(time.RFC3339), nil
+	}
+	// time.RFC3339 parsing requires an explicit offset, so a successful parse
+	// already proves the value is unambiguous.
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		return "", fail(dateTimeHelp)
+	}
+	return value, nil
+}
+
+// normalizePrecisionValue validates the shared date/datetime contract locally
+// and returns the canonical value the service layer expects.
+func normalizePrecisionValue(precision, value, zone string) (string, error) {
 	value = strings.TrimSpace(value)
 	switch precision {
 	case "date":
 		at, err := time.Parse("2006-01-02", value)
 		if err != nil || at.Format("2006-01-02") != value {
-			return fail("日期必须是存在的 YYYY-MM-DD，例如 2027-01-31。")
+			return "", fail("日期必须是存在的 YYYY-MM-DD，例如 2027-01-31。")
 		}
-		return nil
+		return value, nil
 	case "datetime":
-		at, err := time.Parse(time.RFC3339, value)
-		if err != nil || datePattern.MatchString(value) {
-			return fail("时间必须是带时区的 RFC3339，例如 2027-01-31T23:59:59+08:00。")
-		}
-		if _, offset := at.Zone(); offset == 0 && !strings.HasSuffix(value, "Z") && !strings.Contains(value, "+00:00") && !strings.Contains(value, "-00:00") {
-			return fail("时间必须带 offset，例如 2027-01-31T23:59:59+08:00。")
-		}
-		return nil
+		return normalizeDateTime(value, zone)
 	}
-	return fail("精度必须是 date 或 datetime。")
+	return "", fail("精度必须是 date 或 datetime。")
 }
 
-// expiration examples are rendered everywhere a user must type a cutoff.
-const expirationHelp = "示例：\n2027-02-28（仅日期）\n2027-02-28T23:59:59+08:00（精确时间，须带时区 offset）"
+// expirationHint renders the cutoff example for the selected precision, so a
+// prompt never shows a format the current step would reject.
+func expirationHint(precision string) string {
+	if precision == "datetime" {
+		return "示例：2027-02-28 23:59（精确时间，按你的时区）"
+	}
+	return "示例：2027-02-28（仅日期）"
+}
+
+// wallClockDisplay renders a date or an absolute instant as local wall time in
+// zone, so previews never ask the user to read a UTC offset.
+func wallClockDisplay(value, zone string) string {
+	if localDateTimePattern.MatchString(value) {
+		return strings.Replace(value, "T", " ", 1)
+	}
+	at, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return value
+	}
+	return at.In(loc).Format("2006-01-02 15:04")
+}
 
 func parseMoney(amountText, currencyText string) (*int64, *string, error) {
 	amountText, currencyText = strings.TrimSpace(amountText), strings.ToUpper(strings.TrimSpace(currencyText))

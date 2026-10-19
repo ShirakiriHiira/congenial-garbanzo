@@ -58,7 +58,7 @@ func (w *wizard) renderRenew(ctx context.Context) {
 			button("精确时间", choiceCallback("precision", "datetime")),
 		), pair(button("取消", cb("dialog", "cancel"))))
 	case "renew_expiration":
-		w.reply(ctx, "输入新截止（必须晚于当前截止和今天；"+w.dr.Values["precision"]+"，时区 "+p.Timezone+"）。\n"+expirationHelp, navRows(true, false)...)
+		w.reply(ctx, "输入新截止（必须晚于当前截止和今天；"+precisionLabel(w.dr.Values["precision"])+"，时区 "+p.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
 	case "renew_amount":
 		rows := [][]models.InlineKeyboardButton{}
 		if p.Terms.Amount != nil && p.Terms.Currency != nil {
@@ -79,7 +79,7 @@ func (w *wizard) renderRenew(ctx context.Context) {
 }
 
 func renewPreviewText(p service.Period, item service.ServiceItem, d draft) string {
-	expires := d.Values["expires_at"]
+	expires := wallClockDisplay(d.Values["expires_at"], p.Timezone)
 	precision := precisionLabel(d.Values["precision"])
 	money := "未填写"
 	if amount := strings.TrimSpace(d.Values["amount"]); amount != "" {
@@ -96,16 +96,26 @@ func renewPreviewText(p service.Period, item service.ServiceItem, d draft) strin
 func (w *wizard) textRenew(ctx context.Context, text string) {
 	switch w.d.Step {
 	case "renew_expiration":
-		value, precision := trimmed(text), w.dr.Values["precision"]
+		precision := w.dr.Values["precision"]
 		if precision == "" {
 			w.stepError(ctx, "请先选择截止方式。", false, false)
 			return
 		}
-		if err := parsePrecisionValue(precision, value); err != nil {
+		if w.d.PeriodID == nil {
+			w.abort(ctx, "续期流程缺少有效期")
+			return
+		}
+		p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
+		if err != nil {
+			w.abort(ctx, "有效期已不存在")
+			return
+		}
+		normalized, err := normalizePrecisionValue(precision, trimmed(text), p.Timezone)
+		if err != nil {
 			w.stepError(ctx, err.Error(), true, false)
 			return
 		}
-		w.dr.set("expires_at", value)
+		w.dr.set("expires_at", normalized)
 		next := nextStep(service.DialogRenew, w.dr, w.d.Step)
 		if !w.persist(ctx, next) {
 			return

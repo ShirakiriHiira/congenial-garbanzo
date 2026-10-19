@@ -251,6 +251,41 @@ func TestCalendarDaysUntil(t *testing.T) {
 	}
 }
 
+func TestParseLocalDateTime(t *testing.T) {
+	cases := []struct{ value, zone, want string }{
+		{"2027-01-31 23:59", "Asia/Taipei", "2027-01-31T15:59:00Z"},
+		{"2027-01-31T23:59", "Asia/Taipei", "2027-01-31T15:59:00Z"},
+		{"2027-01-31 23:59:30", "Asia/Taipei", "2027-01-31T15:59:30Z"},
+		{"2027-01-31 23:59", "UTC", "2027-01-31T23:59:00Z"},
+		{"2027-07-01 12:00", "America/New_York", "2027-07-01T16:00:00Z"},
+		// An overlap resolves to the earlier instant instead of asking.
+		{"2027-11-07 01:30", "America/New_York", "2027-11-07T05:30:00Z"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.value+" "+tc.zone, func(t *testing.T) {
+			got, err := ParseLocalDateTime(tc.value, tc.zone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertInstant(t, got, tc.want)
+		})
+	}
+	for _, bad := range []struct{ value, zone string }{
+		{"2027-02-29 12:00", "Asia/Taipei"},
+		{"2027-01-31", "Asia/Taipei"},
+		{"2027-01-31 24:00", "Asia/Taipei"},
+		{"2027-01-31T23:59:59+08:00", "Asia/Taipei"},
+		{"2027-01-31 23:59", "Not/AZone"},
+		{"2027-01-31 23:59", "Local"},
+		// 02:30 never exists on the spring-forward date in New York.
+		{"2027-03-14 02:30", "America/New_York"},
+	} {
+		if _, err := ParseLocalDateTime(bad.value, bad.zone); !errors.Is(err, ErrInvalidTime) {
+			t.Errorf("%q %q: %v", bad.value, bad.zone, err)
+		}
+	}
+}
+
 func assertInstant(t *testing.T, got time.Time, want string) {
 	t.Helper()
 	if got.Location() != time.UTC || got.Format(time.RFC3339Nano) != want {
