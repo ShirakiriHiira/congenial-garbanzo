@@ -24,13 +24,13 @@ type ReminderDelivery struct {
 var ErrReminderStore = errors.New("reminder storage unavailable")
 
 const reminderJoins = ` FROM reminder_jobs j
-    JOIN validity_periods p ON p.id=j.validity_period_id
-    JOIN reminder_rules r ON r.id=j.reminder_rule_id AND r.validity_period_id=p.id
+    JOIN service_periods p ON p.id=j.period_id
+    JOIN reminder_rules r ON r.id=j.reminder_rule_id AND r.period_id=p.id
     JOIN service_items s ON s.id=p.service_id
     JOIN users u ON u.id=s.user_id `
 
 // A job is current only while every ownership and version gate still matches.
-const currentReminder = `p.status='active' AND s.status='active' AND r.enabled=1
+const currentReminder = `s.status='active' AND r.enabled=1
 	AND p.cycle=j.cycle AND r.revision=j.rule_revision
 	AND p.expires_at=j.expires_at_snapshot`
 
@@ -38,7 +38,7 @@ const currentReminder = `p.status='active' AND s.status='active' AND r.enabled=1
 // recovered card must not resend a reminder already delivered for this cutoff.
 const unsentReminder = `NOT EXISTS (
 	SELECT 1 FROM reminder_jobs sent
-	WHERE sent.validity_period_id=j.validity_period_id
+	WHERE sent.period_id=j.period_id
 	  AND sent.reminder_rule_id=j.reminder_rule_id
 	  AND sent.expires_at_snapshot=j.expires_at_snapshot
 	  AND sent.status='sent')`
@@ -47,7 +47,7 @@ const unsentReminder = `NOT EXISTS (
 // in-flight job intentionally keeps its token until the result is recorded.
 const noReminderLease = `NOT EXISTS (
 	SELECT 1 FROM reminder_jobs leased
-	WHERE leased.validity_period_id=j.validity_period_id
+	WHERE leased.period_id=j.period_id
 	  AND leased.cycle=j.cycle AND leased.id<>j.id
 	  AND leased.attempt_token IS NOT NULL AND leased.locked_until>?)
 	AND NOT EXISTS (
@@ -80,11 +80,6 @@ func (s *Store) reminderTransaction(ctx context.Context, fn func(*sql.Tx) error)
 func (s *Store) ScanReminderJobs(ctx context.Context, now time.Time, window time.Duration, allowed func(int64) bool) error {
 	n := now.Unix()
 	return s.reminderTransaction(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE validity_periods SET status='expired',updated_at=? WHERE status='active' AND expires_at<=?`,
-			n, n); err != nil {
-			return err
-		}
 
 		rows, err := tx.QueryContext(ctx, `SELECT id,telegram_user_id FROM users`)
 		if err != nil {
@@ -110,8 +105,8 @@ func (s *Store) ScanReminderJobs(ctx context.Context, now time.Time, window time
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE reminder_jobs SET status='cancelled',next_attempt_at=NULL,last_error_code='unauthorized',updated_at=?
 				 WHERE (status IN ('pending','sending') OR (status='failed' AND next_attempt_at IS NOT NULL))
-				   AND validity_period_id IN (
-                    SELECT p.id FROM validity_periods p JOIN service_items s ON s.id=p.service_id WHERE s.user_id=?)`,
+				   AND period_id IN (
+                    SELECT p.id FROM service_periods p JOIN service_items s ON s.id=p.service_id WHERE s.user_id=?)`,
 				n, id); err != nil {
 				return err
 			}
@@ -143,11 +138,11 @@ func (s *Store) ScanReminderJobs(ctx context.Context, now time.Time, window time
 		rows, err = tx.QueryContext(ctx, `
 			SELECT p.id,r.id,p.cycle,r.revision,r.days_before,r.reminder_time,
 			       p.expires_at,p.date_precision,p.local_expires_date,p.timezone,u.telegram_user_id
-			FROM validity_periods p
-			JOIN reminder_rules r ON r.validity_period_id=p.id
+			FROM service_periods p
+			JOIN reminder_rules r ON r.period_id=p.id
             JOIN service_items s ON s.id=p.service_id
             JOIN users u ON u.id=s.user_id
-            WHERE p.status='active' AND p.expires_at>? AND s.status='active' AND r.enabled=1`,
+            WHERE p.expires_at>? AND s.status='active' AND r.enabled=1`,
 			n)
 		if err != nil {
 			return err
@@ -185,15 +180,15 @@ func (s *Store) ScanReminderJobs(ctx context.Context, now time.Time, window time
 			// A successful delivery for this cutoff blocks reinstatement too.
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO reminder_jobs(
-					validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,
+					period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,
 					expires_at_snapshot,status,attempts,next_attempt_at,created_at,updated_at)
 				 SELECT ?,?,?,?,?,?,'pending',0,?,?,?
 				 WHERE NOT EXISTS (
 					SELECT 1 FROM reminder_jobs
-					WHERE validity_period_id=? AND reminder_rule_id=? AND cycle=? AND rule_revision=?)
+					WHERE period_id=? AND reminder_rule_id=? AND cycle=? AND rule_revision=?)
 				   AND NOT EXISTS (
 					SELECT 1 FROM reminder_jobs
-					WHERE validity_period_id=? AND reminder_rule_id=?
+					WHERE period_id=? AND reminder_rule_id=?
 					  AND expires_at_snapshot=? AND status='sent')`,
 				c.period, c.rule, c.cycle, c.revision, at.Unix(), c.exp.ExpiresAt.Unix(),
 				at.Unix(), n, n,
@@ -227,7 +222,7 @@ func (s *Store) ScanReminderJobs(ctx context.Context, now time.Time, window time
 			 WHERE id IN (
 				SELECT id FROM (
 					SELECT id,ROW_NUMBER() OVER(
-						PARTITION BY validity_period_id,cycle
+						PARTITION BY period_id,cycle
 						ORDER BY scheduled_at DESC,id DESC) AS position
 					FROM reminder_jobs
 					WHERE status IN ('pending','failed') AND next_attempt_at IS NOT NULL
@@ -304,7 +299,7 @@ func readReminderDelivery(ctx context.Context, tx *sql.Tx, id int64, token strin
 	var v ReminderDelivery
 	var expiry int64
 	err := tx.QueryRowContext(ctx, `
-        SELECT j.id,j.validity_period_id,j.reminder_rule_id,j.cycle,j.rule_revision,j.attempts,
+        SELECT j.id,j.period_id,j.reminder_rule_id,j.cycle,j.rule_revision,j.attempts,
                u.telegram_user_id,u.private_chat_id,s.name,p.name,j.expires_at_snapshot,
                p.date_precision,p.local_expires_date,p.timezone,j.attempt_token`+reminderJoins+`
         WHERE j.id=? AND j.attempt_token=?`, id, token).

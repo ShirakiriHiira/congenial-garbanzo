@@ -17,7 +17,7 @@ import (
 // ---- service add -----------------------------------------------------------
 
 func (h *Handler) startServiceAdd(ctx context.Context, b *telegram.Bot, user service.User, chatID int64) {
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogServiceAdd, 0, "service_add") {
+	if h.conflictTarget(ctx, b, user, chatID, service.DialogServiceAdd, 0, service.DialogServiceAdd) {
 		return
 	}
 	d := service.Dialog{Step: "add_category", Draft: "{}"}
@@ -26,10 +26,8 @@ func (h *Handler) startServiceAdd(ctx context.Context, b *telegram.Bot, user ser
 		h.send(ctx, b, chatID, "无法开始添加服务："+serviceMessage(err))
 		return
 	}
-	{
-		w := h.wizard(ctx, b, user, start)
-		w.renderServiceAdd(ctx)
-	}
+	w := h.wizard(ctx, b, user, start)
+	w.renderServiceAdd(ctx)
 }
 
 func (w *wizard) renderServiceAdd(ctx context.Context) {
@@ -40,28 +38,30 @@ func (w *wizard) renderServiceAdd(ctx context.Context) {
 			w.abort(ctx, "读取类别失败")
 			return
 		}
-		w.reply(ctx, "添加服务：第 1 步，选择类别。\n只会列出你可使用的内置类别与本人自定义类别；也可发送 /cancel 取消。", rows...)
+		w.reply(ctx, "添加服务 · 第 1 步，选择类别。\n只会列出你可使用的内置类别与本人自定义类别；也可发送 /cancel 取消。", rows...)
+	case "add_category_name":
+		w.reply(ctx, "输入新类别名称（最多 200 字）。创建后会回到类别选择。", navRows(true, false)...)
 	case "add_name":
-		w.reply(ctx, "请输入服务名称（必填，最多 200 字）。\n例如：日本 eSIM 或 VPS Pro", navRows(true, false)...)
-	case "add_provider":
-		w.reply(ctx, "服务商/运营商（可选）。可跳过。", navRows(true, true)...)
-	case "add_identifier":
-		w.reply(ctx, "公开标识（可选，例如账号名或主机名；不要填密码）。可跳过。", navRows(true, true)...)
-	case "add_management_url":
-		w.reply(ctx, "管理链接（可选，必须是以 http:// 或 https:// 开头的绝对地址，且不能内嵌账号密码）。可跳过。", navRows(true, true)...)
-	case "add_notes":
-		w.reply(ctx, "普通备注（可选，最多 4000 字；不要保存密码、API Token 或私钥）。可跳过。", navRows(true, true)...)
+		w.reply(ctx, "第 2 步，输入服务名称（例如：东京 VPS）。", navRows(true, false)...)
 	case "add_card_type":
 		w.reply(ctx, "这是 SIM 类别，请选择卡类型。", pair(
-			button("实体卡 physical_sim", choiceCallback("card_type", "physical_sim")),
+			button("实体卡", choiceCallback("card_type", "physical_sim")),
 			button("eSIM", choiceCallback("card_type", "esim")),
 		), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
+	case "add_provider":
+		w.reply(ctx, "可选：服务商/运营商（例如 Carrier、Cloud Provider）。", optionalNav(true)...)
+	case "add_identifier":
+		w.reply(ctx, "可选：公开标识（主机名、域名、账号标识或公开号码；不要填密码）。", optionalNav(true)...)
+	case "add_management_url":
+		w.reply(ctx, "可选：管理链接（必须是无内嵌凭据的 http(s) 绝对地址）。", optionalNav(true)...)
 	case "add_phone":
-		w.reply(ctx, "手机号（可选）。会保存在数据库，不会进入回调或日志。可跳过。", navRows(true, true)...)
+		w.reply(ctx, "可选：号码。会保存在数据库，不会进入回调或日志。", optionalNav(true)...)
 	case "add_region":
-		w.reply(ctx, "国家或地区（可选）。可跳过。", navRows(true, true)...)
+		w.reply(ctx, "可选：国家或地区。", optionalNav(true)...)
 	case "add_iccid":
-		w.reply(ctx, "ICCID（可选，敏感信息不进入回调或日志）。可跳过。", navRows(true, true)...)
+		w.reply(ctx, "可选：ICCID（敏感信息不进入回调或日志）。", optionalNav(true)...)
+	case "add_notes":
+		w.reply(ctx, "可选：普通备注（最多 4000 字；不要保存密码、API Token 或私钥）。", optionalNav(true)...)
 	case "add_preview":
 		w.renderServiceAddPreview(ctx)
 	default:
@@ -76,15 +76,24 @@ func (w *wizard) renderServiceAddPreview(ctx context.Context) {
 			categoryName, kind = c.Name, c.Kind
 		}
 	}
-	w.dr.set("kind", kind)
 	var b strings.Builder
 	fmt.Fprintf(&b, "请确认新建服务：\n类别：%s\n名称：%s\n服务商：%s\n公开标识：%s\n管理链接：%s\n备注：%s\n",
 		categoryName, w.dr.Values["name"], shown(w.dr, "provider"), shown(w.dr, "identifier"), shown(w.dr, "management_url"), shown(w.dr, "notes"))
 	if kind == "sim" {
-		fmt.Fprintf(&b, "卡类型：%s\n电话：%s\n国家/地区：%s\nICCID：%s\n", w.dr.Values["card_type"], shown(w.dr, "phone"), shown(w.dr, "region"), shown(w.dr, "iccid"))
+		fmt.Fprintf(&b, "卡类型：%s\n号码：%s\n国家/地区：%s\nICCID：%s\n", cardTypeLabel(w.dr.Values["card_type"]), shown(w.dr, "phone"), shown(w.dr, "region"), shown(w.dr, "iccid"))
 	}
 	b.WriteString("\n确认后只创建这一个服务；不会自动创建有效期或提醒规则。")
 	w.reply(ctx, b.String(), pair(button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
+}
+
+func cardTypeLabel(value string) string {
+	switch value {
+	case "physical_sim":
+		return "实体 SIM"
+	case "esim":
+		return "eSIM"
+	}
+	return value
 }
 
 func shown(d draft, key string) string {
@@ -101,6 +110,24 @@ func shown(d draft, key string) string {
 func (w *wizard) textServiceAdd(ctx context.Context, text string) {
 	value := trimmed(text)
 	switch w.d.Step {
+	case "add_category_name":
+		if value == "" || len([]rune(value)) > 200 {
+			w.stepError(ctx, "类别名称必填且不超过 200 字。", true, false)
+			return
+		}
+		if _, err := w.h.svc.CreateCategory(ctx, w.user.ID, value); err != nil {
+			if service.Code(err) == "conflict" {
+				w.stepError(ctx, "已有同名自定义类别，请换一个名称。", true, false)
+				return
+			}
+			w.stepError(ctx, "创建类别失败："+serviceMessage(err), true, false)
+			return
+		}
+		if !w.persist(ctx, "add_category") {
+			return
+		}
+		w.render(ctx)
+		return
 	case "add_name":
 		if value == "" || len([]rune(value)) > 200 {
 			w.stepError(ctx, "名称必填且不超过 200 字。", true, false)
@@ -143,7 +170,6 @@ func (w *wizard) confirmServiceAdd(ctx context.Context) {
 		in.SIMDetails = &service.SIMDetails{CardType: w.dr.Values["card_type"], PhoneNumber: opt(w.dr, "phone"),
 			CountryOrRegion: opt(w.dr, "region"), ICCID: opt(w.dr, "iccid")}
 	} else {
-		// Flat SIM input must never be attached to a generic category.
 		for _, key := range []string{"card_type", "phone", "region", "iccid"} {
 			w.dr.del(key)
 		}
@@ -156,23 +182,19 @@ func (w *wizard) confirmServiceAdd(ctx context.Context) {
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	detail, page, err := w.h.serviceDetailPage(ctx, w.user.ID, item, 0)
-	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "服务已创建，但读取详情失败。")
-		return
-	}
-	rows := [][]models.InlineKeyboardButton{
-		pair(button("查看服务", cb("service", "view", id(item.ID))), button("添加有效期", cb("period", "add", id(item.ID)))),
-	}
-	if kb := w.h.serviceKeyboard(item, &page); kb != nil {
-		rows = append(rows, kb.InlineKeyboard...)
-	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, detail, markup(rows...))
+	w.h.showServiceDetail(ctx, w.b, w.user, w.chatID, item.ID, 0)
 }
 
 func opt(d draft, key string) *string {
 	v, ok := d.get(key)
 	if !ok || strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return &v
+}
+
+func nullable(v string) *string {
+	if strings.TrimSpace(v) == "" {
 		return nil
 	}
 	return &v
@@ -199,7 +221,10 @@ func categoryRows(ctx context.Context, h *Handler, uid int64) ([][]models.Inline
 	if len(row) > 0 {
 		rows = append(rows, row)
 	}
-	rows = append(rows, pair(button("取消", cb("dialog", "cancel"))))
+	rows = append(rows,
+		pair(button("新建类别…", cb("dialog", "new_category"))),
+		pair(button("取消", cb("dialog", "cancel"))),
+	)
 	return rows, nil
 }
 
@@ -231,7 +256,7 @@ func (h *Handler) startServiceEdit(ctx context.Context, b *telegram.Bot, user se
 		h.send(ctx, b, chatID, "无法编辑："+serviceMessage(err))
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogServiceEdit, serviceID, "service_edit:"+id(serviceID)) {
+	if h.conflictTarget(ctx, b, user, chatID, service.DialogServiceEdit, serviceID, service.DialogServiceEdit+":"+id(serviceID)) {
 		return
 	}
 	d := service.Dialog{ServiceID: &serviceID, Step: "edit_field", Draft: "{}"}
@@ -242,7 +267,9 @@ func (h *Handler) startServiceEdit(ctx context.Context, b *telegram.Bot, user se
 	}
 	w := h.wizard(ctx, b, user, start)
 	w.dr.set("kind", kindOf(item))
-	w.persist(ctx, "edit_field")
+	if !w.persist(ctx, "edit_field") {
+		return
+	}
 	w.renderServiceEdit(ctx)
 }
 
@@ -261,12 +288,10 @@ func (w *wizard) renderServiceEdit(ctx context.Context) {
 	}
 	kind := kindOf(item)
 	w.dr.set("kind", kind)
-	if w.d.Step == "edit_field" {
-		rows := editFieldRows(item)
-		w.reply(ctx, fmt.Sprintf("编辑服务 #%s %s\n请选择要修改的字段；每次只提交一项，确认前不会写入。", id(item.ID), item.Name), rows...)
-		return
-	}
-	if w.d.Step == "edit_value" {
+	switch w.d.Step {
+	case "edit_field":
+		w.reply(ctx, "编辑服务「"+item.Name+"」\n请选择要修改的字段；每次只提交一项，确认前不会写入。", editFieldRows(item)...)
+	case "edit_value":
 		field := w.dr.Values["field"]
 		if field == "category_id" {
 			rows := [][]models.InlineKeyboardButton{}
@@ -288,24 +313,33 @@ func (w *wizard) renderServiceEdit(ctx context.Context) {
 			w.reply(ctx, "当前类别："+editValue(item, field)+"\n请选择新的类别（只能在同类 kind 内切换）。", rows...)
 			return
 		}
-		w.reply(ctx, fmt.Sprintf("当前值：%s\n\n请输入新的 %s；发送空内容表示清空（名称与卡类型不能清空）。", editValue(item, field), editLabel(field)), navRows(true, false)...)
-		return
-	}
-	if w.d.Step == "edit_preview" {
+		if field == "card_type" {
+			w.reply(ctx, "当前卡类型："+editValue(item, field), pair(
+				button("实体卡", choiceCallback("card_type", "physical_sim")),
+				button("eSIM", choiceCallback("card_type", "esim")),
+			), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
+			return
+		}
+		rows := navRows(true, false)
+		if field != "name" {
+			rows = append([][]models.InlineKeyboardButton{pair(button("清空当前值", cb("dialog", "clear_value")))}, rows...)
+		}
+		w.reply(ctx, fmt.Sprintf("当前值：%s\n\n请输入新的%s；名称不能清空。", editValue(item, field), editLabel(field)), rows...)
+	case "edit_preview":
 		field := w.dr.Values["field"]
-		w.reply(ctx, fmt.Sprintf("请确认修改服务 #%s %s：\n字段：%s\n旧值：%s\n新值：%s\n\n提交时会重新读取对象并复用服务层校验；服务资料本身没有统一版本号。",
-			id(item.ID), item.Name, editLabel(field), editValue(item, field), draftEditValue(w.dr, field)),
+		w.reply(ctx, fmt.Sprintf("请确认修改服务「%s」：\n字段：%s\n旧值：%s\n新值：%s",
+			item.Name, editLabel(field), editValue(item, field), draftEditValue(w.dr, field)),
 			pair(button("确认修改", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))),
 			pair(button("改其他字段", cb("dialog", "change_field")), button("取消", cb("dialog", "cancel"))))
-		return
+	default:
+		w.abort(ctx, "编辑流程状态无效")
 	}
-	w.abort(ctx, "编辑流程状态无效")
 }
 
 func editLabel(field string) string {
 	return map[string]string{
 		"name": "名称", "provider": "服务商", "identifier": "公开标识", "management_url": "管理链接",
-		"notes": "备注", "card_type": "卡类型", "phone": "电话", "region": "国家/地区", "iccid": "ICCID",
+		"notes": "备注", "card_type": "卡类型", "phone": "号码", "region": "国家/地区", "iccid": "ICCID",
 		"category_id": "类别",
 	}[field]
 }
@@ -323,12 +357,12 @@ func editValue(item service.ServiceItem, field string) string {
 	case "notes":
 		return textOrDash(item.Notes)
 	case "category_id":
-		return "#" + id(item.CategoryID)
+		return "当前类别"
 	}
 	if d := item.SIMDetails; d != nil {
 		switch field {
 		case "card_type":
-			return d.CardType
+			return cardTypeLabel(d.CardType)
 		case "phone":
 			return textOrDash(d.PhoneNumber)
 		case "region":
@@ -337,13 +371,13 @@ func editValue(item service.ServiceItem, field string) string {
 			return textOrDash(d.ICCID)
 		}
 	}
-	return "-"
+	return "未填写"
 }
 
 func editFieldRows(item service.ServiceItem) [][]models.InlineKeyboardButton {
 	fields := [][2]string{{"name", "名称"}, {"category_id", "类别"}, {"provider", "服务商"}, {"identifier", "公开标识"}, {"management_url", "管理链接"}, {"notes", "备注"}}
 	if item.SIMDetails != nil {
-		fields = append(fields, [2]string{"card_type", "SIM 卡类型"}, [2]string{"phone", "电话"}, [2]string{"region", "国家/地区"}, [2]string{"iccid", "ICCID"})
+		fields = append(fields, [2]string{"card_type", "SIM 卡类型"}, [2]string{"phone", "号码"}, [2]string{"region", "国家/地区"}, [2]string{"iccid", "ICCID"})
 	}
 	rows := [][]models.InlineKeyboardButton{}
 	row := []models.InlineKeyboardButton{}
@@ -357,7 +391,7 @@ func editFieldRows(item service.ServiceItem) [][]models.InlineKeyboardButton {
 	if len(row) > 0 {
 		rows = append(rows, row)
 	}
-	rows = append(rows, pair(button("返回服务", cb("service", "view", id(item.ID))), button("取消", cb("dialog", "cancel"))))
+	rows = append(rows, pair(button("返回服务", cb("service", "view", id(item.ID), "0")), button("取消", cb("dialog", "cancel"))))
 	return rows
 }
 
@@ -367,8 +401,8 @@ func (w *wizard) textServiceEdit(ctx context.Context, text string) {
 		return
 	}
 	field, value := w.dr.Values["field"], trimmed(text)
-	if field == "category_id" {
-		w.stepError(ctx, "请使用下方按钮选择类别。", true, false)
+	if field == "category_id" || field == "card_type" {
+		w.stepError(ctx, "请使用下方按钮选择。", true, false)
 		return
 	}
 	switch field {
@@ -385,11 +419,6 @@ func (w *wizard) textServiceEdit(ctx context.Context, text string) {
 				return
 			}
 		}
-	case "card_type":
-		if value != "esim" && value != "physical_sim" {
-			w.stepError(ctx, "卡类型只能是 esim 或 physical_sim，且不能清空。", true, false)
-			return
-		}
 	}
 	w.dr.set("value", value)
 	if !w.persist(ctx, "edit_preview") {
@@ -399,33 +428,23 @@ func (w *wizard) textServiceEdit(ctx context.Context, text string) {
 }
 
 func draftEditValue(d draft, field string) string {
-	if field == "category_id" {
-		if v := d.Values["category_id"]; v != "" {
-			return "#" + v
-		}
-		return "（未填写）"
+	if field == "category_id" || field == "card_type" {
+		return "（已选择）"
 	}
 	return shown(d, "value")
 }
 
 func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	field, value := w.dr.Values["field"], w.dr.Values["value"]
-	if field == "category_id" {
-		value = w.dr.Values["category_id"]
-	}
 	patch := service.ServicePatch{}
 	set := func(dest *service.Optional[string]) {
-		var v *string
-		if value != "" {
-			v = &value
-		}
-		*dest = service.Optional[string]{Set: true, Value: v}
+		*dest = service.Optional[string]{Set: true, Value: nullable(value)}
 	}
 	switch field {
 	case "name":
 		patch.Name = &value
 	case "category_id":
-		n, err := strconv.ParseInt(value, 10, 64)
+		n, err := strconv.ParseInt(w.dr.Values["category_id"], 10, 64)
 		if err != nil || n < 1 {
 			w.stepError(ctx, "类别无效，请返回修改。", false, false)
 			return
@@ -443,19 +462,13 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 		patch.SIMDetails = service.Optional[service.SIMDetailsPatch]{Set: true, Value: &service.SIMDetailsPatch{CardType: service.Optional[string]{Set: true, Value: &value}}}
 	case "phone", "region", "iccid":
 		details := service.SIMDetailsPatch{}
-		set(&details.PhoneNumber)
-		set(&details.CountryOrRegion)
-		set(&details.ICCID)
 		switch field {
 		case "phone":
 			details.PhoneNumber = service.Optional[string]{Set: true, Value: nullable(value)}
-			details.CountryOrRegion, details.ICCID = service.Optional[string]{}, service.Optional[string]{}
 		case "region":
 			details.CountryOrRegion = service.Optional[string]{Set: true, Value: nullable(value)}
-			details.PhoneNumber, details.ICCID = service.Optional[string]{}, service.Optional[string]{}
 		case "iccid":
 			details.ICCID = service.Optional[string]{Set: true, Value: nullable(value)}
-			details.PhoneNumber, details.CountryOrRegion = service.Optional[string]{}, service.Optional[string]{}
 		}
 		patch.SIMDetails = service.Optional[service.SIMDetailsPatch]{Set: true, Value: &details}
 	default:
@@ -470,19 +483,7 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	detail, page, err := w.h.serviceDetailPage(ctx, w.user.ID, item, 0)
-	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "服务已修改，但读取详情失败。")
-		return
-	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, detail, w.h.serviceKeyboard(item, &page))
-}
-
-func nullable(v string) *string {
-	if strings.TrimSpace(v) == "" {
-		return nil
-	}
-	return &v
+	w.h.showServiceDetail(ctx, w.b, w.user, w.chatID, item.ID, 0)
 }
 
 // ---- period add -----------------------------------------------------------
@@ -497,18 +498,16 @@ func (h *Handler) startPeriodAdd(ctx context.Context, b *telegram.Bot, user serv
 		h.send(ctx, b, chatID, "服务已归档，请先恢复服务再添加有效期。")
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogPeriodAdd, serviceID, "period_add:"+id(serviceID)) {
+	if h.conflictTarget(ctx, b, user, chatID, service.DialogPeriodAdd, serviceID, service.DialogPeriodAdd+":"+id(serviceID)) {
 		return
 	}
-	d := service.Dialog{ServiceID: &serviceID, Step: "period_type", Draft: "{}"}
+	d := service.Dialog{ServiceID: &serviceID, Step: "period_name", Draft: "{}"}
 	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogPeriodAdd, d.Step, d)
 	if err != nil {
 		h.send(ctx, b, chatID, "无法开始添加有效期："+serviceMessage(err))
 		return
 	}
 	w := h.wizard(ctx, b, user, start)
-	w.dr.set("kind", kindOf(item))
-	w.persist(ctx, "period_type")
 	w.renderPeriodAdd(ctx)
 }
 
@@ -519,40 +518,27 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 		return
 	}
 	switch w.d.Step {
-	case "period_type":
-		labels := [][2]string{{"custom", "自定义 custom"}}
-		if item.SIMDetails != nil {
-			labels = [][2]string{{"number_validity", "号码有效期"}, {"plan_validity", "套餐有效期"},
-				{"data_package_validity", "数据包有效期"}, {"custom", "自定义 custom"}}
-		}
-		rows := [][]models.InlineKeyboardButton{}
-		row := []models.InlineKeyboardButton{}
-		for _, l := range labels {
-			row = append(row, button(l[1], choiceCallback("period_type", l[0])))
-			if len(row) == 2 {
-				rows = append(rows, row)
-				row = []models.InlineKeyboardButton{}
-			}
-		}
-		if len(row) > 0 {
-			rows = append(rows, row)
-		}
-		rows = append(rows, pair(button("取消", cb("dialog", "cancel"))))
-		note := "该服务不是 SIM，只能创建 custom 有效期。"
-		if item.SIMDetails != nil {
-			note = "该服务是 SIM，可选择四种有效期类型。"
-		}
-		w.reply(ctx, "添加有效期到服务 #"+id(item.ID)+" "+item.Name+"\n"+note, rows...)
 	case "period_name":
-		w.reply(ctx, "有效期名称（可选，最多 200 字），可跳过。", navRows(true, true)...)
+		w.reply(ctx, fmt.Sprintf("添加有效期到「%s」· 第 1 步，有效期名称（可选，例如：年付套餐）。", item.Name), optionalNav(true)...)
 	case "period_precision":
-		w.reply(ctx, "截止时间使用哪种精度？\ndate 表示当地日历日结束前有效；datetime 表示精确到时刻且不随用户时区重算。",
-			pair(button("仅日期 date", choiceCallback("precision", "date")), button("日期时间 datetime", choiceCallback("precision", "datetime"))),
-			pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
+		w.reply(ctx, "第 2 步，截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。", pair(
+			button("仅日期", choiceCallback("precision", "date")),
+			button("精确时间", choiceCallback("precision", "datetime")),
+		), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
 	case "period_expires":
-		w.reply(ctx, "请输入截止（"+w.dr.Values["precision"]+"，时区 "+w.user.Timezone+"）。\n"+expirationHelp, navRows(true, false)...)
+		w.reply(ctx, "第 3 步，输入截止（"+w.dr.Values["precision"]+"，时区 "+w.user.Timezone+"）。\n"+expirationHelp, navRows(true, false)...)
 	case "period_starts":
-		w.reply(ctx, "可选：开始时间，使用带 offset 的 RFC3339，且必须早于截止。可跳过。\n示例：2027-01-01T00:00:00+08:00", navRows(true, true)...)
+		w.reply(ctx, "第 4 步，开始时间（可选，带 offset 的 RFC3339，必须早于截止）。\n示例：2027-01-01T00:00:00+08:00", optionalNav(true)...)
+	case "terms_mode":
+		w.reply(ctx, "第 5 步，续费约定（可选，只作记录，不会自动扣款或推算日期）。", pair(
+			button("一次性", choiceCallback("mode", "once")),
+			button("周期性", choiceCallback("mode", "recurring")),
+			button("暂不设置", choiceCallback("mode", "custom")),
+		), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
+	case "terms_interval":
+		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
+	case "terms_amount":
+		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 120000 JPY；金额为最小货币单位整数。\n约定费用不代表已付款。", optionalNav(true)...)
 	case "period_preview":
 		w.reply(ctx, periodAddPreviewText(item, w.dr), pair(button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
 	default:
@@ -560,10 +546,50 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	}
 }
 
+func termsDraft(d draft) service.PeriodTerms {
+	t := service.PeriodTerms{Mode: d.Values["mode"], Revision: 1}
+	if t.Mode == "" {
+		t.Mode = "custom"
+	}
+	if t.Mode == "recurring" {
+		if n, err := strconv.ParseInt(d.Values["interval_count"], 10, 64); err == nil {
+			t.IntervalCount = &n
+		}
+		if unit := d.Values["interval_unit"]; unit != "" {
+			t.IntervalUnit = &unit
+		}
+	}
+	if amount := strings.TrimSpace(d.Values["amount"]); amount != "" {
+		if n, err := strconv.ParseInt(amount, 10, 64); err == nil {
+			t.Amount = &n
+		}
+		currency := strings.ToUpper(strings.TrimSpace(d.Values["currency"]))
+		t.Currency = &currency
+	}
+	return t
+}
+
+func termsFromDraft(d draft) *service.TermsInput {
+	t := termsDraft(d)
+	if t.Mode == "custom" && t.Amount == nil {
+		return nil
+	}
+	return &service.TermsInput{Mode: t.Mode, IntervalCount: t.IntervalCount, IntervalUnit: t.IntervalUnit, Amount: t.Amount, Currency: t.Currency}
+}
+
 func periodAddPreviewText(item service.ServiceItem, d draft) string {
-	name := shown(d, "name")
-	return fmt.Sprintf("请确认新建有效期：\n服务：%s\n类型：%s\n名称：%s\n精度：%s\n截止：%s\n开始：%s\n\n创建后不会自动创建提醒规则；成功后可从结果页添加规则。",
-		item.Name, d.Values["period_type"], name, d.Values["precision"], d.Values["expires_at"], shown(d, "starts_at"))
+	return fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n约定：%s\n\n创建后不会自动创建提醒规则。",
+		item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), d.Values["expires_at"], shown(d, "starts_at"), termsText(termsDraft(d)))
+}
+
+func precisionLabel(value string) string {
+	switch value {
+	case "date":
+		return "仅日期"
+	case "datetime":
+		return "精确时间"
+	}
+	return value
 }
 
 func (w *wizard) textPeriodAdd(ctx context.Context, text string) {
@@ -588,172 +614,21 @@ func (w *wizard) textPeriodAdd(ctx context.Context, text string) {
 				w.stepError(ctx, "开始时间必须是带 offset 的 RFC3339，例如 2027-01-01T00:00:00+08:00。", true, true)
 				return
 			}
-			expires, err := time.Parse(time.RFC3339, w.dr.Values["expires_at"])
-			if w.dr.Values["precision"] == "date" {
-				loc, locErr := time.LoadLocation(w.user.Timezone)
-				if locErr != nil {
-					w.stepError(ctx, "当前时区无效，请先修改时区。", true, true)
-					return
-				}
-				expires, err = time.ParseInLocation("2006-01-02", w.dr.Values["expires_at"], loc)
-			}
+			expires, err := parseExpiryForStarts(w.dr.Values["precision"], w.dr.Values["expires_at"], w.user.Timezone)
 			if err != nil || !at.Before(expires) {
 				w.stepError(ctx, "开始时间必须早于截止时间。", true, true)
 				return
 			}
 		}
 		w.dr.set("starts_at", value)
-	default:
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
-		return
-	}
-	next := nextStep(service.DialogPeriodAdd, w.dr, w.d.Step)
-	if !w.persist(ctx, next) {
-		return
-	}
-	w.render(ctx)
-}
-
-func (w *wizard) confirmPeriodAdd(ctx context.Context) {
-	in := service.PeriodInput{PeriodType: w.dr.Values["period_type"], Name: w.dr.Values["name"],
-		DatePrecision: w.dr.Values["precision"], ExpiresAt: w.dr.Values["expires_at"]}
-	if starts := strings.TrimSpace(w.dr.Values["starts_at"]); starts != "" {
-		in.StartsAt = &starts
-	}
-	p, err := w.h.svc.CreatePeriod(ctx, w.user.ID, *w.d.ServiceID, in)
-	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "创建有效期失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
-		return
-	}
-	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
-		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
-	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, periodDetail(p)+"\n\n未自动创建提醒规则。", markup(
-		pair(button("添加提醒规则", cb("rule", "add", id(p.ID))), button("查看有效期", cb("period", "view", id(p.ID)))),
-		pair(button("查看服务", cb("service", "view", id(p.ServiceID)))),
-	))
-}
-
-// ---- terms edit -----------------------------------------------------------
-
-func (h *Handler) startTermsEdit(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID int64) {
-	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
-	if err != nil {
-		h.send(ctx, b, chatID, "无法编辑条款："+serviceMessage(err))
-		return
-	}
-	if p.Status == "cancelled" {
-		h.send(ctx, b, chatID, "有效期已取消，不能编辑条款。")
-		return
-	}
-	if parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID); err != nil || parent.Status != "active" {
-		h.send(ctx, b, chatID, "服务已归档，请恢复服务后再编辑条款。")
-		return
-	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogTermsEdit, periodID, "terms_edit:"+id(periodID)) {
-		return
-	}
-	cycle, revision := p.Cycle, p.Terms.Revision
-	d := service.Dialog{ServiceID: &p.ServiceID, ValidityPeriodID: &periodID,
-		ExpectedCycle: &cycle, ExpectedTermsRevision: &revision, Step: "terms_mode", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogTermsEdit, d.Step, d)
-	if err != nil {
-		h.send(ctx, b, chatID, "无法开始条款编辑："+serviceMessage(err))
-		return
-	}
-	w := h.wizard(ctx, b, user, start)
-	w.dr.set("mode", p.Terms.Mode)
-	w.persist(ctx, "terms_mode")
-	w.renderTerms(ctx)
-}
-
-func (w *wizard) renderTerms(ctx context.Context) {
-	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.ValidityPeriodID)
-	if err != nil {
-		w.abort(ctx, "有效期已不存在")
-		return
-	}
-	if p.Status == "cancelled" {
-		w.abort(ctx, "有效期已取消")
-		return
-	}
-	// Terms and cycle versions are re-read on every render so a conflict is
-	// surfaced before the user commits, not silently applied to old state.
-	if w.d.Step == "terms_preview" {
-		if w.d.ExpectedCycle == nil || *w.d.ExpectedCycle != p.Cycle || w.d.ExpectedTermsRevision == nil || *w.d.ExpectedTermsRevision != p.Terms.Revision {
-			w.dr.Resume, w.dr.Pending = "", ""
-			w.reply(ctx, "条款或周期已被其他操作更新，本次未写入，草案已保留。\n最新条款："+termsText(p.Terms)+"\n\n可返回修改后重新确认，或发送 /cancel 取消。", navRows(true, false)...)
-			return
-		}
-	}
-	head := "有效期 #" + id(p.ID) + " " + periodName(p) + "\n当前条款：" + termsText(p.Terms) + "\n"
-	switch w.d.Step {
-	case "terms_mode":
-		w.reply(ctx, head+"\n请选择条款模式：\nonce 一次性；recurring 周期重复；custom 自定义/无固定周期。\n修改条款不会改变周期、不会取消提醒任务。",
-			pair(button("once", choiceCallback("mode", "once")), button("recurring", choiceCallback("mode", "recurring")), button("custom", choiceCallback("mode", "custom"))),
-			pair(button("取消", cb("dialog", "cancel"))))
 	case "terms_interval":
-		w.reply(ctx, "请输入 recurring 周期，例如：\n1 month\n2 week\n单位可为 day/week/month/year。", navRows(true, false)...)
-	case "terms_amount":
-		w.reply(ctx, "约定费用（可选）：发送“金额 币种”，例如 2999 USD；金额为最小货币单位整数，币种为三位大写字母。\n约定费用不代表已付款。也可跳过。", navRows(true, true)...)
-	case "terms_preview":
-		w.reply(ctx, termsPreviewText(p, w.dr, w.d), pair(button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
-	default:
-		w.abort(ctx, "条款流程状态无效")
-	}
-}
-
-func termsPreviewText(p service.Period, d draft, dialog service.Dialog) string {
-	t := service.PeriodTerms{Mode: d.Values["mode"]}
-	if t.Mode == "recurring" {
-		fields := strings.Fields(d.Values["interval"])
-		if len(fields) == 2 {
-			if n, err := strconv.ParseInt(fields[0], 10, 64); err == nil {
-				t.IntervalCount = &n
-			}
-			unit := fields[1]
-			t.IntervalUnit = &unit
-		}
-	}
-	if amount := strings.TrimSpace(d.Values["amount"]); amount != "" {
-		if n, err := strconv.ParseInt(amount, 10, 64); err == nil {
-			t.Amount = &n
-		}
-		currency := strings.ToUpper(strings.TrimSpace(d.Values["currency"]))
-		t.Currency = &currency
-	}
-	return fmt.Sprintf("请确认条款（有效期 #%s %s）：\n旧条款：%s\n新条款：%s\n\n保存时使用服务端保存的 cycle=%d、terms revision=%d；若已被其他操作更新会拒绝并保留草稿。\n约定费用不代表已付款。",
-		id(p.ID), periodName(p), termsText(p.Terms), termsText(t), expected(dialog.ExpectedCycle), expected(dialog.ExpectedTermsRevision))
-}
-
-func expected(v *int64) int64 {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
-func (w *wizard) textTerms(ctx context.Context, text string) {
-	value := trimmed(text)
-	switch w.d.Step {
-	case "terms_interval":
-		fields := strings.Fields(value)
-		if len(fields) != 2 {
-			w.stepError(ctx, "请发送“数量 单位”，例如 1 month。", true, false)
+		count, unit, err := parseInterval(value)
+		if err != nil {
+			w.stepError(ctx, err.Error(), true, false)
 			return
 		}
-		n, err := strconv.ParseInt(fields[0], 10, 64)
-		switch fields[1] {
-		case "day", "week", "month", "year":
-		default:
-			w.stepError(ctx, "单位必须是 day、week、month 或 year。", true, false)
-			return
-		}
-		if err != nil || n < 1 {
-			w.stepError(ctx, "数量必须是正整数。", true, false)
-			return
-		}
-		w.dr.set("interval", fields[0]+" "+fields[1])
+		w.dr.set("interval_count", id(count))
+		w.dr.set("interval_unit", unit)
 	case "terms_amount":
 		if value == "" {
 			w.dr.del("amount")
@@ -771,58 +646,281 @@ func (w *wizard) textTerms(ctx context.Context, text string) {
 		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
 		return
 	}
-	next := nextStep(service.DialogTermsEdit, w.dr, w.d.Step)
+	next := nextStep(service.DialogPeriodAdd, w.dr, w.d.Step)
 	if !w.persist(ctx, next) {
 		return
 	}
 	w.render(ctx)
 }
 
-func (w *wizard) confirmTerms(ctx context.Context) {
-	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.ValidityPeriodID)
+func parseExpiryForStarts(precision, value, zone string) (time.Time, error) {
+	if precision == "date" {
+		loc, err := time.LoadLocation(zone)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return time.ParseInLocation("2006-01-02", value, loc)
+	}
+	return time.Parse(time.RFC3339, value)
+}
+
+func parseInterval(value string) (int64, string, error) {
+	fields := strings.Fields(value)
+	if len(fields) != 2 {
+		return 0, "", fail("请发送“数量 单位”，例如 1 month。")
+	}
+	n, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil || n < 1 {
+		return 0, "", fail("数量必须是正整数。")
+	}
+	switch fields[1] {
+	case "day", "week", "month", "year":
+	default:
+		return 0, "", fail("单位必须是 day、week、month 或 year。")
+	}
+	return n, fields[1], nil
+}
+
+func (w *wizard) confirmPeriodAdd(ctx context.Context) {
+	in := service.PeriodInput{Name: w.dr.Values["name"],
+		DatePrecision: w.dr.Values["precision"], ExpiresAt: w.dr.Values["expires_at"]}
+	if starts := strings.TrimSpace(w.dr.Values["starts_at"]); starts != "" {
+		in.StartsAt = &starts
+	}
+	in.Terms = termsFromDraft(w.dr)
+	p, err := w.h.svc.CreatePeriod(ctx, w.user.ID, *w.d.ServiceID, in)
+	if err != nil {
+		w.h.send(ctx, w.b, w.chatID, "创建有效期失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		return
+	}
+	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
+		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
+	}
+	rules, _ := w.h.svc.ListRules(ctx, w.user.ID, p.ID, 0, 1)
+	w.h.sendMarkup(ctx, w.b, w.chatID, periodDetail(p, len(rules.Data)), markup(
+		pair(button("设置提醒", cb("rule", "add", id(p.ID))), button("立即续期", cb("period", "renew", id(p.ID)))),
+		pair(button("查看有效期", cb("period", "view", id(p.ID))), button("返回服务", cb("service", "view", id(p.ServiceID), "0"))),
+	))
+}
+
+// ---- period edit ----------------------------------------------------------
+
+func (h *Handler) startPeriodEdit(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID int64) {
+	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
+	if err != nil {
+		h.send(ctx, b, chatID, "无法编辑有效期："+serviceMessage(err))
+		return
+	}
+	parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID)
+	if err != nil || parent.Status != "active" {
+		h.send(ctx, b, chatID, "服务已归档，请恢复服务后再编辑有效期。")
+		return
+	}
+	if h.conflictTarget(ctx, b, user, chatID, service.DialogPeriodEdit, periodID, service.DialogPeriodEdit+":"+id(periodID)) {
+		return
+	}
+	cycle, revision := p.Cycle, p.Terms.Revision
+	serviceID := p.ServiceID
+	d := service.Dialog{ServiceID: &serviceID, PeriodID: &periodID, ExpectedCycle: &cycle, ExpectedTermsRevision: &revision, Step: "edit_field", Draft: "{}"}
+	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogPeriodEdit, d.Step, d)
+	if err != nil {
+		h.send(ctx, b, chatID, "无法开始编辑有效期："+serviceMessage(err))
+		return
+	}
+	w := h.wizard(ctx, b, user, start)
+	w.renderPeriodEdit(ctx)
+}
+
+func (w *wizard) renderPeriodEdit(ctx context.Context) {
+	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
 	if err != nil {
 		w.abort(ctx, "有效期已不存在")
 		return
 	}
-	if w.d.ExpectedCycle == nil || w.d.ExpectedTermsRevision == nil {
-		w.abort(ctx, "条款对话缺少版本信息")
+	switch w.d.Step {
+	case "edit_field":
+		rows := [][]models.InlineKeyboardButton{
+			pair(button("名称", choiceCallback("pfield", "name")), button("截止", choiceCallback("pfield", "expires"))),
+			pair(button("开始时间", choiceCallback("pfield", "starts")), button("约定条款", choiceCallback("pfield", "terms"))),
+			pair(button("返回有效期", cb("period", "view", id(p.ID))), button("取消", cb("dialog", "cancel"))),
+		}
+		w.reply(ctx, "编辑有效期「"+periodName(p)+"」\n请选择要修改的字段；确认前不会写入。", rows...)
+	case "edit_value":
+		field := w.dr.Values["field"]
+		if field == "name" {
+			w.reply(ctx, "当前名称："+shownValue(p.Name)+"\n请输入新名称；发送空内容表示不设置名称。", navRows(true, false)...)
+		} else {
+			rows := navRows(true, false)
+			if p.StartsAt != nil {
+				rows = append([][]models.InlineKeyboardButton{pair(button("清除开始时间", cb("dialog", "clear_value")))}, rows...)
+			}
+			w.reply(ctx, "当前开始："+startValue(p.StartsAt)+"\n请输入带 offset 的 RFC3339。\n示例：2027-01-01T00:00:00+08:00", rows...)
+		}
+	case "period_precision":
+		w.reply(ctx, "选择新的截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。", pair(
+			button("仅日期", choiceCallback("precision", "date")),
+			button("精确时间", choiceCallback("precision", "datetime")),
+		), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
+	case "period_expires":
+		w.reply(ctx, "当前截止："+periodExpiry(p)+"\n请输入新的截止（"+w.dr.Values["precision"]+"，时区 "+p.Timezone+"）。\n"+expirationHelp, navRows(true, false)...)
+	case "terms_mode":
+		w.reply(ctx, "当前约定："+termsText(p.Terms)+"\n请选择新的条款模式；条款只作记录，不会自动扣款或改变截止。", pair(
+			button("一次性", choiceCallback("mode", "once")),
+			button("周期性", choiceCallback("mode", "recurring")),
+			button("暂不设置", choiceCallback("mode", "custom")),
+		), pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
+	case "terms_interval":
+		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
+	case "terms_amount":
+		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 120000 JPY；发送“无”或跳过表示不记录金额。", optionalNav(true)...)
+	case "edit_preview":
+		w.reply(ctx, periodEditPreviewText(p, w.dr), pair(button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
+	default:
+		w.abort(ctx, "编辑有效期流程状态无效")
+	}
+}
+
+func shownValue(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "（未设置）"
+	}
+	return v
+}
+
+func startValue(v *int64) string {
+	if v == nil {
+		return "（未设置）"
+	}
+	return time.Unix(*v, 0).UTC().Format(time.RFC3339)
+}
+
+func periodEditPreviewText(p service.Period, d draft) string {
+	field := d.Values["field"]
+	old, next := "", ""
+	switch field {
+	case "name":
+		old, next = shownValue(p.Name), shownValue(d.Values["value"])
+	case "starts":
+		old, next = startValue(p.StartsAt), shownValue(d.Values["value"])
+	case "expires":
+		old, next = periodExpiry(p), d.Values["expires_at"]+"（"+precisionLabel(d.Values["precision"])+"）"
+	case "terms":
+		old, next = termsText(p.Terms), termsText(termsDraft(d))
+	}
+	return fmt.Sprintf("请确认修改有效期「%s」：\n字段：%s\n旧值：%s\n新值：%s\n\n保存时会按当前版本校验；若已被其他操作更新会拒绝并保留草稿。",
+		periodName(p), periodFieldLabel(field), old, next)
+}
+
+func periodFieldLabel(field string) string {
+	switch field {
+	case "name":
+		return "名称"
+	case "expires":
+		return "截止"
+	case "starts":
+		return "开始时间"
+	case "terms":
+		return "约定条款"
+	}
+	return field
+}
+
+func (w *wizard) textPeriodEdit(ctx context.Context, text string) {
+	value := trimmed(text)
+	switch w.d.Step {
+	case "edit_value":
+		field := w.dr.Values["field"]
+		if field == "name" {
+			if len([]rune(value)) > 200 {
+				w.stepError(ctx, "名称最多 200 字。", true, false)
+				return
+			}
+		} else if field == "starts" && value != "" {
+			if _, err := time.Parse(time.RFC3339, value); err != nil {
+				w.stepError(ctx, "开始时间必须是带 offset 的 RFC3339，例如 2027-01-01T00:00:00+08:00。", true, false)
+				return
+			}
+		}
+		w.dr.set("value", value)
+	case "period_expires":
+		if err := parsePrecisionValue(w.dr.Values["precision"], value); err != nil {
+			w.stepError(ctx, err.Error(), true, false)
+			return
+		}
+		w.dr.set("expires_at", value)
+	case "terms_interval":
+		count, unit, err := parseInterval(value)
+		if err != nil {
+			w.stepError(ctx, err.Error(), true, false)
+			return
+		}
+		w.dr.set("interval_count", id(count))
+		w.dr.set("interval_unit", unit)
+	case "terms_amount":
+		if value == "" || value == "无" {
+			w.dr.del("amount")
+			w.dr.del("currency")
+			break
+		}
+		amount, currency, err := parseSpaceMoney(value)
+		if err != nil || amount == nil {
+			w.stepError(ctx, "请发送“金额 币种”，例如 2999 USD；金额必须是非负整数。", true, true)
+			return
+		}
+		w.dr.set("amount", strconv.FormatInt(*amount, 10))
+		w.dr.set("currency", *currency)
+	default:
+		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
 		return
 	}
-	if p.Cycle != *w.d.ExpectedCycle || p.Terms.Revision != *w.d.ExpectedTermsRevision {
-		w.h.send(ctx, w.b, w.chatID, "条款或周期已被其他操作更新，本次未写入，草案仍保留。\n最新条款："+termsText(p.Terms)+"\n\n可返回修改后重新确认，或发送 /cancel 取消。")
+	next := nextStep(service.DialogPeriodEdit, w.dr, w.d.Step)
+	if !w.persist(ctx, next) {
 		return
 	}
-	in := service.TermsInput{Mode: w.dr.Values["mode"]}
-	if in.Mode == "recurring" {
-		fields := strings.Fields(w.dr.Values["interval"])
-		if len(fields) != 2 {
-			w.stepError(ctx, "周期信息缺失，请返回修改。", false, false)
-			return
-		}
-		n, err := strconv.ParseInt(fields[0], 10, 64)
-		if err != nil {
-			w.stepError(ctx, "周期数量无效，请返回修改。", false, false)
-			return
-		}
-		unit := fields[1]
-		in.IntervalCount, in.IntervalUnit = &n, &unit
+	w.render(ctx)
+}
+
+func (w *wizard) confirmPeriodEdit(ctx context.Context) {
+	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
+	if err != nil {
+		w.abort(ctx, "有效期已不存在")
+		return
 	}
-	if amount := strings.TrimSpace(w.dr.Values["amount"]); amount != "" {
-		n, err := strconv.ParseInt(amount, 10, 64)
-		if err != nil {
-			w.stepError(ctx, "金额无效，请返回修改。", false, false)
+	if w.d.ExpectedCycle == nil || p.Cycle != *w.d.ExpectedCycle {
+		w.h.send(ctx, w.b, w.chatID, "有效期已被其他操作更新，本次未写入；草稿仍保留。请取消后重新打开有效期查看最新状态。")
+		return
+	}
+	field := w.dr.Values["field"]
+	patch := service.PeriodPatch{ExpectedCycle: *w.d.ExpectedCycle}
+	switch field {
+	case "name":
+		value := w.dr.Values["value"]
+		patch.Name = &value
+	case "starts":
+		patch.StartsAt = service.Optional[string]{Set: true, Value: nullable(w.dr.Values["value"])}
+	case "expires":
+		precision := w.dr.Values["precision"]
+		expires := w.dr.Values["expires_at"]
+		patch.DatePrecision, patch.ExpiresAt = &precision, &expires
+	case "terms":
+		if w.d.ExpectedTermsRevision == nil {
+			w.abort(ctx, "条款对话缺少版本信息")
 			return
 		}
-		currency := strings.ToUpper(strings.TrimSpace(w.dr.Values["currency"]))
-		in.Amount, in.Currency = &n, &currency
+		patch.ExpectedTermsRevision = w.d.ExpectedTermsRevision
+		patch.Terms = service.Optional[service.TermsInput]{Set: true, Value: termsFromDraft(w.dr)}
+		if patch.Terms.Value == nil {
+			patch.Terms.Value = &service.TermsInput{Mode: "custom"}
+		}
+	default:
+		w.stepError(ctx, "未知字段，请重新打开编辑。", false, false)
+		return
 	}
-	patch := service.PeriodPatch{ExpectedCycle: *w.d.ExpectedCycle, ExpectedTermsRevision: w.d.ExpectedTermsRevision,
-		Terms: service.Optional[service.TermsInput]{Set: true, Value: &in}}
 	updated, err := w.h.svc.UpdatePeriod(ctx, w.user.ID, p.ID, patch)
 	if err != nil {
 		hint := "保存失败：" + serviceMessage(err) + "\n草稿仍保留，可返回修改或取消。"
 		if service.Code(err) == "conflict" {
-			hint = "保存失败：条款或周期已被其他操作更新，未写入。\n草稿仍保留；可取消后重新查看最新条款。最新条款：" + termsText(p.Terms)
+			hint = "保存失败：有效期已被其他操作更新，本次未写入。\n草稿仍保留；可取消后重新打开有效期查看最新状态。"
 		}
 		w.h.send(ctx, w.b, w.chatID, hint)
 		return
@@ -830,9 +928,8 @@ func (w *wizard) confirmTerms(ctx context.Context) {
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, periodDetail(updated), markup(
-		pair(button("编辑条款", cb("period", "terms", id(updated.ID))), button("查看有效期", cb("period", "view", id(updated.ID)))),
-	))
+	rules, _ := w.h.svc.ListRules(ctx, w.user.ID, updated.ID, 0, 1)
+	w.h.sendMarkup(ctx, w.b, w.chatID, periodDetail(updated, len(rules.Data)), w.h.periodKeyboard(updated))
 }
 
 // ---- reminder rules -------------------------------------------------------
@@ -843,27 +940,27 @@ func (h *Handler) startRuleAdd(ctx context.Context, b *telegram.Bot, user servic
 		h.send(ctx, b, chatID, "无法添加提醒规则："+serviceMessage(err))
 		return
 	}
-	if p.Status == "cancelled" {
-		h.send(ctx, b, chatID, "有效期已取消，不能添加提醒规则。")
-		return
-	}
-	if parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID); err != nil || parent.Status != "active" {
+	parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID)
+	if err != nil || parent.Status != "active" {
 		h.send(ctx, b, chatID, "服务已归档，请恢复服务后再添加提醒规则。")
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogRuleAdd, periodID, "rule_add:"+id(periodID)) {
+	if h.conflictTarget(ctx, b, user, chatID, service.DialogRuleAdd, periodID, service.DialogRuleAdd+":"+id(periodID)) {
 		return
 	}
-	d := service.Dialog{ServiceID: &p.ServiceID, ValidityPeriodID: &periodID, Step: "rule_days", Draft: "{}"}
+	serviceID := p.ServiceID
+	d := service.Dialog{ServiceID: &serviceID, PeriodID: &periodID, Step: "rule_days", Draft: "{}"}
 	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogRuleAdd, d.Step, d)
 	if err != nil {
 		h.send(ctx, b, chatID, "无法开始提醒规则流程："+serviceMessage(err))
 		return
 	}
-	{
-		w := h.wizard(ctx, b, user, start)
-		w.renderRule(ctx)
+	w := h.wizard(ctx, b, user, start)
+	w.dr.set("enabled", "true")
+	if !w.persist(ctx, "rule_days") {
+		return
 	}
+	w.renderRule(ctx)
 }
 
 func (h *Handler) startRuleEdit(ctx context.Context, b *telegram.Bot, user service.User, chatID, ruleID int64) {
@@ -872,21 +969,21 @@ func (h *Handler) startRuleEdit(ctx context.Context, b *telegram.Bot, user servi
 		h.send(ctx, b, chatID, "无法编辑规则："+serviceMessage(err))
 		return
 	}
-	period, err := h.svc.GetPeriod(ctx, user.ID, r.ValidityPeriodID)
+	p, err := h.svc.GetPeriod(ctx, user.ID, r.PeriodID)
 	if err != nil {
 		h.send(ctx, b, chatID, "无法编辑规则："+serviceMessage(err))
 		return
 	}
-	parent, err := h.svc.GetService(ctx, user.ID, period.ServiceID)
-	if err != nil || period.Status == "cancelled" || parent.Status != "active" {
-		h.send(ctx, b, chatID, "有效期或服务不可编辑，请先恢复服务。")
+	parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID)
+	if err != nil || parent.Status != "active" {
+		h.send(ctx, b, chatID, "服务已归档，请恢复服务后再编辑规则。")
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogRuleEdit, ruleID, "rule_edit:"+id(ruleID)) {
+	if h.conflictTarget(ctx, b, user, chatID, service.DialogRuleEdit, ruleID, service.DialogRuleEdit+":"+id(ruleID)) {
 		return
 	}
 	revision := r.Revision
-	d := service.Dialog{ValidityPeriodID: &r.ValidityPeriodID, RuleID: &ruleID, ExpectedRevision: &revision, Step: "rule_days", Draft: "{}"}
+	d := service.Dialog{ServiceID: &p.ServiceID, PeriodID: &r.PeriodID, RuleID: &ruleID, ExpectedRevision: &revision, Step: "rule_days", Draft: "{}"}
 	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogRuleEdit, d.Step, d)
 	if err != nil {
 		h.send(ctx, b, chatID, "无法开始规则编辑："+serviceMessage(err))
@@ -896,31 +993,29 @@ func (h *Handler) startRuleEdit(ctx context.Context, b *telegram.Bot, user servi
 	w.dr.set("days_before", strconv.Itoa(r.DaysBefore))
 	w.dr.set("reminder_time", r.ReminderTime)
 	w.dr.set("enabled", strconv.FormatBool(r.Enabled))
-	w.persist(ctx, "rule_days")
+	if !w.persist(ctx, "rule_days") {
+		return
+	}
 	w.renderRule(ctx)
 }
 
 func (w *wizard) renderRule(ctx context.Context) {
-	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.ValidityPeriodID)
+	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
 	if err != nil {
 		w.abort(ctx, "有效期已不存在")
 		return
 	}
-	if p.Status == "cancelled" {
-		w.abort(ctx, "有效期已取消")
-		return
-	}
-	head := "有效期 #" + id(p.ID) + " " + periodName(p) + "\n截止：" + periodExpiry(p) + "\n"
+	head := "有效期「" + periodName(p) + "」\n截止：" + periodExpiry(p) + "\n"
 	if w.d.Action == service.DialogRuleEdit && w.d.RuleID != nil {
 		if r, err := w.h.svc.GetRule(ctx, w.user.ID, *w.d.RuleID); err == nil {
-			head += fmt.Sprintf("规则 #%s 当前：提前 %d 天 %s，启用 %t\n", id(r.ID), r.DaysBefore, r.ReminderTime, r.Enabled)
+			head += ruleLinePlain(r) + "\n"
 		}
 	}
 	switch w.d.Step {
 	case "rule_days":
-		w.reply(ctx, head+"\n请输入提前天数（大于等于 0 的整数），例如 7。", navRows(!w.isRuleEditFirst(), false)...)
+		w.reply(ctx, head+"\n请输入提前天数（大于等于 0 的整数），例如 7。", navRows(w.d.Action == service.DialogRuleEdit, false)...)
 	case "rule_time":
-		w.reply(ctx, "请输入提醒时间 HH:MM（24 小时制，用户时区 "+w.user.Timezone+"），例如 09:00。", navRows(true, false)...)
+		w.reply(ctx, "请输入提醒时间 HH:MM（24 小时制，时区 "+w.user.Timezone+"），例如 09:00。", navRows(true, false)...)
 	case "rule_enabled":
 		w.reply(ctx, "是否启用该规则？", pair(button("启用", choiceCallback("enabled", "true")), button("禁用", choiceCallback("enabled", "false"))),
 			pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
@@ -931,15 +1026,16 @@ func (w *wizard) renderRule(ctx context.Context) {
 	}
 }
 
-func (w *wizard) isRuleEditFirst() bool { return w.d.Action == service.DialogRuleEdit }
-
 func rulePreviewText(p service.Period, d draft) string {
-	verb := "新建提醒规则"
-	if d.Values["enabled"] == "false" {
-		verb = "新建提醒规则（禁用状态）"
+	return fmt.Sprintf("请确认提醒规则：\n有效期：%s\n截止：%s\n提前：%s 天\n提醒时间：%s\n启用：%s\n\n保存时由服务层重新校验提醒时间是否早于截止。",
+		periodName(p), periodExpiry(p), d.Values["days_before"], d.Values["reminder_time"], enabledLabel(d.Values["enabled"]))
+}
+
+func enabledLabel(value string) string {
+	if value == "false" {
+		return "否"
 	}
-	return fmt.Sprintf("请确认%s：\n有效期：#%s %s\n截止：%s\n提前：%s 天\n提醒时间：%s\n启用：%s\n\n保存时由服务层重新校验提醒时间是否早于截止。",
-		verb, id(p.ID), periodName(p), periodExpiry(p), d.Values["days_before"], d.Values["reminder_time"], d.Values["enabled"])
+	return "是"
 }
 
 func (w *wizard) textRule(ctx context.Context, text string) {
@@ -948,7 +1044,7 @@ func (w *wizard) textRule(ctx context.Context, text string) {
 	case "rule_days":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 || n > 99999 {
-			w.stepError(ctx, "提前天数必须是 0 到 99999 之间的整数。", !w.isRuleEditFirst(), false)
+			w.stepError(ctx, "提前天数必须是 0 到 99999 之间的整数。", w.d.Action == service.DialogRuleEdit, false)
 			return
 		}
 		w.dr.set("days_before", strconv.Itoa(n))
@@ -970,7 +1066,7 @@ func (w *wizard) textRule(ctx context.Context, text string) {
 }
 
 func (w *wizard) confirmRule(ctx context.Context) {
-	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.ValidityPeriodID)
+	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
 	if err != nil {
 		w.abort(ctx, "有效期已不存在")
 		return
@@ -1011,17 +1107,16 @@ func (w *wizard) finishRule(ctx context.Context, rule service.Rule, label string
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
+	text := label + "\n" + ruleLinePlain(rule)
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("编辑规则", cb("rule", "edit", id(rule.ID))), button("禁用规则", cb("rule", "disable", id(rule.ID)))),
-		pair(button("查看有效期", cb("period", "view", id(rule.ValidityPeriodID)))),
+		pair(button("查看规则", cb("rule", "view", id(rule.ID))), button("编辑规则", cb("rule", "edit", id(rule.ID)))),
+		pair(button("返回规则列表", cb("period", "rules", id(rule.PeriodID), "0"))),
 	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, label+"\n"+ruleLinePlain(rule), markup(rows...))
+	w.h.sendMarkup(ctx, w.b, w.chatID, text, markup(rows...))
 }
 
-// ---- timezone -------------------------------------------------------------
-
 func (h *Handler) startTimezone(ctx context.Context, b *telegram.Bot, user service.User, chatID int64) {
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogTimezone, 0, "timezone") {
+	if h.conflictTarget(ctx, b, user, chatID, service.DialogTimezone, 0, service.DialogTimezone) {
 		return
 	}
 	d := service.Dialog{Step: "tz_value", Draft: "{}"}
@@ -1030,10 +1125,8 @@ func (h *Handler) startTimezone(ctx context.Context, b *telegram.Bot, user servi
 		h.send(ctx, b, chatID, "无法开始修改时区："+serviceMessage(err))
 		return
 	}
-	{
-		w := h.wizard(ctx, b, user, start)
-		w.renderTimezone(ctx)
-	}
+	w := h.wizard(ctx, b, user, start)
+	w.renderTimezone(ctx)
 }
 
 var timezoneSamples = []string{"Asia/Taipei", "Asia/Tokyo", "Asia/Shanghai", "Europe/London", "America/New_York", "UTC"}
@@ -1056,7 +1149,7 @@ func (w *wizard) renderTimezone(ctx context.Context) {
 		rows = append(rows, pair(button("取消", cb("dialog", "cancel"))))
 		w.reply(ctx, "当前时区："+w.user.Timezone+"\n请选择常用时区，或直接发送合法 IANA 名称（例如 Asia/Taipei）。", rows...)
 	case "tz_preview":
-		w.reply(ctx, fmt.Sprintf("请确认修改时区：\n旧时区：%s\n新时区：%s\n\ndate 精度的截止日期会按新时区重算当地日历日结束；datetime 的绝对时刻保持不变。修改时区会推进相关有效期版本并取消未完成提醒任务。",
+		w.reply(ctx, fmt.Sprintf("请确认修改时区：\n旧时区：%s\n新时区：%s\n\n仅日期截止会按新时区重算当地日历日结束；精确时间保持绝对时刻。相关有效期会推进版本并取消未完成提醒任务。",
 			w.user.Timezone, w.dr.Values["tz"]), pair(button("确认修改", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
 	default:
 		w.abort(ctx, "时区流程状态无效")
@@ -1094,6 +1187,6 @@ func (w *wizard) confirmTimezone(ctx context.Context) {
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, "时区已更新为 "+user.Timezone+"。\ndate 精度的截止日期已按新时区重算，datetime 的绝对时刻不变。",
+	w.h.sendMarkup(ctx, w.b, w.chatID, "时区已更新为 "+user.Timezone+"。\n仅日期截止已按新时区重算，精确时间的绝对时刻不变。",
 		markup(pair(button("返回设置", cb("settings", "view")))))
 }

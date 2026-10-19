@@ -15,7 +15,7 @@ const (
 	DialogServiceAdd  = "service_add"
 	DialogServiceEdit = "service_edit"
 	DialogPeriodAdd   = "period_add"
-	DialogTermsEdit   = "terms_edit"
+	DialogPeriodEdit  = "period_edit"
 	DialogRuleAdd     = "rule_add"
 	DialogRuleEdit    = "rule_edit"
 	DialogTimezone    = "timezone"
@@ -28,11 +28,11 @@ const (
 
 var dialogActions = map[string]bool{
 	DialogRenew: true, DialogServiceAdd: true, DialogServiceEdit: true,
-	DialogPeriodAdd: true, DialogTermsEdit: true, DialogRuleAdd: true,
+	DialogPeriodAdd: true, DialogPeriodEdit: true, DialogRuleAdd: true,
 	DialogRuleEdit: true, DialogTimezone: true,
 }
 
-const dialogColumns = `d.user_id,d.chat_id,d.action,d.step,d.draft_json,d.service_id,d.validity_period_id,d.rule_id,d.expected_cycle,d.expected_terms_revision,d.expected_revision,d.expires_at,d.created_at`
+const dialogColumns = `d.user_id,d.chat_id,d.action,d.step,d.draft_json,d.service_id,d.period_id,d.rule_id,d.expected_cycle,d.expected_terms_revision,d.expected_revision,d.expires_at,d.created_at`
 
 // validDialogDraft rejects oversized or non-JSON drafts before they reach the
 // database. Drafts may contain user notes or SIM identifiers, so callers must
@@ -57,7 +57,7 @@ func scanDialog(row scanner) (Dialog, error) {
 		return d, e
 	}
 	d.ServiceID = nullableID(serviceID)
-	d.ValidityPeriodID = nullableID(periodID)
+	d.PeriodID = nullableID(periodID)
 	d.RuleID = nullableID(ruleID)
 	d.ExpectedCycle = nullableID(cycle)
 	d.ExpectedTermsRevision = nullableID(termsRevision)
@@ -72,10 +72,10 @@ func (s *Service) getDialog(ctx context.Context, q queryer, uid int64) (Dialog, 
 	d, e := scanDialog(q.QueryRowContext(ctx, `SELECT `+dialogColumns+`
         FROM bot_dialogs d
         LEFT JOIN service_items s1 ON s1.id=d.service_id
-        LEFT JOIN validity_periods p ON p.id=d.validity_period_id
+        LEFT JOIN service_periods p ON p.id=d.period_id
         LEFT JOIN service_items s2 ON s2.id=p.service_id
         LEFT JOIN reminder_rules r ON r.id=d.rule_id
-        LEFT JOIN validity_periods p2 ON p2.id=r.validity_period_id
+        LEFT JOIN service_periods p2 ON p2.id=r.period_id
         LEFT JOIN service_items s3 ON s3.id=p2.service_id
         WHERE d.user_id=? AND COALESCE(s1.user_id,s2.user_id,s3.user_id,?)=?`, uid, uid, uid))
 	if e != nil {
@@ -102,12 +102,12 @@ func (s *Service) validateDialogTargets(ctx context.Context, q queryer, uid int6
 		if e != nil {
 			return e
 		}
-		if d.ValidityPeriodID != nil && r.ValidityPeriodID != *d.ValidityPeriodID {
+		if d.PeriodID != nil && r.PeriodID != *d.PeriodID {
 			return ErrNotFound
 		}
 	}
-	if d.ValidityPeriodID != nil {
-		p, e := s.getPeriod(ctx, q, uid, *d.ValidityPeriodID)
+	if d.PeriodID != nil {
+		p, e := s.getPeriod(ctx, q, uid, *d.PeriodID)
 		if e != nil {
 			return e
 		}
@@ -125,7 +125,7 @@ func (s *Service) validateDialogTargets(ctx context.Context, q queryer, uid int6
 
 func sameDialogTarget(a, b Dialog) bool {
 	return a.Action == b.Action && equalPtr(a.ServiceID, b.ServiceID) &&
-		equalPtr(a.ValidityPeriodID, b.ValidityPeriodID) && equalPtr(a.RuleID, b.RuleID)
+		equalPtr(a.PeriodID, b.PeriodID) && equalPtr(a.RuleID, b.RuleID)
 }
 
 func validDialogStep(step string) bool {
@@ -220,12 +220,12 @@ func (s *Service) CancelDialog(ctx context.Context, uid int64) (bool, error) {
 // deletes; this covers state transitions such as archiving a service.
 func (s *Service) CancelDialogsForTarget(ctx context.Context, tx *sql.Tx, uid, serviceID, periodID, ruleID int64) error {
 	if serviceID > 0 {
-		if _, e := tx.ExecContext(ctx, "DELETE FROM bot_dialogs WHERE user_id=? AND (service_id=? OR validity_period_id IN (SELECT id FROM validity_periods WHERE service_id=?))", uid, serviceID, serviceID); e != nil {
+		if _, e := tx.ExecContext(ctx, "DELETE FROM bot_dialogs WHERE user_id=? AND (service_id=? OR period_id IN (SELECT id FROM service_periods WHERE service_id=?))", uid, serviceID, serviceID); e != nil {
 			return e
 		}
 	}
 	if periodID > 0 {
-		if _, e := tx.ExecContext(ctx, "DELETE FROM bot_dialogs WHERE user_id=? AND validity_period_id=?", uid, periodID); e != nil {
+		if _, e := tx.ExecContext(ctx, "DELETE FROM bot_dialogs WHERE user_id=? AND period_id=?", uid, periodID); e != nil {
 			return e
 		}
 	}
@@ -254,17 +254,17 @@ func (s *Service) startRenewTarget(ctx context.Context, tx *sql.Tx, uid, periodI
 	if e != nil {
 		return Dialog{}, e
 	}
-	if p.Status == "cancelled" || parent.Status != "active" {
+	if parent.Status != "active" {
 		return Dialog{}, ErrConflict
 	}
 	cycle := p.Cycle
 	serviceID := p.ServiceID
-	d := Dialog{ServiceID: &serviceID, ValidityPeriodID: &periodID, ExpectedCycle: &cycle}
-	return s.startDialogTx(ctx, tx, uid, chatID, DialogRenew, "renew_choose_precision", d)
+	d := Dialog{ServiceID: &serviceID, PeriodID: &periodID, ExpectedCycle: &cycle}
+	return s.startDialogTx(ctx, tx, uid, chatID, DialogRenew, "renew_precision", d)
 }
 
 // StartPeriodRenewDialog is the direct service entry used by the period detail
-// button and /renew <period_id>.
+// renew button and reminder result actions.
 func (s *Service) StartPeriodRenewDialog(ctx context.Context, uid, periodID, chatID int64) (Dialog, error) {
 	var out Dialog
 	e := s.transaction(ctx, uid, func(tx *sql.Tx) error {
@@ -302,10 +302,10 @@ func (s *Service) startDialogTx(ctx context.Context, tx *sql.Tx, uid, chatID int
 	now := s.now().Unix()
 	d.ExpiresAt = now + dialogTTL
 	d.CreatedAt = now
-	_, e = tx.ExecContext(ctx, `INSERT INTO bot_dialogs(user_id,chat_id,action,step,draft_json,service_id,validity_period_id,rule_id,expected_cycle,expected_terms_revision,expected_revision,expires_at,created_at)
+	_, e = tx.ExecContext(ctx, `INSERT INTO bot_dialogs(user_id,chat_id,action,step,draft_json,service_id,period_id,rule_id,expected_cycle,expected_terms_revision,expected_revision,expires_at,created_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(user_id) DO UPDATE SET chat_id=excluded.chat_id,action=excluded.action,step=excluded.step,draft_json=excluded.draft_json,service_id=excluded.service_id,validity_period_id=excluded.validity_period_id,rule_id=excluded.rule_id,expected_cycle=excluded.expected_cycle,expected_terms_revision=excluded.expected_terms_revision,expected_revision=excluded.expected_revision,expires_at=excluded.expires_at,created_at=excluded.created_at`,
-		uid, chatID, action, step, d.Draft, d.ServiceID, d.ValidityPeriodID, d.RuleID, d.ExpectedCycle, d.ExpectedTermsRevision, d.ExpectedRevision, d.ExpiresAt, now)
+        ON CONFLICT(user_id) DO UPDATE SET chat_id=excluded.chat_id,action=excluded.action,step=excluded.step,draft_json=excluded.draft_json,service_id=excluded.service_id,period_id=excluded.period_id,rule_id=excluded.rule_id,expected_cycle=excluded.expected_cycle,expected_terms_revision=excluded.expected_terms_revision,expected_revision=excluded.expected_revision,expires_at=excluded.expires_at,created_at=excluded.created_at`,
+		uid, chatID, action, step, d.Draft, d.ServiceID, d.PeriodID, d.RuleID, d.ExpectedCycle, d.ExpectedTermsRevision, d.ExpectedRevision, d.ExpiresAt, now)
 	if e != nil {
 		return Dialog{}, e
 	}
@@ -323,12 +323,12 @@ func (s *Service) RenewFromDialog(ctx context.Context, uid int64, in RenewInput)
 		if e != nil {
 			return e
 		}
-		if d.Action != DialogRenew || d.ValidityPeriodID == nil || d.ExpectedCycle == nil {
+		if d.Action != DialogRenew || d.PeriodID == nil || d.ExpectedCycle == nil {
 			return ErrConflict
 		}
 		// Re-check the parent inside the committing transaction: the service
 		// may have been archived after the preview was rendered.
-		p, e := s.getPeriod(ctx, tx, uid, *d.ValidityPeriodID)
+		p, e := s.getPeriod(ctx, tx, uid, *d.PeriodID)
 		if e != nil {
 			return e
 		}
@@ -340,7 +340,7 @@ func (s *Service) RenewFromDialog(ctx context.Context, uid int64, in RenewInput)
 			return ErrConflict
 		}
 		in.ExpectedCycle = *d.ExpectedCycle
-		out, e = s.renew(ctx, tx, uid, *d.ValidityPeriodID, in)
+		out, e = s.renew(ctx, tx, uid, *d.PeriodID, in)
 		if e != nil {
 			return e
 		}

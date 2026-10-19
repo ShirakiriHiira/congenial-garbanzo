@@ -101,7 +101,7 @@ func TestResourceLifecycle(t *testing.T) {
 	if patched["notes"] != nil || patched["provider"] != "carrier" {
 		t.Fatalf("null/absent patch=%v", patched)
 	}
-	period := data(t, request(t, h, "POST", "/api/v1/services/"+sid+"/periods", `{"period_type":"custom","name":"number","date_precision":"date","expires_at":"2027-01-31"}`, 101, 201))
+	period := data(t, request(t, h, "POST", "/api/v1/services/"+sid+"/periods", `{"name":"number","date_precision":"date","expires_at":"2027-01-31"}`, 101, 201))
 	pid := period["id"].(string)
 	if period["expires_at"] != "2027-01-31T16:00:00Z" || period["local_expires_date"] != "2027-01-31" {
 		t.Fatalf("expiration=%v", period)
@@ -118,7 +118,7 @@ func TestResourceLifecycle(t *testing.T) {
 	request(t, h, "GET", "/api/v1/services/"+sid+"/periods", "", 101, 200)
 	request(t, h, "GET", "/api/v1/periods/"+pid+"/rules", "", 101, 200)
 
-	result, err := st.DB.Exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,1,2,1,1801411200,'pending',1,1,1)`, pid, rid)
+	result, err := st.DB.Exec(`INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,1,2,1,1801411200,'pending',1,1,1)`, pid, rid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +147,8 @@ func TestResourceLifecycle(t *testing.T) {
 	request(t, h, "DELETE", "/api/v1/rules/"+rid+"?expected_revision=2", "", 101, 204)
 	request(t, h, "DELETE", "/api/v1/periods/"+pid+"?expected_cycle=2", "", 101, 204)
 	request(t, h, "DELETE", "/api/v1/services/"+sid, "", 101, 204)
-	request(t, h, "PATCH", "/api/v1/services/"+sid, `{"status":"active"}`, 101, 200)
-	request(t, h, "PATCH", "/api/v1/me", `{"timezone":"UTC"}`, 101, 200)
+	request(t, h, "GET", "/api/v1/services/"+sid, "", 101, 404)
+	request(t, h, "PATCH", "/api/v1/services/"+sid, `{"status":"active"}`, 101, 404)
 }
 func TestAuthenticationOwnershipAndErrors(t *testing.T) {
 	h, _, _ := setupAPI(t)
@@ -254,7 +254,7 @@ func TestNestedOwnershipAndPagination(t *testing.T) {
 	}
 	var first service.Period
 	for i := range 11 {
-		p, err := s.CreatePeriod(ctx, u.ID, sim.ID, service.PeriodInput{Name: "period", PeriodType: "custom", DatePrecision: "date", ExpiresAt: "2028-01-31"})
+		p, err := s.CreatePeriod(ctx, u.ID, sim.ID, service.PeriodInput{Name: "period", DatePrecision: "date", ExpiresAt: "2028-01-31"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -310,7 +310,7 @@ func TestNestedOwnershipAndPagination(t *testing.T) {
 	request(t, h, "GET", "/api/v1/periods/"+identifier(first.ID), "", 202, 404)
 	request(t, h, "GET", "/api/v1/rules/"+identifier(firstRule.ID), "", 202, 404)
 	request(t, h, "POST", "/api/v1/periods/"+identifier(first.ID)+"/renewals", `{"expected_cycle":12,"date_precision":"date","expires_at":"2030-01-31"}`, 202, 404)
-	result, err := st.DB.Exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,12,1,1,1906502400,'pending',1,1,1)`, first.ID, firstRule.ID)
+	result, err := st.DB.Exec(`INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,12,1,1,1906502400,'pending',1,1,1)`, first.ID, firstRule.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

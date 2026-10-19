@@ -93,15 +93,13 @@ func (h *Handler) apiMux() *http.ServeMux {
 	add("POST /services", h.createService)
 	add("GET /services/{id}", h.getService)
 	add("PATCH /services/{id}", h.patchService)
-	add("DELETE /services/{id}", h.archiveService)
-	add("POST /services/{id}/delete", h.deleteService)
+	add("DELETE /services/{id}", h.deleteService)
 	add("GET /services/{id}/periods", h.listServicePeriods)
 	add("POST /services/{id}/periods", h.createServicePeriod)
 
 	add("GET /periods/{id}", h.getPeriod)
 	add("PATCH /periods/{id}", h.patchPeriod)
-	add("DELETE /periods/{id}", h.cancelPeriod)
-	add("POST /periods/{id}/delete", h.deletePeriod)
+	add("DELETE /periods/{id}", h.deletePeriod)
 	add("GET /periods/{id}/rules", h.listRules)
 	add("POST /periods/{id}/rules", h.createRule)
 	add("GET /periods/{id}/renewals", h.listRenewals)
@@ -109,8 +107,7 @@ func (h *Handler) apiMux() *http.ServeMux {
 
 	add("GET /rules/{id}", h.getRule)
 	add("PATCH /rules/{id}", h.patchRule)
-	add("DELETE /rules/{id}", h.disableRule)
-	add("POST /rules/{id}/delete", h.deleteRule)
+	add("DELETE /rules/{id}", h.deleteRule)
 
 	add("GET /reminders", h.listReminders)
 	add("GET /reminders/{id}", h.getReminder)

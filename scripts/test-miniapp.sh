@@ -37,6 +37,13 @@ command -v npm >/dev/null || {
   exit 1
 }
 
+for port in 8088 5180; do
+  if ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":$port$"; then
+    echo "error: port $port is already in use; stop the existing process first" >&2
+    exit 1
+  fi
+done
+
 run_dir="$(mktemp -d "${TMPDIR:-/tmp}/miniapp-test-launcher.XXXXXX")"
 api_pid=""
 vite_pid=""

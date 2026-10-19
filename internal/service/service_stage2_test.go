@@ -32,7 +32,7 @@ func stageTwoService(t *testing.T, s *Service, uid, category int64, name string)
 
 func stageTwoPeriod(t *testing.T, s *Service, uid, serviceID int64, date string, terms *TermsInput) Period {
 	t.Helper()
-	p, err := s.CreatePeriod(context.Background(), uid, serviceID, PeriodInput{PeriodType: "custom", DatePrecision: "date", ExpiresAt: date, Terms: terms})
+	p, err := s.CreatePeriod(context.Background(), uid, serviceID, PeriodInput{DatePrecision: "date", ExpiresAt: date, Terms: terms})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,8 @@ func TestGenericServicesMixedCategoriesAndFilters(t *testing.T) {
 	if _, err = s.CreateCategory(ctx, a.ID, custom.Name); err != ErrConflict {
 		t.Fatalf("duplicate category: %v", err)
 	}
-	if err = s.ArchiveService(ctx, a.ID, dom.ID); err != nil {
+	status := "archived"
+	if _, err = s.UpdateService(ctx, a.ID, dom.ID, ServicePatch{Status: &status}); err != nil {
 		t.Fatal(err)
 	}
 	if page, err := s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{Status: "due_soon"}); err != nil || len(page.Data) != 0 {
@@ -174,26 +175,39 @@ func TestServiceSearchEscapingAndFilterPagination(t *testing.T) {
 		t.Fatalf("invalid cursor: %v", err)
 	}
 }
-
 func TestServiceOverviewPrimaryAndCalendarFiltering(t *testing.T) {
 	s, st, a, _ := setup(t)
 	ctx := context.Background()
 	category := stageTwoCategory(t, st, "domain")
 	service := stageTwoService(t, s, a.ID, category, "primary selection")
-	old := stageTwoPeriod(t, s, a.ID, service.ID, "2026-12-01", nil)
-	stageTwoPeriod(t, s, a.ID, service.ID, "2027-03-01", nil)
-	tie := stageTwoPeriod(t, s, a.ID, service.ID, "2026-12-01", &TermsInput{Mode: "once"})
-	cancelled := stageTwoPeriod(t, s, a.ID, service.ID, "2026-11-01", nil)
-	if err := s.CancelPeriod(ctx, a.ID, cancelled.ID, cancelled.Cycle); err != nil {
-		t.Fatal(err)
-	}
-	overview, err := s.ServiceOverview(ctx, a.ID, 0, 1, ServiceFilter{CategoryID: &category, Status: "expired"})
+	stageTwoPeriod(t, s, a.ID, service.ID, "2026-12-01", nil)
+	future := stageTwoPeriod(t, s, a.ID, service.ID, "2027-03-01", nil)
+	stageTwoPeriod(t, s, a.ID, service.ID, "2026-12-01", &TermsInput{Mode: "once"})
+	expiredService := stageTwoService(t, s, a.ID, category, "expired selection")
+	stageTwoPeriod(t, s, a.ID, expiredService.ID, "2026-10-01", nil)
+	stageTwoPeriod(t, s, a.ID, expiredService.ID, "2026-12-01", nil)
+	expiredTie := stageTwoPeriod(t, s, a.ID, expiredService.ID, "2026-12-01", nil)
+	s.now = func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }
+	overview, err := s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{CategoryID: &category, Status: "expired"})
 	if err != nil || overview.Counts != (OverviewCounts{Total: 1, Expired: 1}) || len(overview.Items.Data) != 1 {
 		t.Fatalf("overview %+v %v", overview, err)
 	}
 	p := overview.Items.Data[0].PrimaryPeriod
-	if p == nil || p.ID != tie.ID || p.ID == old.ID || p.ServiceID != service.ID || p.SIMID != nil || p.Terms.Mode != "once" || p.Status != "expired" {
+	if p == nil || p.ID != expiredTie.ID || p.ServiceID != expiredService.ID || p.Terms.Mode != "custom" || p.Status != "expired" {
 		t.Fatalf("primary %+v", p)
+	}
+	activeOverview, err := s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{CategoryID: &category, Status: "active"})
+	if err != nil || len(activeOverview.Items.Data) != 2 {
+		t.Fatalf("active overview %+v %v", activeOverview, err)
+	}
+	found := false
+	for _, item := range activeOverview.Items.Data {
+		if item.Service.ID == service.ID && item.PrimaryPeriod != nil && item.PrimaryPeriod.ID == future.ID && item.PrimaryPeriod.Status == "active" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("earliest unexpired period was not primary: %+v", activeOverview)
 	}
 	if _, err = s.SetTimezone(ctx, a.ID, "America/New_York"); err != nil {
 		t.Fatal(err)
@@ -216,7 +230,7 @@ func TestPeriodTermsVersioningAndJobPreservation(t *testing.T) {
 	count, amount, currency, unit := int64(1), int64(0), "TWD", "month"
 	terms := TermsInput{Mode: "recurring", IntervalCount: &count, IntervalUnit: &unit, Amount: &amount, Currency: &currency}
 	p := stageTwoPeriod(t, s, a.ID, parent.ID, "2027-02-01", &terms)
-	if p.Terms.Revision != 1 || p.Terms.Amount == nil || *p.Terms.Amount != 0 || p.SIMID != nil {
+	if p.Terms.Revision != 1 || p.Terms.Amount == nil || *p.Terms.Amount != 0 {
 		t.Fatalf("create terms %+v", p)
 	}
 	var jobs []Job
@@ -225,7 +239,7 @@ func TestPeriodTermsVersioningAndJobPreservation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		res, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,locked_until,attempt_token,last_error_code,created_at,updated_at) VALUES(?,?,1,1,1,?,?,3,9,10,'fenced-token','permanent',1,1)`, p.ID, rule.ID, p.ExpiresAt, state)
+		res, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,locked_until,attempt_token,last_error_code,created_at,updated_at) VALUES(?,?,1,1,1,?,?,3,9,10,'fenced-token','permanent',1,1)`, p.ID, rule.ID, p.ExpiresAt, state)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -271,14 +285,14 @@ func TestPeriodTermsVersioningAndJobPreservation(t *testing.T) {
 		t.Fatalf("reset %+v %v", got, err)
 	}
 	var rows, storedRevision int
-	if err = st.DB.QueryRowContext(ctx, "SELECT count(*),revision FROM period_terms WHERE validity_period_id=?", p.ID).Scan(&rows, &storedRevision); err != nil || rows != 1 || storedRevision != 3 {
+	if err = st.DB.QueryRowContext(ctx, "SELECT count(*),revision FROM period_terms WHERE period_id=?", p.ID).Scan(&rows, &storedRevision); err != nil || rows != 1 || storedRevision != 3 {
 		t.Fatalf("reset row count=%d revision=%d err=%v", rows, storedRevision, err)
 	}
 	plain := stageTwoPeriod(t, s, a.ID, parent.ID, "2027-02-01", nil)
 	if plain.Terms.Revision != 1 || plain.Terms.Mode != "custom" {
 		t.Fatalf("normalized default %+v", plain.Terms)
 	}
-	if err = st.DB.QueryRowContext(ctx, "SELECT count(*) FROM period_terms WHERE validity_period_id=?", plain.ID).Scan(&rows); err != nil || rows != 0 {
+	if err = st.DB.QueryRowContext(ctx, "SELECT count(*) FROM period_terms WHERE period_id=?", plain.ID).Scan(&rows); err != nil || rows != 1 {
 		t.Fatalf("default row count=%d err=%v", rows, err)
 	}
 	one := int64(1)
@@ -306,7 +320,7 @@ func TestPeriodTermsAtomicityValidationAndLifecycle(t *testing.T) {
 		{Mode: "once", Amount: &negative, Currency: &currency},
 		{Mode: "once", Amount: &one, Currency: &lower},
 	} {
-		_, err := s.CreatePeriod(ctx, a.ID, parent.ID, PeriodInput{PeriodType: "custom", DatePrecision: "date", ExpiresAt: "2027-02-01", Terms: &terms})
+		_, err := s.CreatePeriod(ctx, a.ID, parent.ID, PeriodInput{DatePrecision: "date", ExpiresAt: "2027-02-01", Terms: &terms})
 		if err != ErrInvalid {
 			t.Fatalf("invalid terms %+v: %v", terms, err)
 		}
@@ -318,7 +332,7 @@ func TestPeriodTermsAtomicityValidationAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,1,1,1,?,'pending',5,1,1)`, p.ID, rule.ID, p.ExpiresAt); err != nil {
+	if _, err = st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,1,1,1,?,'pending',5,1,1)`, p.ID, rule.ID, p.ExpiresAt); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = st.DB.ExecContext(ctx, `CREATE TRIGGER reject_terms_insert BEFORE INSERT ON period_terms BEGIN SELECT RAISE(ABORT,'terms failure'); END`); err != nil {
@@ -337,14 +351,14 @@ func TestPeriodTermsAtomicityValidationAndLifecycle(t *testing.T) {
 		t.Fatalf("rollback period %+v %v", current, err)
 	}
 	var state string
-	if err = st.DB.QueryRowContext(ctx, "SELECT status FROM reminder_jobs WHERE validity_period_id=?", p.ID).Scan(&state); err != nil || state != "pending" {
+	if err = st.DB.QueryRowContext(ctx, "SELECT status FROM reminder_jobs WHERE period_id=?", p.ID).Scan(&state); err != nil || state != "pending" {
 		t.Fatalf("rollback job %s %v", state, err)
 	}
-	if _, err = s.CreatePeriod(ctx, a.ID, parent.ID, PeriodInput{PeriodType: "custom", DatePrecision: "date", ExpiresAt: "2027-02-01", Terms: &terms}); err != ErrUnavailable {
+	if _, err = s.CreatePeriod(ctx, a.ID, parent.ID, PeriodInput{DatePrecision: "date", ExpiresAt: "2027-02-01", Terms: &terms}); err != ErrUnavailable {
 		t.Fatalf("create atomicity failure: %v", err)
 	}
 	var count int
-	if err = st.DB.QueryRowContext(ctx, "SELECT count(*) FROM validity_periods WHERE service_id=?", parent.ID).Scan(&count); err != nil || count != 1 {
+	if err = st.DB.QueryRowContext(ctx, "SELECT count(*) FROM service_periods WHERE service_id=?", parent.ID).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("create rollback count=%d err=%v", count, err)
 	}
 	if _, err = st.DB.ExecContext(ctx, "DROP TRIGGER reject_terms_insert"); err != nil {
@@ -357,7 +371,7 @@ func TestPeriodTermsAtomicityValidationAndLifecycle(t *testing.T) {
 	if err != nil || updated.Cycle != 2 || updated.Terms.Revision != 2 || updated.Terms.Mode != "custom" {
 		t.Fatalf("combined update %+v %v", updated, err)
 	}
-	if err = st.DB.QueryRowContext(ctx, "SELECT status FROM reminder_jobs WHERE validity_period_id=?", p.ID).Scan(&state); err != nil || state != "cancelled" {
+	if err = st.DB.QueryRowContext(ctx, "SELECT status FROM reminder_jobs WHERE period_id=?", p.ID).Scan(&state); err != nil || state != "cancelled" {
 		t.Fatalf("expiry job cancellation %s %v", state, err)
 	}
 	preserved := stageTwoPeriod(t, s, a.ID, parent.ID, "2027-02-01", &terms)
@@ -371,14 +385,10 @@ func TestPeriodTermsAtomicityValidationAndLifecycle(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(current.Terms, preserved.Terms) {
 		t.Fatalf("renew/timezone terms %+v %v", current, err)
 	}
-	if err = s.CancelPeriod(ctx, a.ID, current.ID, current.Cycle); err != nil {
+	if err = s.DeletePeriod(ctx, a.ID, current.ID, current.Cycle); err != nil {
 		t.Fatal(err)
 	}
-	current, err = s.GetPeriod(ctx, a.ID, preserved.ID)
-	if err != nil || !reflect.DeepEqual(current.Terms, preserved.Terms) || current.Status != "cancelled" {
-		t.Fatalf("cancel terms %+v %v", current, err)
-	}
-	if _, err = s.CreatePeriod(ctx, a.ID, parent.ID, PeriodInput{PeriodType: "number_validity", DatePrecision: "date", ExpiresAt: "2027-05-01"}); err != ErrInvalid {
-		t.Fatalf("generic SIM-specific period: %v", err)
+	if _, err = s.GetPeriod(ctx, a.ID, preserved.ID); err != ErrNotFound {
+		t.Fatalf("deleted period remains: %v", err)
 	}
 }

@@ -176,26 +176,26 @@ func seedSIMs(ctx context.Context, svc *service.Service, uid int64, now time.Tim
 		{
 			name: "日常主卡 · SIM", cardType: "physical_sim", operator: "測試電信", region: "台灣",
 			periods: []service.PeriodInput{
-				{PeriodType: "number_validity", Name: "門號效期", DatePrecision: "date", ExpiresAt: now.AddDate(0, 0, 60).Format(time.DateOnly)},
-				{PeriodType: "plan_validity", Name: "", DatePrecision: "datetime", ExpiresAt: now.Add(72*time.Hour + 17*time.Second).Format(time.RFC3339)},
+				{Name: "門號效期", DatePrecision: "date", ExpiresAt: now.AddDate(0, 0, 60).Format(time.DateOnly)},
+				{Name: "", DatePrecision: "datetime", ExpiresAt: now.Add(72*time.Hour + 17*time.Second).Format(time.RFC3339)},
 			},
 		},
 		{
 			name: "旅行流量 · eSIM", cardType: "esim", operator: "Demo Mobile", region: "日本",
 			periods: []service.PeriodInput{
-				{PeriodType: "data_package_validity", Name: "即將到期的流量包", DatePrecision: "datetime", ExpiresAt: now.Add(36*time.Hour + 43*time.Second).Format(time.RFC3339)},
+				{Name: "即將到期的流量包", DatePrecision: "datetime", ExpiresAt: now.Add(36*time.Hour + 43*time.Second).Format(time.RFC3339)},
 			},
 		},
 		{
 			name: "已過期測試卡", cardType: "physical_sim", operator: "Demo Mobile", region: "香港",
 			periods: []service.PeriodInput{
-				{PeriodType: "number_validity", Name: "", DatePrecision: "datetime", ExpiresAt: now.Add(-48*time.Hour - 29*time.Second).Format(time.RFC3339)},
+				{Name: "", DatePrecision: "datetime", ExpiresAt: now.Add(-48*time.Hour - 29*time.Second).Format(time.RFC3339)},
 			},
 		},
 		{
 			name: "封存備用 · eSIM", cardType: "esim", operator: "測試電信", region: "新加坡", archived: true,
 			periods: []service.PeriodInput{
-				{PeriodType: "custom", Name: "封存測試效期", DatePrecision: "date", ExpiresAt: now.AddDate(0, 0, 90).Format(time.DateOnly)},
+				{Name: "封存測試效期", DatePrecision: "date", ExpiresAt: now.AddDate(0, 0, 90).Format(time.DateOnly)},
 			},
 		},
 	}
@@ -251,7 +251,7 @@ func seedServices(ctx context.Context, svc *service.Service, uid int64, now time
 		return err
 	}
 	vpsPeriod, err := svc.CreatePeriod(ctx, uid, vps.ID, service.PeriodInput{
-		PeriodType: "custom", Name: "主機租期", DatePrecision: "date",
+		Name: "主機租期", DatePrecision: "date",
 		ExpiresAt: now.AddDate(0, 0, 45).Format(time.DateOnly),
 		Terms:     recurringTerms(1, "month", 4800, "USD"),
 	})
@@ -274,7 +274,7 @@ func seedServices(ctx context.Context, svc *service.Service, uid int64, now time
 		return err
 	}
 	annual, err := svc.CreatePeriod(ctx, uid, subscription.ID, service.PeriodInput{
-		PeriodType: "custom", Name: "年度授權", DatePrecision: "date",
+		Name: "年度授權", DatePrecision: "date",
 		ExpiresAt: now.AddDate(0, 0, 10).Format(time.DateOnly),
 		Terms:     onceTerms(19900, "USD"),
 	})
@@ -295,7 +295,7 @@ func seedServices(ctx context.Context, svc *service.Service, uid int64, now time
 		return err
 	}
 	quota, err := svc.CreatePeriod(ctx, uid, subscription.ID, service.PeriodInput{
-		PeriodType: "custom", Name: "月度點數加購", DatePrecision: "date",
+		Name: "月度點數加購", DatePrecision: "date",
 		ExpiresAt: now.AddDate(0, 0, 25).Format(time.DateOnly),
 		Terms:     recurringTerms(1, "month", 500, "USD"),
 	})
@@ -318,7 +318,7 @@ func seedServices(ctx context.Context, svc *service.Service, uid int64, now time
 		return err
 	}
 	domainPeriod, err := svc.CreatePeriod(ctx, uid, domain.ID, service.PeriodInput{
-		PeriodType: "custom", Name: "網域註冊", DatePrecision: "date",
+		Name: "網域註冊", DatePrecision: "date",
 		ExpiresAt: now.AddDate(0, 0, 200).Format(time.DateOnly),
 		Terms:     onceTerms(1500, "USD"),
 	})
@@ -341,7 +341,7 @@ func seedServices(ctx context.Context, svc *service.Service, uid int64, now time
 		return err
 	}
 	homePeriod, err := svc.CreatePeriod(ctx, uid, home.ID, service.PeriodInput{
-		PeriodType: "custom", Name: "硬體保養週期", DatePrecision: "date",
+		Name: "硬體保養週期", DatePrecision: "date",
 		ExpiresAt: now.AddDate(0, 0, 120).Format(time.DateOnly),
 		Terms:     recurringTerms(1, "year", 0, "TWD"),
 	})

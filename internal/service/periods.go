@@ -4,65 +4,38 @@ import (
 	"context"
 	"database/sql"
 	"strings"
-	"telegram.bot.remind/internal/domain"
 	"time"
+
+	"telegram.bot.remind/internal/domain"
 )
 
-const periodColumns = `p.id,p.service_id,p.period_type,p.name,p.starts_at,p.expires_at,p.date_precision,p.local_expires_date,p.timezone,p.status,p.cycle,p.created_at,p.updated_at,d.service_id,t.mode,t.interval_count,t.interval_unit,t.amount,t.currency,t.revision`
-const periodJoins = ` FROM validity_periods p JOIN service_items s ON s.id=p.service_id LEFT JOIN sim_details d ON d.service_id=p.service_id LEFT JOIN period_terms t ON t.validity_period_id=p.id `
+const periodColumns = `p.id,p.service_id,p.name,p.starts_at,p.expires_at,p.date_precision,p.local_expires_date,p.timezone,p.cycle,p.created_at,p.updated_at,t.mode,t.interval_count,t.interval_unit,t.amount,t.currency,t.revision`
+const periodJoins = ` FROM service_periods p JOIN service_items s ON s.id=p.service_id JOIN period_terms t ON t.period_id=p.id `
 
 type periodRow struct {
-	value    Period
-	simID    sql.NullInt64
-	mode     sql.NullString
-	count    sql.NullInt64
-	unit     sql.NullString
-	amount   sql.NullInt64
-	currency sql.NullString
-	revision sql.NullInt64
+	value Period
 }
 
 func (r *periodRow) args() []any {
-	return []any{&r.value.ID, &r.value.ServiceID, &r.value.PeriodType, &r.value.Name, &r.value.StartsAt, &r.value.ExpiresAt,
-		&r.value.DatePrecision, &r.value.LocalExpiresDate, &r.value.Timezone, &r.value.Status, &r.value.Cycle,
-		&r.value.CreatedAt, &r.value.UpdatedAt, &r.simID, &r.mode, &r.count, &r.unit, &r.amount, &r.currency, &r.revision}
+	return []any{&r.value.ID, &r.value.ServiceID, &r.value.Name, &r.value.StartsAt, &r.value.ExpiresAt,
+		&r.value.DatePrecision, &r.value.LocalExpiresDate, &r.value.Timezone, &r.value.Cycle,
+		&r.value.CreatedAt, &r.value.UpdatedAt, &r.value.Terms.Mode, &r.value.Terms.IntervalCount,
+		&r.value.Terms.IntervalUnit, &r.value.Terms.Amount, &r.value.Terms.Currency, &r.value.Terms.Revision}
 }
 
-func (r *periodRow) normalized() Period {
-	if r.simID.Valid {
-		id := r.simID.Int64
-		r.value.SIMID = &id
-	}
-	r.value.Terms = PeriodTerms{Mode: "custom", Revision: 1}
-	if r.mode.Valid {
-		r.value.Terms.Mode = r.mode.String
-		r.value.Terms.Revision = r.revision.Int64
-		if r.count.Valid {
-			n := r.count.Int64
-			r.value.Terms.IntervalCount = &n
-		}
-		if r.unit.Valid {
-			v := r.unit.String
-			r.value.Terms.IntervalUnit = &v
-		}
-		if r.amount.Valid {
-			n := r.amount.Int64
-			r.value.Terms.Amount = &n
-		}
-		if r.currency.Valid {
-			v := r.currency.String
-			r.value.Terms.Currency = &v
-		}
-	}
+// normalized derives the only status source from the current clock. There is
+// no persisted status column and no cancelled state.
+func (r *periodRow) normalized(now int64) Period {
+	r.value.Status = status(r.value.ExpiresAt, now)
 	return r.value
 }
 
-func scanPeriod(row scanner) (Period, error) {
+func scanPeriod(row scanner, now int64) (Period, error) {
 	var r periodRow
 	if err := row.Scan(r.args()...); err != nil {
 		return Period{}, err
 	}
-	return r.normalized(), nil
+	return r.normalized(now), nil
 }
 
 func (s *Service) getPeriod(ctx context.Context, q queryer, uid, id int64) (Period, error) {
@@ -71,11 +44,7 @@ func (s *Service) getPeriod(ctx context.Context, q queryer, uid, id int64) (Peri
 	if err != nil {
 		return Period{}, dbError(err)
 	}
-	v := r.normalized()
-	if v.Status != "cancelled" {
-		v.Status = status(v.ExpiresAt, s.now().Unix())
-	}
-	return v, nil
+	return r.normalized(s.now().Unix()), nil
 }
 
 func expiration(v Period) domain.Expiration {
@@ -92,16 +61,10 @@ func applyExpiration(v *Period, precision, value string) error {
 	return nil
 }
 func periodValid(v Period) bool {
-	if !text(v.Name, 200, false) || (v.StartsAt != nil && *v.StartsAt >= v.ExpiresAt) {
-		return false
-	}
-	if v.SIMID == nil && v.PeriodType != "custom" {
-		return false
-	}
-	return v.PeriodType == "number_validity" || v.PeriodType == "plan_validity" || v.PeriodType == "data_package_validity" || v.PeriodType == "custom"
+	return text(v.Name, 200, false) && (v.StartsAt == nil || *v.StartsAt < v.ExpiresAt)
 }
 func validateRules(ctx context.Context, tx *sql.Tx, v Period) error {
-	rows, e := tx.QueryContext(ctx, "SELECT days_before,reminder_time FROM reminder_rules WHERE validity_period_id=? AND enabled=1", v.ID)
+	rows, e := tx.QueryContext(ctx, "SELECT days_before,reminder_time FROM reminder_rules WHERE period_id=? AND enabled=1", v.ID)
 	if e != nil {
 		return e
 	}
@@ -165,7 +128,7 @@ func sameTerms(a, b PeriodTerms) bool {
 }
 
 func savePeriodTerms(ctx context.Context, tx *sql.Tx, periodID int64, t PeriodTerms) error {
-	r, err := tx.ExecContext(ctx, `UPDATE period_terms SET mode=?,interval_count=?,interval_unit=?,amount=?,currency=?,revision=? WHERE validity_period_id=?`, t.Mode, t.IntervalCount, t.IntervalUnit, t.Amount, t.Currency, t.Revision, periodID)
+	r, err := tx.ExecContext(ctx, `UPDATE period_terms SET mode=?,interval_count=?,interval_unit=?,amount=?,currency=?,revision=? WHERE period_id=?`, t.Mode, t.IntervalCount, t.IntervalUnit, t.Amount, t.Currency, t.Revision, periodID)
 	if err != nil {
 		return err
 	}
@@ -173,11 +136,15 @@ func savePeriodTerms(ctx context.Context, tx *sql.Tx, periodID int64, t PeriodTe
 	if err != nil || n > 0 {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO period_terms(validity_period_id,mode,interval_count,interval_unit,amount,currency,revision) VALUES(?,?,?,?,?,?,?)`, periodID, t.Mode, t.IntervalCount, t.IntervalUnit, t.Amount, t.Currency, t.Revision)
+	_, err = tx.ExecContext(ctx, `INSERT INTO period_terms(period_id,mode,interval_count,interval_unit,amount,currency,revision) VALUES(?,?,?,?,?,?,?)`, periodID, t.Mode, t.IntervalCount, t.IntervalUnit, t.Amount, t.Currency, t.Revision)
 	return err
 }
 func (s *Service) CreatePeriod(ctx context.Context, uid, serviceID int64, in PeriodInput) (Period, error) {
-	v := Period{ServiceID: serviceID, PeriodType: in.PeriodType, Name: strings.TrimSpace(in.Name), Cycle: 1, CreatedAt: s.now().Unix(), UpdatedAt: s.now().Unix(), Terms: defaultTerms()}
+	now := s.now().Unix()
+	v := Period{ServiceID: serviceID, Name: strings.TrimSpace(in.Name), Cycle: 1, CreatedAt: now, UpdatedAt: now, Terms: defaultTerms()}
+	if in.Terms != nil {
+		v.Terms = termsInputValue(*in.Terms)
+	}
 	err := s.transaction(ctx, uid, func(tx *sql.Tx) error {
 		parent, err := getServiceItem(ctx, tx, uid, serviceID)
 		if err != nil {
@@ -186,19 +153,8 @@ func (s *Service) CreatePeriod(ctx context.Context, uid, serviceID int64, in Per
 		if parent.Status != "active" {
 			return ErrConflict
 		}
-		var terms *PeriodTerms
-		if in.Terms != nil {
-			t := termsInputValue(*in.Terms)
-			if !validPeriodTerms(t) {
-				return ErrInvalid
-			}
-			if !sameTerms(t, defaultTerms()) {
-				terms = &t
-			}
-		}
-		if parent.SIMDetails != nil {
-			id := serviceID
-			v.SIMID = &id
+		if !validPeriodTerms(v.Terms) {
+			return ErrInvalid
 		}
 		if err = tx.QueryRowContext(ctx, "SELECT timezone FROM users WHERE id=?", uid).Scan(&v.Timezone); err != nil {
 			return err
@@ -217,8 +173,7 @@ func (s *Service) CreatePeriod(ctx context.Context, uid, serviceID int64, in Per
 		if !periodValid(v) {
 			return ErrInvalid
 		}
-		v.Status = status(v.ExpiresAt, s.now().Unix())
-		r, err := tx.ExecContext(ctx, `INSERT INTO validity_periods(service_id,period_type,name,starts_at,expires_at,date_precision,local_expires_date,timezone,status,cycle,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, v.ServiceID, v.PeriodType, v.Name, v.StartsAt, v.ExpiresAt, v.DatePrecision, v.LocalExpiresDate, v.Timezone, v.Status, v.Cycle, v.CreatedAt, v.UpdatedAt)
+		r, err := tx.ExecContext(ctx, `INSERT INTO service_periods(service_id,name,starts_at,expires_at,date_precision,local_expires_date,timezone,cycle,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, v.ServiceID, v.Name, v.StartsAt, v.ExpiresAt, v.DatePrecision, v.LocalExpiresDate, v.Timezone, v.Cycle, v.CreatedAt, v.UpdatedAt)
 		if err != nil {
 			return err
 		}
@@ -226,11 +181,11 @@ func (s *Service) CreatePeriod(ctx context.Context, uid, serviceID int64, in Per
 		if err != nil {
 			return err
 		}
-		if terms == nil {
-			return nil
+		if err = savePeriodTerms(ctx, tx, v.ID, v.Terms); err != nil {
+			return err
 		}
-		v.Terms = *terms
-		return savePeriodTerms(ctx, tx, v.ID, v.Terms)
+		v.Status = status(v.ExpiresAt, now)
+		return nil
 	})
 	return v, err
 }
@@ -248,25 +203,23 @@ func (s *Service) ListPeriods(ctx context.Context, uid, serviceID, after int64, 
 	if _, err := s.GetService(ctx, uid, serviceID); err != nil {
 		return out, err
 	}
+	now := s.now().Unix()
 	rows, err := s.store.DB.QueryContext(ctx, "SELECT "+periodColumns+periodJoins+"WHERE s.user_id=? AND p.service_id=? AND p.id>? ORDER BY p.id LIMIT ?", uid, serviceID, after, limit+1)
 	if err != nil {
 		return out, ErrUnavailable
 	}
 	defer rows.Close()
 	for rows.Next() {
-		v, err := scanPeriod(rows)
+		v, err := scanPeriod(rows, now)
 		if err != nil {
 			return out, ErrUnavailable
-		}
-		if v.Status != "cancelled" {
-			v.Status = status(v.ExpiresAt, s.now().Unix())
 		}
 		out.Data = append(out.Data, v)
 	}
 	return finishPage(out.Data, limit, func(v Period) int64 { return v.ID }), dbError(rows.Err())
 }
 func savePeriod(ctx context.Context, tx *sql.Tx, v Period) error {
-	_, err := tx.ExecContext(ctx, `UPDATE validity_periods SET period_type=?,name=?,starts_at=?,expires_at=?,date_precision=?,local_expires_date=?,timezone=?,status=?,cycle=?,updated_at=? WHERE id=?`, v.PeriodType, v.Name, v.StartsAt, v.ExpiresAt, v.DatePrecision, v.LocalExpiresDate, v.Timezone, v.Status, v.Cycle, v.UpdatedAt, v.ID)
+	_, err := tx.ExecContext(ctx, `UPDATE service_periods SET name=?,starts_at=?,expires_at=?,date_precision=?,local_expires_date=?,timezone=?,cycle=?,updated_at=? WHERE id=?`, v.Name, v.StartsAt, v.ExpiresAt, v.DatePrecision, v.LocalExpiresDate, v.Timezone, v.Cycle, v.UpdatedAt, v.ID)
 	return err
 }
 func (s *Service) UpdatePeriod(ctx context.Context, uid, id int64, in PeriodPatch) (Period, error) {
@@ -277,7 +230,7 @@ func (s *Service) UpdatePeriod(ctx context.Context, uid, id int64, in PeriodPatc
 		if err != nil {
 			return err
 		}
-		if v.Status == "cancelled" || v.Cycle != in.ExpectedCycle {
+		if v.Cycle != in.ExpectedCycle {
 			return ErrConflict
 		}
 		if in.Terms.Set != (in.ExpectedTermsRevision != nil) ||
@@ -300,9 +253,6 @@ func (s *Service) UpdatePeriod(ctx context.Context, uid, id int64, in PeriodPatc
 		}
 		if in.Name != nil {
 			v.Name = strings.TrimSpace(*in.Name)
-		}
-		if in.PeriodType != nil {
-			v.PeriodType = *in.PeriodType
 		}
 		beforeExpiresAt, beforePrecision := v.ExpiresAt, v.DatePrecision
 		changed := in.ExpiresAt != nil || in.DatePrecision != nil
@@ -359,31 +309,9 @@ func (s *Service) UpdatePeriod(ctx context.Context, uid, id int64, in PeriodPatc
 	})
 	return v, err
 }
-func (s *Service) CancelPeriod(ctx context.Context, uid, id, expected int64) error {
-	return s.transaction(ctx, uid, func(tx *sql.Tx) error {
-		v, err := s.getPeriod(ctx, tx, uid, id)
-		if err != nil {
-			return err
-		}
-		if v.Cycle != expected {
-			return ErrConflict
-		}
-		if v.Status == "cancelled" {
-			return nil
-		}
-		v.Status = "cancelled"
-		v.UpdatedAt = s.now().Unix()
-		if err = savePeriod(ctx, tx, v); err != nil {
-			return err
-		}
-		if err = s.CancelDialogsForTarget(ctx, tx, uid, 0, id, 0); err != nil {
-			return err
-		}
-		return cancelJobs(ctx, tx, id, nil, v.UpdatedAt)
-	})
-}
 
-// DeletePeriod permanently removes a period and its rules, jobs and history.
+// DeletePeriod permanently removes a period and its terms, rules, jobs and
+// renewal history through foreign-key cascades.
 func (s *Service) DeletePeriod(ctx context.Context, uid, id, expected int64) error {
 	return s.transaction(ctx, uid, func(tx *sql.Tx) error {
 		v, err := s.getPeriod(ctx, tx, uid, id)
@@ -393,7 +321,7 @@ func (s *Service) DeletePeriod(ctx context.Context, uid, id, expected int64) err
 		if v.Cycle != expected {
 			return ErrConflict
 		}
-		_, err = tx.ExecContext(ctx, "DELETE FROM validity_periods WHERE id=? AND cycle=?", id, expected)
+		_, err = tx.ExecContext(ctx, "DELETE FROM service_periods WHERE id=? AND cycle=?", id, expected)
 		return err
 	})
 }
@@ -412,13 +340,13 @@ func (s *Service) SetTimezone(ctx context.Context, uid int64, zone string) (User
 		if old == zone {
 			return nil
 		}
-		rows, err := tx.QueryContext(ctx, "SELECT "+periodColumns+periodJoins+"WHERE s.user_id=? AND p.status!='cancelled'", uid)
+		rows, err := tx.QueryContext(ctx, "SELECT "+periodColumns+periodJoins+"WHERE s.user_id=?", uid)
 		if err != nil {
 			return err
 		}
 		var periods []Period
 		for rows.Next() {
-			v, e := scanPeriod(rows)
+			v, e := scanPeriod(rows, s.now().Unix())
 			if e != nil {
 				rows.Close()
 				return e

@@ -19,10 +19,16 @@ type OverviewCounts struct {
 	NoPeriod int
 }
 
+// The primary period is the earliest unexpired period; when every period has
+// expired, the most recently expired one is used. Equal cutoffs prefer the
+// highest ID, so deleting a period never leaves a stale primary behind.
 const primaryPeriodSQL = `(
-    SELECT p2.id FROM validity_periods p2
-    WHERE p2.service_id = s.id AND p2.status != 'cancelled'
-    ORDER BY p2.expires_at, p2.id DESC LIMIT 1
+    SELECT p2.id FROM service_periods p2
+    WHERE p2.service_id = s.id
+    ORDER BY (p2.expires_at <= ?),
+             CASE WHEN p2.expires_at > ? THEN p2.expires_at ELSE -p2.expires_at END,
+             p2.id DESC
+    LIMIT 1
 )`
 
 // Service filters share the primary-period definition with the service
@@ -135,7 +141,7 @@ func (p primaryState) matches(filter string) bool {
 }
 
 const servicePrimaryColumns = serviceColumns + `,p.id,p.expires_at,p.date_precision,p.local_expires_date`
-const servicePrimaryJoins = ` FROM service_items s LEFT JOIN sim_details d ON d.service_id=s.id LEFT JOIN validity_periods p ON p.id=` + primaryPeriodSQL
+const servicePrimaryJoins = ` FROM service_items s LEFT JOIN sim_details d ON d.service_id=s.id LEFT JOIN service_periods p ON p.id=` + primaryPeriodSQL
 
 func (s *Service) ListServices(ctx context.Context, uid, after int64, limit int, filter ServiceFilter) (Page[ServiceItem], error) {
 	out := Page[ServiceItem]{Data: []ServiceItem{}}
@@ -153,6 +159,7 @@ func (s *Service) ListServices(ctx context.Context, uid, after int64, limit int,
 	defer tx.Rollback()
 	now := s.now()
 	query := "SELECT " + servicePrimaryColumns + servicePrimaryJoins + where + " AND s.id>? ORDER BY s.id"
+	args = append([]any{now.Unix(), now.Unix()}, args...)
 	args = append(args, after)
 	switch selectedStatus {
 	case "due_soon", "expired", "no_period":
@@ -206,6 +213,7 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 	}
 	defer tx.Rollback()
 	now := s.now()
+	args = append([]any{now.Unix(), now.Unix()}, args...)
 	rows, err := tx.QueryContext(ctx, "SELECT "+servicePrimaryColumns+servicePrimaryJoins+where+" ORDER BY s.id", args...)
 	if err != nil {
 		return out, dbError(err)
@@ -262,11 +270,10 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 			byService[out.Items.Data[i].Service.ID] = i
 		}
 		for rows.Next() {
-			p, err := scanPeriod(rows)
+			p, err := scanPeriod(rows, now.Unix())
 			if err != nil {
 				return out, dbError(err)
 			}
-			p.Status = status(p.ExpiresAt, now.Unix())
 			i, ok := byService[p.ServiceID]
 			if !ok {
 				return out, ErrUnavailable

@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"telegram.bot.remind/internal/service"
 
 	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
+
+const expiredButtonMessage = "按钮已过期，请发送 /services 重新打开"
 
 // handleCallback treats the callback payload as untrusted input. It answers
 // every query exactly once, including unauthorized, stale, and malformed ones.
@@ -23,17 +26,21 @@ func (h *Handler) handleCallback(ctx context.Context, b *telegram.Bot, cq *model
 			h.logger.Warn("telegram callback answer failed", "code", "telegram_error")
 		}
 	}()
-	v2, ok := parseCallbackV2(cq.Data)
+	v3, ok := parseCallbackV3(cq.Data)
 	if !ok {
-		answer = "未知操作"
+		if strings.HasPrefix(cq.Data, "v2:") {
+			answer = expiredButtonMessage
+		} else {
+			answer = "未知操作"
+		}
 		return
 	}
-	answer = h.handleCallbackV2(ctx, b, cq, v2)
+	answer = h.handleCallbackV3(ctx, b, cq, v3)
 }
 
-// callbackV2Identity applies the transport and allowlist checks shared by all
-// v2 payloads, then authenticates the sender's private chat.
-func (h *Handler) callbackV2Identity(ctx context.Context, cq *models.CallbackQuery) (service.User, models.Message, string) {
+// callbackIdentity applies the transport and allowlist checks shared by all
+// v3 payloads, then authenticates the sender's private chat.
+func (h *Handler) callbackIdentity(ctx context.Context, cq *models.CallbackQuery) (service.User, models.Message, string) {
 	if cq.Message.Message == nil {
 		return service.User{}, models.Message{}, "请在私聊中使用"
 	}
@@ -52,32 +59,32 @@ func (h *Handler) callbackV2Identity(ctx context.Context, cq *models.CallbackQue
 	return user, *msg, ""
 }
 
-func (h *Handler) handleCallbackV2(ctx context.Context, b *telegram.Bot, cq *models.CallbackQuery, v2 callbackV2) string {
-	user, msg, failure := h.callbackV2Identity(ctx, cq)
+func (h *Handler) handleCallbackV3(ctx context.Context, b *telegram.Bot, cq *models.CallbackQuery, v3 callbackV3) string {
+	user, msg, failure := h.callbackIdentity(ctx, cq)
 	if failure != "" {
 		return failure
 	}
 	chatID := msg.Chat.ID
-	switch v2.scope {
+	switch v3.scope {
 	case "dialog":
-		return h.dialogCallback(ctx, b, user, chatID, v2)
+		return h.dialogCallback(ctx, b, user, chatID, v3)
 	case "service":
-		return h.serviceCallback(ctx, b, user, chatID, v2)
+		return h.serviceCallback(ctx, b, user, chatID, v3)
 	case "period":
-		return h.periodCallback(ctx, b, user, chatID, v2)
+		return h.periodCallback(ctx, b, user, chatID, v3)
 	case "rule":
-		return h.ruleCallback(ctx, b, user, chatID, v2)
+		return h.ruleCallback(ctx, b, user, chatID, v3)
 	case "job":
-		return h.jobCallback(ctx, b, user, chatID, v2)
+		return h.jobCallback(ctx, b, user, chatID, v3)
 	case "settings":
-		return h.settingsCallback(ctx, b, user, chatID, v2)
+		return h.settingsCallback(ctx, b, user, chatID, v3)
 	default:
 		return "未知操作"
 	}
 }
 
-func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v2 callbackV2) string {
-	switch v2.action {
+func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v3 callbackV3) string {
+	switch v3.action {
 	case "cancel":
 		if removed, err := h.svc.CancelDialog(ctx, user.ID); err != nil {
 			return serviceMessage(err)
@@ -89,7 +96,7 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 	case "new_service":
 		h.startServiceAdd(ctx, b, user, chatID)
 		return "请选择类别"
-	case "confirm", "keep", "replace", "back", "skip", "set", "change_field":
+	case "resume", "confirm", "keep", "replace", "back", "skip", "skip_rest", "set", "change_field", "new_category", "use_convention", "clear_value":
 	default:
 		return "未知操作"
 	}
@@ -104,8 +111,8 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 		return "当前流程已在其他会话中开始；请先发送 /cancel 取消"
 	}
 	w := h.wizard(ctx, b, user, d)
-	w.nav(ctx, v2.action, v2.args)
-	switch v2.action {
+	w.nav(ctx, v3.action, v3.args)
+	switch v3.action {
 	case "confirm":
 		if _, err := h.svc.GetDialog(ctx, user.ID); err == nil {
 			return "请按提示完成当前步骤"
@@ -113,350 +120,298 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 		return "已提交"
 	case "replace":
 		return "已切换流程"
+	case "resume":
+		return "已继续当前流程"
 	default:
 		return "已更新"
 	}
 }
 
-func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v2 callbackV2) string {
-	if v2.action == "list" {
-		after := int64(0)
-		if len(v2.args) > 0 {
-			var ok bool
-			if after, ok = callbackID(v2.args, 0); !ok {
+func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v3 callbackV3) string {
+	switch v3.action {
+	case "list":
+		code, category, after := "1", int64(0), int64(0)
+		if len(v3.args) > 0 {
+			code = v3.args[0]
+			if _, ok := serviceFilterFromCode(code); !ok {
 				return "未知操作"
 			}
 		}
-		text, page, err := h.serviceListPage(ctx, user.ID, after)
-		if err != nil {
-			return serviceMessage(err)
+		if len(v3.args) > 1 {
+			var ok bool
+			if category, ok = callbackID(v3.args, 1); !ok {
+				return "未知操作"
+			}
 		}
-		rows := [][]models.InlineKeyboardButton{}
-		for _, item := range page.Data {
-			rows = append(rows, pair(
-				button(item.Name, cb("service", "view", id(item.ID))),
-				button("编辑", cb("service", "edit", id(item.ID))),
-				button("归档", cb("service", "archive_ask", id(item.ID))),
-			))
+		if len(v3.args) > 2 {
+			var ok bool
+			if after, ok = callbackID(v3.args, 2); !ok {
+				return "未知操作"
+			}
 		}
-		if page.NextCursor != nil {
-			rows = append(rows, pair(button("下一页", cb("service", "list", id(*page.NextCursor)))))
+		status, _ := serviceFilterFromCode(code)
+		filter := service.ServiceFilter{Status: status}
+		if category > 0 {
+			filter.CategoryID = &category
 		}
-		rows = append(rows, pair(button("添加服务", cb("dialog", "new_service")), button("设置", cb("settings", "view"))))
-		h.sendMarkup(ctx, b, chatID, text, markup(rows...))
+		h.showOverview(ctx, b, user.ID, chatID, filter, after)
 		return "服务列表已发送"
+	case "cats":
+		code := "1"
+		if len(v3.args) > 0 {
+			code = v3.args[0]
+		}
+		h.showCategories(ctx, b, user.ID, chatID, code)
+		return "请选择类别"
 	}
-	serviceID, ok := callbackID(v2.args, 0)
+	serviceID, ok := callbackID(v3.args, 0)
 	if !ok {
 		return "未知操作"
 	}
-	switch v2.action {
+	item, err := h.svc.GetService(ctx, user.ID, serviceID)
+	if err != nil {
+		return objectStateMessage(err)
+	}
+	switch v3.action {
 	case "view":
-		item, err := h.svc.GetService(ctx, user.ID, serviceID)
-		if err != nil {
-			return objectStateMessage(err)
-		}
 		after := int64(0)
-		if len(v2.args) > 1 {
-			if after, ok = callbackID(v2.args, 1); !ok {
+		if len(v3.args) > 1 {
+			if after, ok = callbackID(v3.args, 1); !ok {
 				return "未知操作"
 			}
 		}
-		text, page, err := h.serviceDetailPage(ctx, user.ID, item, after)
-		if err != nil {
-			return serviceMessage(err)
-		}
-		h.sendMarkup(ctx, b, chatID, text, h.serviceKeyboard(item, &page))
+		h.showServiceDetail(ctx, b, user, chatID, serviceID, after)
 		return "详情已发送"
-	case "periods":
-		item, err := h.svc.GetService(ctx, user.ID, serviceID)
-		if err != nil {
-			return objectStateMessage(err)
-		}
-		after := int64(0)
-		if len(v2.args) > 1 {
-			if after, ok = callbackID(v2.args, 1); !ok {
-				return "未知操作"
-			}
-		}
-		text, page, err := h.periodsPage(ctx, user.ID, item, after)
-		if err != nil {
-			return serviceMessage(err)
-		}
-		rows := [][]models.InlineKeyboardButton{}
-		for _, p := range page.Data {
-			rows = append(rows, pair(button(periodLabel(p), cb("period", "view", id(p.ID)))))
-		}
-		if page.NextCursor != nil {
-			rows = append(rows, pair(button("下一页", cb("service", "periods", id(item.ID), id(*page.NextCursor)))))
-		}
-		rows = append(rows, pair(button("添加有效期", cb("period", "add", id(item.ID))), button("返回服务", cb("service", "view", id(item.ID)))))
-		h.sendMarkup(ctx, b, chatID, text, markup(rows...))
-		return "有效期已发送"
 	case "edit":
 		h.startServiceEdit(ctx, b, user, chatID, serviceID)
 		return "请选择要修改的字段"
 	case "archive_ask":
-		item, err := h.svc.GetService(ctx, user.ID, serviceID)
-		if err != nil {
-			return objectStateMessage(err)
-		}
 		if item.Status == "archived" {
-			h.send(ctx, b, chatID, "服务 #"+id(item.ID)+" 已经是归档状态。\n恢复后可继续管理与编辑。")
 			return "服务已归档"
 		}
-		h.sendMarkup(ctx, b, chatID, "归档服务 #"+id(item.ID)+" "+item.Name+"？\n归档会保留有效期、续期历史与已发送记录，停止未完成的提醒任务；之后可恢复。",
-			markup(pair(button("确认归档", cb("service", "archive", id(item.ID))), button("返回服务", cb("service", "view", id(item.ID))))))
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("归档服务「%s」？\n归档会保留有效期、续期历史与已发送记录，停止未完成的提醒任务；之后可恢复。", item.Name),
+			markup(pair(button("确认归档", cb("service", "archive", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0")))))
 		return "请确认归档"
 	case "archive":
-		item, err := h.svc.GetService(ctx, user.ID, serviceID)
-		if err != nil {
-			return objectStateMessage(err)
+		if item.Status != "archived" {
+			status := "archived"
+			if _, err := h.svc.UpdateService(ctx, user.ID, serviceID, service.ServicePatch{Status: &status}); err != nil {
+				return objectStateMessage(err)
+			}
 		}
-		if item.Status == "archived" {
-			h.send(ctx, b, chatID, "服务 #"+id(item.ID)+" 已经是归档状态，未重复修改。")
-			return "服务已归档"
-		}
-		if err := h.svc.ArchiveService(ctx, user.ID, serviceID); err != nil {
-			return objectStateMessage(err)
-		}
-		item, err = h.svc.GetService(ctx, user.ID, serviceID)
-		if err != nil {
-			return "服务已归档"
-		}
-		text, page, err := h.serviceDetailPage(ctx, user.ID, item, 0)
-		if err != nil {
-			return "服务已归档"
-		}
-		h.sendMarkup(ctx, b, chatID, text, h.serviceKeyboard(item, &page))
+		h.showServiceDetail(ctx, b, user, chatID, serviceID, 0)
 		return "服务已归档"
+	case "restore_ask":
+		if item.Status == "active" {
+			return "服务已是可用状态"
+		}
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("恢复服务「%s」？\n恢复后有效期会推进版本，旧的按钮与草稿失效；历史与已发送记录保留。", item.Name),
+			markup(pair(button("确认恢复", cb("service", "restore", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0")))))
+		return "请确认恢复"
 	case "restore":
-		status := "active"
-		item, err := h.svc.UpdateService(ctx, user.ID, serviceID, service.ServicePatch{Status: &status})
-		if err != nil {
+		if item.Status != "active" {
+			status := "active"
+			if _, err := h.svc.UpdateService(ctx, user.ID, serviceID, service.ServicePatch{Status: &status}); err != nil {
+				return objectStateMessage(err)
+			}
+		}
+		h.showServiceDetail(ctx, b, user, chatID, serviceID, 0)
+		return "服务已恢复"
+	case "delete_ask":
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("永久删除服务「%s」？\n将同时永久删除它的全部有效期、提醒规则、提醒任务与续期历史，无法恢复。", item.Name),
+			markup(pair(button("确认永久删除", cb("service", "delete", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0")))))
+		return "请确认删除"
+	case "delete":
+		if err := h.svc.DeleteService(ctx, user.ID, serviceID); err != nil {
 			return objectStateMessage(err)
 		}
-		text, page, err := h.serviceDetailPage(ctx, user.ID, item, 0)
-		if err != nil {
-			return "服务已恢复"
-		}
-		h.sendMarkup(ctx, b, chatID, text, h.serviceKeyboard(item, &page))
-		return "服务已恢复"
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("服务「%s」已永久删除。", item.Name), markup(pair(button("返回服务列表", cb("service", "list", "1", "0", "0")))))
+		return "服务已删除"
 	default:
 		return "未知操作"
 	}
 }
 
-func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v2 callbackV2) string {
-	targetID, ok := callbackID(v2.args, 0)
+func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v3 callbackV3) string {
+	targetID, ok := callbackID(v3.args, 0)
 	if !ok {
 		return "未知操作"
 	}
-	if v2.action == "add" {
+	if v3.action == "add" {
 		h.startPeriodAdd(ctx, b, user, chatID, targetID)
-		return "请选择有效期类型"
+		return "请填写有效期"
 	}
 	p, err := h.svc.GetPeriod(ctx, user.ID, targetID)
 	if err != nil {
 		return objectStateMessage(err)
 	}
-	switch v2.action {
+	switch v3.action {
 	case "view":
-		text, err := h.periodDetailPage(ctx, user.ID, p)
-		if err != nil {
-			return serviceMessage(err)
-		}
-		h.sendMarkup(ctx, b, chatID, text, h.periodKeyboard(p))
+		h.showPeriodDetail(ctx, b, user, chatID, p.ID)
 		return "详情已发送"
 	case "renew":
-		if p.Status == "cancelled" {
-			return "有效期已取消，不能续期"
-		}
 		h.startRenewWizard(ctx, b, user, chatID, p.ID)
 		return "请输入新的截止"
 	case "rules":
 		after := int64(0)
-		if len(v2.args) > 1 {
-			if after, ok = callbackID(v2.args, 1); !ok {
+		if len(v3.args) > 1 {
+			if after, ok = callbackID(v3.args, 1); !ok {
 				return "未知操作"
 			}
 		}
-		text, page, err := h.rulesPage(ctx, user.ID, p, after)
-		if err != nil {
-			return serviceMessage(err)
-		}
-		rows := [][]models.InlineKeyboardButton{}
-		for _, r := range page.Data {
-			label := fmt.Sprintf("%d 天前 %s", r.DaysBefore, r.ReminderTime)
-			if !r.Enabled {
-				label += "（已禁用）"
-			}
-			row := []models.InlineKeyboardButton{button(label, cb("rule", "edit", id(r.ID)))}
-			if r.Enabled {
-				row = append(row, button("禁用", cb("rule", "disable_ask", id(r.ID))))
-			}
-			rows = append(rows, row)
-		}
-		if page.NextCursor != nil {
-			rows = append(rows, pair(button("下一页", cb("period", "rules", id(p.ID), id(*page.NextCursor)))))
-		}
-		rows = append(rows, pair(button("添加规则", cb("rule", "add", id(p.ID))), button("返回有效期", cb("period", "view", id(p.ID)))))
-		h.sendMarkup(ctx, b, chatID, text, markup(rows...))
+		h.showRules(ctx, b, user, chatID, p.ID, after)
 		return "规则已发送"
 	case "renewals":
 		after := int64(0)
-		if len(v2.args) > 1 {
-			if after, ok = callbackID(v2.args, 1); !ok {
+		if len(v3.args) > 1 {
+			if after, ok = callbackID(v3.args, 1); !ok {
 				return "未知操作"
 			}
 		}
-		page, err := h.svc.ListRenewals(ctx, user.ID, p.ID, after, pageSize)
-		if err != nil {
-			return serviceMessage(err)
-		}
-		text := renewalsText(p, page)
-		rows := [][]models.InlineKeyboardButton{}
-		if page.NextCursor != nil {
-			rows = append(rows, pair(button("下一页", cb("period", "renewals", id(p.ID), id(*page.NextCursor)))))
-		}
-		rows = append(rows, pair(button("返回有效期", cb("period", "view", id(p.ID)))))
-		h.sendMarkup(ctx, b, chatID, text, markup(rows...))
+		h.showRenewals(ctx, b, user, chatID, p.ID, after)
 		return "续期历史已发送"
-	case "terms":
-		if p.Status == "cancelled" {
-			return "有效期已取消，不能编辑条款"
+	case "edit":
+		h.startPeriodEdit(ctx, b, user, chatID, p.ID)
+		return "请选择要修改的字段"
+	case "delete_ask":
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("永久删除有效期「%s」？\n将同时永久删除它的提醒规则、提醒任务与续期历史，无法恢复。", periodName(p)),
+			markup(pair(button("确认永久删除", cb("period", "delete", id(p.ID))), button("取消", cb("period", "view", id(p.ID))))))
+		return "请确认删除"
+	case "delete":
+		if err := h.svc.DeletePeriod(ctx, user.ID, p.ID, p.Cycle); err != nil {
+			return objectStateMessage(err)
 		}
-		h.startTermsEdit(ctx, b, user, chatID, p.ID)
-		return "请选择条款模式"
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("有效期「%s」已永久删除。", periodName(p)), markup(pair(button("返回服务", cb("service", "view", id(p.ServiceID), "0")))))
+		return "有效期已删除"
 	default:
 		return "未知操作"
 	}
 }
 
-func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v2 callbackV2) string {
-	targetID, ok := callbackID(v2.args, 0)
+func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v3 callbackV3) string {
+	targetID, ok := callbackID(v3.args, 0)
 	if !ok {
 		return "未知操作"
 	}
-	if v2.action == "add" {
-		found, err := h.svc.GetPeriod(ctx, user.ID, targetID)
-		if err != nil {
-			return objectStateMessage(err)
-		}
-		if found.Status == "cancelled" {
-			return "有效期已取消，不能添加提醒规则"
-		}
-		h.startRuleAdd(ctx, b, user, chatID, found.ID)
+	if v3.action == "add" {
+		h.startRuleAdd(ctx, b, user, chatID, targetID)
 		return "请输入提前天数"
 	}
 	r, err := h.svc.GetRule(ctx, user.ID, targetID)
 	if err != nil {
 		return objectStateMessage(err)
 	}
-	switch v2.action {
+	switch v3.action {
+	case "view":
+		h.showRuleDetail(ctx, b, user, chatID, r.ID)
+		return "详情已发送"
 	case "edit":
 		h.startRuleEdit(ctx, b, user, chatID, r.ID)
 		return "请输入提前天数"
-	case "disable_ask":
-		if !r.Enabled {
-			h.send(ctx, b, chatID, ruleLinePlain(r)+"\n该规则已禁用，未重复修改。")
-			return "规则已禁用"
+	case "enable_ask", "disable_ask":
+		desired := v3.action == "enable_ask"
+		if r.Enabled == desired {
+			h.send(ctx, b, chatID, ruleLinePlain(r)+"\n未重复修改。")
+			return "规则状态未变化"
 		}
-		h.sendMarkup(ctx, b, chatID, "禁用规则 #"+id(r.ID)+"（提前 "+strconv.Itoa(r.DaysBefore)+" 天 "+r.ReminderTime+"）？\n禁用只停用该规则；已发送提醒保留，未完成的该规则任务会被取消。",
-			markup(pair(button("确认禁用", cb("rule", "disable", id(r.ID))), button("返回规则列表", cb("period", "rules", id(r.ValidityPeriodID))))))
-		return "请确认禁用"
-	case "disable":
-		if !r.Enabled {
-			h.send(ctx, b, chatID, ruleLinePlain(r)+"\n该规则已禁用。")
-			return "规则已禁用"
+		verb := "禁用"
+		if desired {
+			verb = "启用"
 		}
-		if err := h.svc.DisableRule(ctx, user.ID, r.ID, r.Revision); err != nil {
-			if service.Code(err) == "conflict" {
-				return "规则已被修改，请重新打开规则列表"
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("%s这条规则？\n提前 %d 天 · %s\n%s后，未完成的相关任务会取消并重新排程。", verb, r.DaysBefore, r.ReminderTime, verb),
+			markup(pair(button("确认"+verb, cb("rule", v3.action[:len(v3.action)-4], id(r.ID))), button("取消", cb("rule", "view", id(r.ID))))))
+		return "请确认"
+	case "enable", "disable":
+		enabled := v3.action == "enable"
+		if r.Enabled != enabled {
+			if _, err := h.svc.UpdateRule(ctx, user.ID, r.ID, service.RulePatch{ExpectedRevision: r.Revision, Enabled: &enabled}); err != nil {
+				if service.Code(err) == "conflict" {
+					return "规则已被修改，请重新打开规则列表"
+				}
+				return objectStateMessage(err)
 			}
+		}
+		h.showRuleDetail(ctx, b, user, chatID, r.ID)
+		return "规则状态已更新"
+	case "delete_ask":
+		h.sendMarkup(ctx, b, chatID, fmt.Sprintf("永久删除规则（提前 %d 天 %s）？\n会同时删除该规则的任务记录，无法恢复。", r.DaysBefore, r.ReminderTime),
+			markup(pair(button("确认永久删除", cb("rule", "delete", id(r.ID))), button("取消", cb("rule", "view", id(r.ID))))))
+		return "请确认删除"
+	case "delete":
+		if err := h.svc.DeleteRule(ctx, user.ID, r.ID, r.Revision); err != nil {
 			return objectStateMessage(err)
 		}
-		updated, err := h.svc.GetRule(ctx, user.ID, r.ID)
-		if err != nil {
-			return "规则已禁用"
-		}
-		h.sendMarkup(ctx, b, chatID, "提醒规则已禁用。\n"+ruleLinePlain(updated), markup(
-			pair(button("重新启用", cb("rule", "edit", id(updated.ID))), button("返回规则列表", cb("period", "rules", id(updated.ValidityPeriodID)))),
-		))
-		return "规则已禁用"
+		h.sendMarkup(ctx, b, chatID, "提醒规则已永久删除。", markup(pair(button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0")))))
+		return "规则已删除"
 	default:
 		return "未知操作"
 	}
 }
 
-func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v2 callbackV2) string {
-	jobID, ok := callbackID(v2.args, 0)
-	if !ok {
-		return "未知操作"
-	}
-	if v2.action == "list" {
-		after := int64(0)
-		if len(v2.args) > 1 {
-			if after, ok = callbackID(v2.args, 1); !ok {
+func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v3 callbackV3) string {
+	if v3.action == "list" {
+		code, after := "1", int64(0)
+		if len(v3.args) > 0 {
+			code = v3.args[0]
+		}
+		filter, ok := jobFilterFromCode(code)
+		if !ok {
+			return "未知操作"
+		}
+		if len(v3.args) > 1 {
+			if after, ok = callbackID(v3.args, 1); !ok {
 				return "未知操作"
 			}
 		}
-		text, page, err := h.remindersPage(ctx, user, "all", after)
-		if err != nil {
-			return serviceMessage(err)
-		}
-		rows := [][]models.InlineKeyboardButton{}
-		for _, j := range page.Data {
-			if j.Status == "pending" || j.Status == "failed" {
-				rows = append(rows, pair(button("取消任务 #"+id(j.ID), cb("job", "cancel", id(j.ID)))))
-			}
-		}
-		if page.NextCursor != nil {
-			rows = append(rows, pair(button("下一页", cb("job", "list", id(*page.NextCursor)))))
-		}
-		rows = append(rows, pair(button("返回设置", cb("settings", "view"))))
-		h.sendMarkup(ctx, b, chatID, text, markup(rows...))
+		h.showJobs(ctx, b, user, chatID, filter, after)
 		return "提醒列表已发送"
 	}
-	if v2.action != "cancel" {
+	jobID, ok := callbackID(v3.args, 0)
+	if !ok {
 		return "未知操作"
 	}
 	job, err := h.svc.GetJob(ctx, user.ID, jobID)
 	if err != nil {
 		return objectStateMessage(err)
 	}
-	if job.Status == "sent" {
-		return "任务已发送，无法取消"
-	}
-	if job.Status == "cancelled" {
-		return "任务已取消"
-	}
-	if err := h.svc.CancelJob(ctx, user.ID, jobID); err != nil {
-		if service.Code(err) == "conflict" {
-			return "任务状态已变化（可能已发送）"
+	switch v3.action {
+	case "cancel_ask":
+		if job.Status == "sent" {
+			return "任务已发送，无法取消"
 		}
-		return objectStateMessage(err)
+		if job.Status == "cancelled" {
+			return "任务已取消"
+		}
+		h.sendMarkup(ctx, b, chatID, "取消该提醒任务？\n已发送的消息无法撤回；正在发送中的任务可能仍会完成一次投递。",
+			markup(pair(button("确认取消", cb("job", "cancel", id(job.ID))), button("返回提醒列表", cb("job", "list", "1", "0")))))
+		return "请确认取消"
+	case "cancel":
+		if err := h.svc.CancelJob(ctx, user.ID, job.ID); err != nil {
+			if service.Code(err) == "conflict" {
+				return "任务状态已变化（可能已发送）"
+			}
+			return objectStateMessage(err)
+		}
+		h.sendMarkup(ctx, b, chatID, "任务已取消。\n注意：正在发送中的提醒无法撤回已经发出的消息。", markup(pair(button("返回提醒列表", cb("job", "list", "1", "0")))))
+		return "任务已取消"
+	default:
+		return "未知操作"
 	}
-	h.send(ctx, b, chatID, "任务 #"+id(job.ID)+" 已取消。\n注意：正在发送中的提醒无法撤回已经发出的消息。")
-	return "任务已取消"
 }
 
-func (h *Handler) settingsCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v2 callbackV2) string {
-	switch v2.action {
+func (h *Handler) settingsCallback(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, v3 callbackV3) string {
+	switch v3.action {
 	case "timezone":
 		h.startTimezone(ctx, b, user, chatID)
 		return "请输入或选择时区"
 	case "help":
-		h.send(ctx, b, chatID, helpText(user.Timezone))
+		h.helpMessage(ctx, b, user, chatID)
 		return "帮助已发送"
 	case "view":
 	default:
 		return "未知操作"
 	}
-	h.sendMarkup(ctx, b, chatID, h.settingsText(ctx, user), markup(
-		pair(button("修改时区", cb("settings", "timezone")), button("提醒任务", cb("job", "list"))),
-		pair(button("服务列表", cb("service", "list")), button("帮助", cb("settings", "help"))),
-	))
+	h.showSettings(ctx, b, user, chatID)
 	return "设置已发送"
 }
 
@@ -470,4 +425,10 @@ func objectStateMessage(err error) string {
 		return "无权限使用此机器人"
 	}
 	return serviceMessage(err)
+}
+
+// parseInt is used for callback fields that must not accept zero.
+func parseInt(raw string) (int64, bool) {
+	n, err := strconv.ParseInt(raw, 10, 64)
+	return n, err == nil && n > 0
 }

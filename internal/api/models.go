@@ -57,16 +57,16 @@ func termsView(v service.PeriodTerms) map[string]any {
 	return map[string]any{"mode": v.Mode, "interval_count": v.IntervalCount, "interval_unit": v.IntervalUnit, "amount": v.Amount, "currency": v.Currency, "revision": v.Revision}
 }
 func periodView(v service.Period) map[string]any {
-	return map[string]any{"id": identifier(v.ID), "service_id": identifier(v.ServiceID), "period_type": v.PeriodType, "name": v.Name, "starts_at": nullableTime(v.StartsAt), "expires_at": timestamp(v.ExpiresAt), "date_precision": v.DatePrecision, "local_expires_date": v.LocalExpiresDate, "timezone": v.Timezone, "status": v.Status, "cycle": v.Cycle, "terms": termsView(v.Terms), "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
+	return map[string]any{"id": identifier(v.ID), "service_id": identifier(v.ServiceID), "name": v.Name, "starts_at": nullableTime(v.StartsAt), "expires_at": timestamp(v.ExpiresAt), "date_precision": v.DatePrecision, "local_expires_date": v.LocalExpiresDate, "timezone": v.Timezone, "status": v.Status, "cycle": v.Cycle, "terms": termsView(v.Terms), "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
 }
 func ruleView(v service.Rule) map[string]any {
-	return map[string]any{"id": identifier(v.ID), "validity_period_id": identifier(v.ValidityPeriodID), "days_before": v.DaysBefore, "reminder_time": v.ReminderTime, "enabled": v.Enabled, "revision": v.Revision, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
+	return map[string]any{"id": identifier(v.ID), "period_id": identifier(v.PeriodID), "days_before": v.DaysBefore, "reminder_time": v.ReminderTime, "enabled": v.Enabled, "revision": v.Revision, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
 }
 func renewalView(v service.Renewal) map[string]any {
-	return map[string]any{"id": identifier(v.ID), "validity_period_id": identifier(v.ValidityPeriodID), "previous_cycle": v.PreviousCycle, "previous_expires_at": timestamp(v.PreviousExpiresAt), "new_expires_at": timestamp(v.NewExpiresAt), "previous_date_precision": v.PreviousDatePrecision, "new_date_precision": v.NewDatePrecision, "previous_local_expires_date": v.PreviousLocalExpiresDate, "new_local_expires_date": v.NewLocalExpiresDate, "timezone": v.Timezone, "renewed_at": timestamp(v.RenewedAt), "amount": v.Amount, "currency": v.Currency, "notes": v.Notes, "created_at": timestamp(v.CreatedAt)}
+	return map[string]any{"id": identifier(v.ID), "period_id": identifier(v.PeriodID), "previous_cycle": v.PreviousCycle, "previous_expires_at": timestamp(v.PreviousExpiresAt), "new_expires_at": timestamp(v.NewExpiresAt), "previous_date_precision": v.PreviousDatePrecision, "new_date_precision": v.NewDatePrecision, "previous_local_expires_date": v.PreviousLocalExpiresDate, "new_local_expires_date": v.NewLocalExpiresDate, "timezone": v.Timezone, "renewed_at": timestamp(v.RenewedAt), "amount": v.Amount, "currency": v.Currency, "notes": v.Notes, "created_at": timestamp(v.CreatedAt)}
 }
 func jobView(v service.Job) map[string]any {
-	return map[string]any{"id": identifier(v.ID), "validity_period_id": identifier(v.ValidityPeriodID), "reminder_rule_id": identifier(v.ReminderRuleID), "cycle": v.Cycle, "rule_revision": v.RuleRevision, "scheduled_at": timestamp(v.ScheduledAt), "expires_at_snapshot": timestamp(v.ExpiresAtSnapshot), "status": v.Status, "attempts": v.Attempts, "next_attempt_at": nullableTime(v.NextAttemptAt), "sent_at": nullableTime(v.SentAt), "telegram_message_id": nullableID(v.TelegramMessageID), "last_error_code": v.LastErrorCode, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
+	return map[string]any{"id": identifier(v.ID), "period_id": identifier(v.PeriodID), "reminder_rule_id": identifier(v.ReminderRuleID), "cycle": v.Cycle, "rule_revision": v.RuleRevision, "scheduled_at": timestamp(v.ScheduledAt), "expires_at_snapshot": timestamp(v.ExpiresAtSnapshot), "status": v.Status, "attempts": v.Attempts, "next_attempt_at": nullableTime(v.NextAttemptAt), "sent_at": nullableTime(v.SentAt), "telegram_message_id": nullableID(v.TelegramMessageID), "last_error_code": v.LastErrorCode, "created_at": timestamp(v.CreatedAt), "updated_at": timestamp(v.UpdatedAt)}
 }
 func page[T any](w http.ResponseWriter, p service.Page[T], err error, view func(T) map[string]any) {
 	if err != nil {
@@ -81,7 +81,6 @@ func page[T any](w http.ResponseWriter, p service.Page[T], err error, view func(
 }
 
 type periodCreateRequest struct {
-	PeriodType    string        `json:"period_type"`
 	Name          string        `json:"name"`
 	StartsAt      *string       `json:"starts_at"`
 	DatePrecision string        `json:"date_precision"`
@@ -90,7 +89,6 @@ type periodCreateRequest struct {
 }
 type periodPatchRequest struct {
 	ExpectedCycle         int64                  `json:"expected_cycle"`
-	PeriodType            *string                `json:"period_type"`
 	Name                  *string                `json:"name"`
 	StartsAt              optional[string]       `json:"starts_at"`
 	DatePrecision         *string                `json:"date_precision"`

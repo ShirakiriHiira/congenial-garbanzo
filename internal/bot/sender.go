@@ -44,8 +44,8 @@ func (s *Sender) SendReminder(ctx context.Context, chatID int64, text string, jo
 		ChatID: chatID,
 		Text:   text,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
-			{Text: "已续期", CallbackData: "v2:period:renew:" + period},
-			{Text: "查看详情", CallbackData: "v2:period:view:" + period},
+			{Text: "续期", CallbackData: cb("period", "renew", period)},
+			{Text: "查看详情", CallbackData: cb("period", "view", period)},
 		}}},
 	})
 	if err != nil {

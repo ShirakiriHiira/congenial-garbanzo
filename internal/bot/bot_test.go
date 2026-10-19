@@ -112,6 +112,14 @@ func (s *telegramStub) lastText() string {
 	return calls[len(calls)-1].form.Get("text")
 }
 
+func (s *telegramStub) lastMarkup() string {
+	calls := s.callsOf("sendMessage")
+	if len(calls) == 0 {
+		return ""
+	}
+	return calls[len(calls)-1].form.Get("reply_markup")
+}
+
 type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time          { return c.t }
@@ -254,11 +262,7 @@ func (f *fixture) serviceUser(uid int64) service.User {
 func (f *fixture) createService(name, categoryCode string) service.ServiceItem {
 	f.t.Helper()
 	u := f.serviceUser(userA)
-	var categoryID int64
-	if err := f.store.DB.QueryRow("SELECT id FROM service_categories WHERE code=?", categoryCode).Scan(&categoryID); err != nil {
-		f.t.Fatal(err)
-	}
-	item, err := f.svc.CreateService(context.Background(), u.ID, service.ServiceInput{Name: name, CategoryID: categoryID})
+	item, err := f.svc.CreateService(context.Background(), u.ID, service.ServiceInput{Name: name, CategoryID: serviceCategoryID(f.t, f, categoryCode)})
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -278,11 +282,11 @@ func (f *fixture) createSIM(name string) service.ServiceItem {
 	return item
 }
 
-func (f *fixture) createPeriod(serviceID int64, periodType, name, precision, expires string) service.Period {
+func (f *fixture) createPeriod(serviceID int64, name, precision, expires string) service.Period {
 	f.t.Helper()
 	u := f.serviceUser(userA)
 	p, err := f.svc.CreatePeriod(context.Background(), u.ID, serviceID, service.PeriodInput{
-		PeriodType: periodType, Name: name, DatePrecision: precision, ExpiresAt: expires,
+		Name: name, DatePrecision: precision, ExpiresAt: expires,
 	})
 	if err != nil {
 		f.t.Fatal(err)
@@ -309,8 +313,8 @@ func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
 		t.Fatalf("stranger created user %d", n)
 	}
 
-	f.bot.ProcessUpdate(context.Background(), groupUpdate(userA, "/service add"))
-	if text := f.stub.lastText(); !strings.Contains(text, "私聊") || strings.Contains(text, "secret") {
+	f.bot.ProcessUpdate(context.Background(), groupUpdate(userA, "/add"))
+	if text := f.stub.lastText(); !strings.Contains(text, "私聊") {
 		t.Fatalf("group: %q", text)
 	}
 	if n := f.count("SELECT count(*) FROM service_items"); n != 0 {
@@ -320,7 +324,6 @@ func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
 		t.Fatalf("group created user %d", n)
 	}
 
-	// A private chat whose ID does not match the sender is not trusted either.
 	mismatch := privateUpdate(userA, "/start")
 	mismatch.Message.Chat.ID = userB
 	f.bot.ProcessUpdate(context.Background(), mismatch)
@@ -333,7 +336,7 @@ func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
 
 	f.start(userA)
 	f.createSIM("B卡")
-	f.callback(userB, cb("service", "view", "1"), nil)
+	f.callback(userB, cb("service", "view", "1", "0"), nil)
 	if got := serviceLastAnswer(t, f); !strings.Contains(got, "不存在") {
 		t.Fatalf("cross-user view: %q", got)
 	}
@@ -358,7 +361,7 @@ func TestPlainTextWithoutDialogIsNotEchoed(t *testing.T) {
 func TestBotUsernameFiltering(t *testing.T) {
 	f := newFixture(t)
 	f.h.SetUsername("")
-	f.h.Register(f.bot) // discovers the username via getMe
+	f.h.Register(f.bot)
 	if f.h.Username() != testBotName {
 		t.Fatalf("username %q", f.h.Username())
 	}
@@ -372,174 +375,25 @@ func TestBotUsernameFiltering(t *testing.T) {
 	}
 }
 
-func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
+func TestLegacyCommandsAndButtonsWriteNothing(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
 	f.createSIM("卡")
-	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
-
-	f.callback(userA, cb("period", "renew", "1"), nil)
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
-		t.Fatalf("dialog count %d", n)
+	f.createPeriod(1, "项目", "date", "2027-01-31")
+	before := f.count("SELECT (SELECT count(*) FROM service_items)+(SELECT count(*) FROM service_periods)+(SELECT count(*) FROM reminder_rules)+(SELECT count(*) FROM renewals)+(SELECT count(*) FROM bot_dialogs)")
+	// Removed legacy ID-based commands must only produce help and write nothing.
+	for _, command := range []string{"/service view 1", "/service add", "/service period add 1", "/service terms 1", "/renew 1"} {
+		if text := f.send(userA, command); !strings.Contains(text, "未知命令") {
+			t.Fatalf("%s reply: %q", command, text)
+		}
 	}
-	if answered := f.stub.callsOf("answerCallbackQuery"); len(answered) != 1 || answered[0].form.Get("callback_query_id") != "cb-1" {
-		t.Fatalf("answer %+v", answered)
+	f.callback(userA, "v2:period:renew:1", nil)
+	if got := serviceLastAnswer(t, f); !strings.Contains(got, "按钮已过期") {
+		t.Fatalf("v2 answer: %q", got)
 	}
-	if text := f.stub.lastText(); !strings.Contains(text, "新截止使用哪种精度") {
-		t.Fatalf("wizard first screen: %q", text)
-	}
-
-	// Reads never discard an unfinished wizard.
-	f.send(userA, "/service list")
-	f.callback(userA, cb("period", "view", "1"), nil)
-	f.send(userA, "/reminders")
-	f.send(userA, "/settings")
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
-		t.Fatalf("read-only commands removed the dialog: %d", n)
-	}
-
-	// A wrong amount keeps the user on the same step without writing.
-	f.callback(userA, choiceCallback("precision", "date"), nil)
-	f.send(userA, "date_precision=date&expires_at=2027-03-01")
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
-		t.Fatalf("raw query text removed the dialog: %d", n)
-	}
-	if text := f.stub.lastText(); !strings.Contains(text, "日期必须是存在的 YYYY-MM-DD") {
-		t.Fatalf("renew wizard did not explain the expected format: %q", text)
-	}
-
-	f.send(userA, "2027-03-01")
-	if text := f.stub.lastText(); !strings.Contains(text, "本次实际续期金额") {
-		t.Fatalf("amount step missing: %q", text)
-	}
-	f.send(userA, "abc")
-	if text := f.stub.lastText(); !strings.Contains(text, "金额 币种") {
-		t.Fatalf("invalid amount accepted: %q", text)
-	}
-	f.send(userA, "1000 TWD")
-	if text := f.stub.lastText(); !strings.Contains(text, "续期备注") {
-		t.Fatalf("notes step missing: %q", text)
-	}
-	f.callback(userA, cb("dialog", "skip"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "请确认续期") || !strings.Contains(text, "1000 TWD") {
-		t.Fatalf("preview missing: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM renewals"); n != 0 {
-		t.Fatalf("preview wrote renewal %d", n)
-	}
-
-	// Back then forward keeps the entered values and shows the preview again.
-	f.callback(userA, cb("dialog", "back"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "续期备注") {
-		t.Fatalf("back landed on %q", text)
-	}
-	f.callback(userA, cb("dialog", "skip"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "请确认续期") {
-		t.Fatalf("skip to preview: %q", text)
-	}
-	f.callback(userA, cb("dialog", "confirm"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "续期完成") {
-		t.Fatalf("confirm: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
-		t.Fatalf("renewal count %d", n)
-	}
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
-		t.Fatalf("dialog not cleared: %d", n)
-	}
-
-	// A new renew wizard starts from the advanced cycle and can be cancelled.
-	f.callback(userA, cb("period", "renew", "1"), nil)
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
-		t.Fatalf("repeat renew did not open a dialog: %d", n)
-	}
-	f.send(userA, "/cancel")
-
-	// Expired wizard: advancing the injected clock invalidates it.
-	f.callback(userA, cb("period", "renew", "1"), nil)
-	f.clock.advance(16 * time.Minute)
-	text := f.send(userA, "2027-05-01")
-	if !strings.Contains(text, "对话已过期") {
-		t.Fatalf("expired dialog: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
-		t.Fatalf("expired dialog wrote renewal %d", n)
-	}
-
-	// A cancelled period is rejected before opening a wizard.
-	uid := f.serviceUser(userA).ID
-	if err := f.svc.CancelPeriod(context.Background(), uid, 1, 2); err != nil {
-		t.Fatal(err)
-	}
-	f.callback(userA, cb("period", "renew", "1"), nil)
-	if got := serviceLastAnswer(t, f); !strings.Contains(got, "已取消") {
-		t.Fatalf("cancelled period answer %q", got)
-	}
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
-		t.Fatalf("cancelled period opened dialog %d", n)
-	}
-}
-
-func TestDialogSurvivesRestart(t *testing.T) {
-	f := newFixture(t)
-	f.start(userA)
-	f.createSIM("卡")
-	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
-	f.callback(userA, cb("period", "renew", "1"), nil)
-	f.callback(userA, choiceCallback("precision", "date"), nil)
-
-	f.restart()
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
-		t.Fatalf("dialog lost across restart: %d", n)
-	}
-	f.send(userA, "2027-04-01")
-	f.callback(userA, cb("dialog", "skip"), nil)
-	f.callback(userA, cb("dialog", "skip"), nil)
-	f.callback(userA, cb("dialog", "confirm"), nil)
-	text := f.stub.lastText()
-	if !strings.Contains(text, "续期完成") {
-		t.Fatalf("post-restart renew: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
-		t.Fatalf("renewals after restart %d", n)
-	}
-}
-
-func TestWriteWizardRequiresExplicitReplacement(t *testing.T) {
-	f := newFixture(t)
-	f.start(userA)
-	f.createSIM("卡")
-	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
-
-	f.callback(userA, cb("period", "renew", "1"), nil)
-	before := f.count("SELECT count(*) FROM bot_dialogs")
-	f.send(userA, "/service add")
-	text := f.stub.lastText()
-	if !strings.Contains(text, "继续当前") || !strings.Contains(text, "取消并开始") {
-		t.Fatalf("replacement prompt: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != before {
-		t.Fatalf("replacement prompt changed dialogs: %d", n)
-	}
-	if got := serviceLookupString(t, f, "SELECT action FROM bot_dialogs"); got != "renew" {
-		t.Fatalf("draft replaced without confirmation: %q", got)
-	}
-
-	f.callback(userA, cb("dialog", "keep"), nil)
-	if got := serviceLookupString(t, f, "SELECT action FROM bot_dialogs"); got != "renew" {
-		t.Fatalf("keep changed flow: %q", got)
-	}
-	if text := f.stub.lastText(); !strings.Contains(text, "新截止使用哪种精度") {
-		t.Fatalf("keep did not render renew: %q", text)
-	}
-
-	f.send(userA, "/service add")
-	f.callback(userA, cb("dialog", "replace"), nil)
-	if got := serviceLookupString(t, f, "SELECT action FROM bot_dialogs"); got != "service_add" {
-		t.Fatalf("replace kept old flow: %q", got)
-	}
-	if text := f.stub.lastText(); !strings.Contains(text, "添加服务") {
-		t.Fatalf("replace did not start the new flow: %q", text)
+	after := f.count("SELECT (SELECT count(*) FROM service_items)+(SELECT count(*) FROM service_periods)+(SELECT count(*) FROM reminder_rules)+(SELECT count(*) FROM renewals)+(SELECT count(*) FROM bot_dialogs)")
+	if after != before {
+		t.Fatalf("legacy inputs changed state: %d -> %d", before, after)
 	}
 }
 
@@ -547,7 +401,7 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
 	f.createSIM("卡")
-	f.createPeriod(1, "number_validity", "项目", "date", "2027-01-31")
+	f.createPeriod(1, "项目", "date", "2027-01-31")
 
 	cases := []struct {
 		name string
@@ -556,13 +410,13 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 		msg  *models.Message
 		want string
 	}{
-		{"malformed", userA, "v2:period:renew:abc", nil, "未知操作"},
-		{"unknown scope", userA, "v2:delete:view:1", nil, "未知操作"},
-		{"inline only", userA, "v2:period:view:1", nil, "请在私聊中使用"},
-		{"unauthorized", stranger, "v2:period:view:1", nil, "无权限"},
-		{"missing period", userA, "v2:period:view:999", nil, "不存在"},
-		{"group message", userA, "v2:period:view:1", &models.Message{ID: 60, Chat: models.Chat{ID: -100, Type: models.ChatTypeGroup}, Date: 1}, "请在私聊中使用"},
-		{"view", userA, "v2:period:view:1", nil, "详情已发送"},
+		{"malformed", userA, "v3:period:renew:abc", nil, "未知操作"},
+		{"unknown scope", userA, "v3:delete:view:1", nil, "未知操作"},
+		{"inline only", userA, "v3:period:view:1", nil, "请在私聊中使用"},
+		{"unauthorized", stranger, "v3:period:view:1", nil, "无权限"},
+		{"missing period", userA, "v3:period:view:999", nil, "不存在"},
+		{"group message", userA, "v3:period:view:1", &models.Message{ID: 60, Chat: models.Chat{ID: -100, Type: models.ChatTypeGroup}, Date: 1}, "请在私聊中使用"},
+		{"view", userA, "v3:period:view:1", nil, "详情已发送"},
 	}
 	for _, tc := range cases {
 		update := callbackUpdate(tc.uid, tc.data, tc.msg)
@@ -579,13 +433,10 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 			t.Fatalf("%s: answer %q, want %q", tc.name, got, tc.want)
 		}
 	}
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
-		t.Fatalf("callbacks changed dialogs: %d", n)
-	}
 }
 
 func TestCallbackDataLength(t *testing.T) {
-	for _, data := range []string{"v2:period:view:1", "v2:period:renew:9223372036854775807", "v2:dialog:set:precision:2"} {
+	for _, data := range []string{"v3:period:view:1", "v3:period:renew:9223372036854775807", "v3:dialog:set:precision:2", "v3:service:list:6:9223372036854775807:9223372036854775807"} {
 		if len(data) >= 64 {
 			t.Fatalf("callback data too long: %q", data)
 		}
@@ -615,7 +466,7 @@ func TestSenderSuccessAndClassification(t *testing.T) {
 		t.Fatalf("form %+v", sent[0].form)
 	}
 	markup := sent[0].form.Get("reply_markup")
-	if !strings.Contains(markup, "v2:period:renew:9") || !strings.Contains(markup, "v2:period:view:9") {
+	if !strings.Contains(markup, "v3:period:renew:9") || !strings.Contains(markup, "v3:period:view:9") {
 		t.Fatalf("markup %q", markup)
 	}
 
@@ -663,7 +514,7 @@ func TestStoppedHandlerAcknowledgesCallbacksOnly(t *testing.T) {
 	f.h.Stop()
 
 	sends := len(f.stub.callsOf("sendMessage"))
-	f.bot.ProcessUpdate(context.Background(), privateUpdate(userA, "/service list"))
+	f.bot.ProcessUpdate(context.Background(), privateUpdate(userA, "/services"))
 	if len(f.stub.callsOf("sendMessage")) != sends {
 		t.Fatal("stopped handler still sent a reply")
 	}

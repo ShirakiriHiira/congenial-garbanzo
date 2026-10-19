@@ -11,7 +11,7 @@ func TestDeleteRuleRemovesJobsAndFreesSlot(t *testing.T) {
 	s, st, a, b := setup(t)
 	ctx := context.Background()
 	_, p, r := fixture(t, s, a)
-	if _, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,?,?,1,?,'pending',1,1,1)`, p.ID, r.ID, p.Cycle, r.Revision, p.ExpiresAt); err != nil {
+	if _, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,?,?,1,?,'pending',1,1,1)`, p.ID, r.ID, p.Cycle, r.Revision, p.ExpiresAt); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.DeleteRule(ctx, b.ID, r.ID, r.Revision); err != ErrNotFound {
@@ -58,7 +58,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 				t.Fatal(err)
 			}
 			now := time.Unix(p.ExpiresAt-3600, 0)
-			result, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,locked_until,attempt_token,created_at,updated_at) VALUES(?,?,?,?,?,?,'sending',1,?,'delete-test',?,?)`, p.ID, r.ID, p.Cycle, r.Revision, now.Unix(), p.ExpiresAt, now.Unix()+60, now.Unix(), now.Unix())
+			result, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,locked_until,attempt_token,created_at,updated_at) VALUES(?,?,?,?,?,?,'sending',1,?,'delete-test',?,?)`, p.ID, r.ID, p.Cycle, r.Revision, now.Unix(), p.ExpiresAt, now.Unix()+60, now.Unix(), now.Unix())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -66,7 +66,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = st.DB.ExecContext(ctx, `INSERT INTO bot_dialogs(user_id,chat_id,action,step,draft_json,validity_period_id,expected_cycle,expires_at,created_at) VALUES(?,?,'renew','renew_expiration','{}',?,?,?,?)`, a.ID, a.TelegramUserID, p.ID, p.Cycle, now.Unix()+300, now.Unix()); err != nil {
+			if _, err = st.DB.ExecContext(ctx, `INSERT INTO bot_dialogs(user_id,chat_id,action,step,draft_json,period_id,expected_cycle,expires_at,created_at) VALUES(?,?,'renew','renew_expiration','{}',?,?,?,?)`, a.ID, a.TelegramUserID, p.ID, p.Cycle, now.Unix()+300, now.Unix()); err != nil {
 				t.Fatal(err)
 			}
 			if ok, err := st.CheckReminder(ctx, jid, "delete-test", now, s.allowed); err != nil || !ok {
@@ -100,7 +100,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 			}
 			for _, table := range []string{"renewals", "reminder_jobs", "bot_dialogs"} {
 				var count int
-				if err := st.DB.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE validity_period_id=?", p.ID).Scan(&count); err != nil || count != 0 {
+				if err := st.DB.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE period_id=?", p.ID).Scan(&count); err != nil || count != 0 {
 					t.Fatalf("%s remains: count=%d err=%v", table, count, err)
 				}
 			}
@@ -134,7 +134,7 @@ func TestDeletedIdentifiersAreNotReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,created_at,updated_at) VALUES(?,?,2,1,1,?,'sent',1,1)`, p.ID, rule.ID, renewal.NewExpiresAt)
+	result, err := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,created_at,updated_at) VALUES(?,?,2,1,1,?,'sent',1,1)`, p.ID, rule.ID, renewal.NewExpiresAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestDeletedIdentifiersAreNotReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err = st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,created_at,updated_at) VALUES(?,?,2,1,1,?,'pending',1,1)`, nextPeriod.ID, nextRule.ID, nextRenewal.NewExpiresAt)
+	result, err = st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,created_at,updated_at) VALUES(?,?,2,1,1,?,'pending',1,1)`, nextPeriod.ID, nextRule.ID, nextRenewal.NewExpiresAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,13 +161,15 @@ func TestDeletedIdentifiersAreNotReused(t *testing.T) {
 	if nextSIM.ID <= sim.ID || nextPeriod.ID <= p.ID || nextRule.ID <= rule.ID || nextRenewal.ID <= renewal.ID || nextJobID <= jobID {
 		t.Fatalf("identifiers reused: card %d/%d period %d/%d rule %d/%d renewal %d/%d job %d/%d", sim.ID, nextSIM.ID, p.ID, nextPeriod.ID, rule.ID, nextRule.ID, renewal.ID, nextRenewal.ID, jobID, nextJobID)
 	}
-	if err := s.ArchiveService(ctx, a.ID, sim.ID); err != ErrNotFound {
+	status := "archived"
+	if _, err := s.UpdateService(ctx, a.ID, sim.ID, ServicePatch{Status: &status}); err != ErrNotFound {
 		t.Fatalf("stale card mutation: %v", err)
 	}
 	if err := s.DeletePeriod(ctx, a.ID, p.ID, 2); err != ErrNotFound {
 		t.Fatalf("stale period mutation: %v", err)
 	}
-	if err := s.DisableRule(ctx, a.ID, rule.ID, 1); err != ErrNotFound {
+	disabled := false
+	if _, err := s.UpdateRule(ctx, a.ID, rule.ID, RulePatch{ExpectedRevision: 1, Enabled: &disabled}); err != ErrNotFound {
 		t.Fatalf("stale rule mutation: %v", err)
 	}
 	if err := s.CancelJob(ctx, a.ID, jobID); err != ErrNotFound {
@@ -180,7 +182,7 @@ func TestOptionalPeriodName(t *testing.T) {
 	ctx := context.Background()
 	sim, _, _ := fixture(t, s, a)
 	for _, name := range []string{"", " \t\n"} {
-		p, err := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{PeriodType: "custom", Name: name, DatePrecision: "date", ExpiresAt: "2027-02-01"})
+		p, err := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{Name: name, DatePrecision: "date", ExpiresAt: "2027-02-01"})
 		if err != nil || p.Name != "" {
 			t.Fatalf("blank name: %+v %v", p, err)
 		}
@@ -195,7 +197,7 @@ func TestOptionalPeriodName(t *testing.T) {
 		}
 	}
 	tooLong := strings.Repeat("中", 201)
-	if _, err := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{PeriodType: "custom", Name: tooLong, DatePrecision: "date", ExpiresAt: "2027-02-01"}); err != ErrInvalid {
+	if _, err := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{Name: tooLong, DatePrecision: "date", ExpiresAt: "2027-02-01"}); err != ErrInvalid {
 		t.Fatalf("oversize name: %v", err)
 	}
 }

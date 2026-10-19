@@ -112,6 +112,36 @@ export TELEGRAM_BOT_TOKEN="$token"
 export DATABASE_PATH="${DATABASE_PATH:-./data/miniapp-test.db}"
 mkdir -p "$(dirname "$DATABASE_PATH")"
 
+database_abs="$(realpath -m "$DATABASE_PATH")"
+production_abs="$(realpath -m ./data/remind.db)"
+if [[ "$database_abs" == "$production_abs" ]]; then
+  echo "error: refusing to run the integration script against data/remind.db; set DATABASE_PATH to a test database" >&2
+  exit 1
+fi
+if [[ -f "$DATABASE_PATH" && "${MINIAPP_ALLOW_EXISTING_DB:-}" != "1" ]]; then
+  existing_rows="$(python3 - "$DATABASE_PATH" <<'PY'
+import sqlite3
+import sys
+try:
+    connection = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+    tables = {row[0] for row in connection.execute("select name from sqlite_master where type='table'")}
+    count = 0
+    for name in ("service_items", "sims"):
+        if name in tables:
+            count += connection.execute(f"select count(*) from {name}").fetchone()[0]
+    print(count)
+except Exception:
+    print(0)
+PY
+)"
+  if [[ "${existing_rows:-0}" -gt 0 ]]; then
+    echo "error: $DATABASE_PATH already contains $existing_rows service/sim rows; use a new test database or set MINIAPP_ALLOW_EXISTING_DB=1" >&2
+    exit 1
+  fi
+fi
+echo "database: $database_abs"
+
+
 echo "installing frontend dependencies…"
 (cd web && npm ci --silent) || fail "npm ci failed"
 

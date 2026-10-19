@@ -46,7 +46,7 @@ func fixture(t *testing.T, s *Service, u User) (ServiceItem, Period, Rule) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	p, e := s.CreatePeriod(ctx, u.ID, sim.ID, PeriodInput{PeriodType: "number_validity", Name: "号码", DatePrecision: "date", ExpiresAt: "2027-01-31"})
+	p, e := s.CreatePeriod(ctx, u.ID, sim.ID, PeriodInput{Name: "号码", DatePrecision: "date", ExpiresAt: "2027-01-31"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -67,7 +67,11 @@ func TestOwnershipAndAuthorization(t *testing.T) {
 		func() error { _, e := s.GetService(ctx, b.ID, sim.ID); return e },
 		func() error { _, e := s.GetPeriod(ctx, b.ID, p.ID); return e },
 		func() error { _, e := s.GetRule(ctx, b.ID, r.ID); return e },
-		func() error { return s.ArchiveService(ctx, b.ID, sim.ID) },
+		func() error {
+			status := "archived"
+			_, e := s.UpdateService(ctx, b.ID, sim.ID, ServicePatch{Status: &status})
+			return e
+		},
 		func() error { _, e := s.UpdatePeriod(ctx, b.ID, p.ID, PeriodPatch{ExpectedCycle: 1}); return e },
 		func() error { _, e := s.ListRules(ctx, b.ID, p.ID, 0, 10); return e },
 		func() error { _, e := s.ListRenewals(ctx, b.ID, p.ID, 0, 10); return e },
@@ -90,12 +94,12 @@ func TestRenewIdempotenceAndRollback(t *testing.T) {
 	s, st, a, _ := setup(t)
 	ctx := context.Background()
 	_, p, r := fixture(t, s, a)
-	_, e := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,1,1,1,?,'pending',1,1,1)`, p.ID, r.ID, p.ExpiresAt)
+	_, e := st.DB.ExecContext(ctx, `INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(?,?,1,1,1,?,'pending',1,1,1)`, p.ID, r.ID, p.ExpiresAt)
 	if e != nil {
 		t.Fatal(e)
 	}
 	in := RenewInput{ExpectedCycle: 1, DatePrecision: "date", ExpiresAt: "2027-03-01"}
-	_, e = st.DB.ExecContext(ctx, `CREATE TRIGGER fail_period_update BEFORE UPDATE ON validity_periods BEGIN SELECT RAISE(ABORT,'test failure'); END`)
+	_, e = st.DB.ExecContext(ctx, `CREATE TRIGGER fail_period_update BEFORE UPDATE ON service_periods BEGIN SELECT RAISE(ABORT,'test failure'); END`)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -138,7 +142,7 @@ func TestTimezoneAndMoney(t *testing.T) {
 	s, _, a, _ := setup(t)
 	ctx := context.Background()
 	sim, p, _ := fixture(t, s, a)
-	absolute, e := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{PeriodType: "custom", Name: "instant", DatePrecision: "datetime", ExpiresAt: "2027-02-01T00:00:00+08:00"})
+	absolute, e := s.CreatePeriod(ctx, a.ID, sim.ID, PeriodInput{Name: "instant", DatePrecision: "datetime", ExpiresAt: "2027-02-01T00:00:00+08:00"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -202,7 +206,7 @@ func TestDialogPersistenceAndPagination(t *testing.T) {
 		t.Fatal("dialog remains", e)
 	}
 	for i := 0; i < 10; i++ {
-		if _, e = s.CreatePeriod(ctx, a.ID, p.ServiceID, PeriodInput{PeriodType: "custom", Name: "extra", DatePrecision: "date", ExpiresAt: "2027-03-01"}); e != nil {
+		if _, e = s.CreatePeriod(ctx, a.ID, p.ServiceID, PeriodInput{Name: "extra", DatePrecision: "date", ExpiresAt: "2027-03-01"}); e != nil {
 			t.Fatal(e)
 		}
 	}

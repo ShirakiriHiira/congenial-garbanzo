@@ -110,8 +110,6 @@ type PeriodTerms struct {
 type Period struct {
 	ID               int64
 	ServiceID        int64
-	SIMID            *int64
-	PeriodType       string
 	Name             string
 	StartsAt         *int64
 	ExpiresAt        int64
@@ -126,18 +124,18 @@ type Period struct {
 }
 
 type Rule struct {
-	ID               int64
-	ValidityPeriodID int64
-	DaysBefore       int
-	ReminderTime     string
-	Enabled          bool
-	Revision         int64
-	CreatedAt        int64
-	UpdatedAt        int64
+	ID           int64
+	PeriodID     int64
+	DaysBefore   int
+	ReminderTime string
+	Enabled      bool
+	Revision     int64
+	CreatedAt    int64
+	UpdatedAt    int64
 }
 type Renewal struct {
 	ID                       int64
-	ValidityPeriodID         int64
+	PeriodID                 int64
 	PreviousCycle            int64
 	PreviousExpiresAt        int64
 	NewExpiresAt             int64
@@ -155,7 +153,7 @@ type Renewal struct {
 }
 type Job struct {
 	ID                int64
-	ValidityPeriodID  int64
+	PeriodID          int64
 	ReminderRuleID    int64
 	Cycle             int64
 	RuleRevision      int64
@@ -182,7 +180,7 @@ type Dialog struct {
 	Step                  string
 	Draft                 string
 	ServiceID             *int64
-	ValidityPeriodID      *int64
+	PeriodID              *int64
 	RuleID                *int64
 	ExpectedCycle         *int64
 	ExpectedTermsRevision *int64
@@ -232,7 +230,6 @@ type TermsInput struct {
 	Currency      *string
 }
 type PeriodInput struct {
-	PeriodType    string
 	Name          string
 	StartsAt      *string
 	DatePrecision string
@@ -241,7 +238,6 @@ type PeriodInput struct {
 }
 type PeriodPatch struct {
 	ExpectedCycle         int64
-	PeriodType            *string
 	Name                  *string
 	StartsAt              Optional[string]
 	DatePrecision         *string
@@ -368,7 +364,7 @@ func finishPage[T any](data []T, limit int, id func(T) int64) Page[T] {
 	return p
 }
 func cancelJobs(ctx context.Context, tx *sql.Tx, period int64, rule *int64, now int64) error {
-	query := `UPDATE reminder_jobs SET status='cancelled',next_attempt_at=NULL,updated_at=? WHERE validity_period_id=? AND status IN ('pending','failed','sending')`
+	query := `UPDATE reminder_jobs SET status='cancelled',next_attempt_at=NULL,updated_at=? WHERE period_id=? AND status IN ('pending','failed','sending')`
 	args := []any{now, period}
 	if rule != nil {
 		query += " AND reminder_rule_id=?"

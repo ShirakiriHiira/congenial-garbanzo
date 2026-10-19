@@ -111,7 +111,7 @@ func (f *serviceDeliveryFixture) open(t *testing.T) {
 
 func (f *serviceDeliveryFixture) addPeriod(t *testing.T, name string) service.Period {
 	t.Helper()
-	p, err := f.svc.CreatePeriod(context.Background(), f.user.ID, f.item.ID, service.PeriodInput{PeriodType: "custom", Name: name, DatePrecision: "date", ExpiresAt: "2027-01-31"})
+	p, err := f.svc.CreatePeriod(context.Background(), f.user.ID, f.item.ID, service.PeriodInput{Name: name, DatePrecision: "date", ExpiresAt: "2027-01-31"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,8 +166,8 @@ func TestGenericServiceDeliveryRetainsCallbacksAndSentAcrossRestart(t *testing.T
 			t.Fatalf("callback keyboard: %+v", keyboard)
 		}
 		buttons := keyboard.InlineKeyboard[0]
-		id, err := strconv.ParseInt(strings.TrimPrefix(buttons[0].CallbackData, "v2:period:renew:"), 10, 64)
-		if err != nil || id != f.period.ID && id != second.ID || buttons[0].CallbackData != fmt.Sprintf("v2:period:renew:%d", id) || buttons[1].CallbackData != fmt.Sprintf("v2:period:view:%d", id) || seen[id] {
+		id, err := strconv.ParseInt(strings.TrimPrefix(buttons[0].CallbackData, "v3:period:renew:"), 10, 64)
+		if err != nil || id != f.period.ID && id != second.ID || buttons[0].CallbackData != fmt.Sprintf("v3:period:renew:%d", id) || buttons[1].CallbackData != fmt.Sprintf("v3:period:view:%d", id) || seen[id] {
 			t.Fatalf("retained callback IDs: %+v", buttons)
 		}
 		seen[id] = true
@@ -176,8 +176,8 @@ func TestGenericServiceDeliveryRetainsCallbacksAndSentAcrossRestart(t *testing.T
 		if !seen[job.ID] || job.Status != "sent" || job.Attempts != 1 || job.TelegramMessageID == nil || *job.TelegramMessageID != 9101 || job.AttemptToken != nil {
 			t.Fatalf("persisted delivery: %+v", job)
 		}
-		if !seen[job.ValidityPeriodID] {
-			t.Fatalf("job period %d has no callback", job.ValidityPeriodID)
+		if !seen[job.PeriodID] {
+			t.Fatalf("job period %d has no callback", job.PeriodID)
 		}
 	}
 	if err := f.store.Close(); err != nil {

@@ -93,18 +93,6 @@ func (w *wizard) cancel(ctx context.Context) {
 	w.h.send(ctx, w.b, w.chatID, "已取消当前流程，未写入任何修改。\n\n"+shortHelp)
 }
 
-func (w *wizard) back(ctx context.Context) {
-	prev := previousStep(w.d.Action, w.dr, w.d.Step)
-	if prev == "" {
-		w.failure(ctx, "已经在第一步。发送 /cancel 可取消当前流程。", false, false)
-		return
-	}
-	if !w.persist(ctx, prev) {
-		return
-	}
-	w.render(ctx)
-}
-
 func (w *wizard) skip(ctx context.Context) {
 	if !optionalStep(w.d.Step) {
 		w.failure(ctx, "当前步骤不能跳过。", true, false)
@@ -121,6 +109,19 @@ func (w *wizard) skip(ctx context.Context) {
 	w.render(ctx)
 }
 
+// skipRest jumps from any optional step of the service-add flow to the final
+// preview. Other flows do not expose this shortcut.
+func (w *wizard) skipRest(ctx context.Context) {
+	if w.d.Action != service.DialogServiceAdd || !optionalStep(w.d.Step) {
+		w.failure(ctx, "当前步骤不能跳过剩余资料。", true, false)
+		return
+	}
+	if !w.persist(ctx, "add_preview") {
+		return
+	}
+	w.render(ctx)
+}
+
 // stepError keeps the user on the current step with navigation intact.
 func (w *wizard) stepError(ctx context.Context, format string, canBack, canSkip bool) {
 	w.failure(ctx, format+"\n\n当前步骤未保存，可重新发送。", canBack, canSkip)
@@ -128,8 +129,24 @@ func (w *wizard) stepError(ctx context.Context, format string, canBack, canSkip 
 
 const replaceStep = "confirm_replace"
 
-// promptReplace stores the blocked command so only an explicit click discards
-// the current draft.
+func (w *wizard) back(ctx context.Context) {
+	if w.d.Action == service.DialogServiceAdd && w.d.Step == "add_category_name" {
+		if !w.persist(ctx, "add_category") {
+			return
+		}
+		w.render(ctx)
+		return
+	}
+	prev := previousStep(w.d.Action, w.dr, w.d.Step)
+	if prev == "" {
+		w.failure(ctx, "已经在第一步。发送 /cancel 可取消当前流程。", false, false)
+		return
+	}
+	if !w.persist(ctx, prev) {
+		return
+	}
+	w.render(ctx)
+}
 func (w *wizard) promptReplace(ctx context.Context, command string) {
 	if command != "" {
 		w.dr.Pending = command
@@ -193,8 +210,8 @@ func (w *wizard) render(ctx context.Context) {
 		w.renderServiceEdit(ctx)
 	case service.DialogPeriodAdd:
 		w.renderPeriodAdd(ctx)
-	case service.DialogTermsEdit:
-		w.renderTerms(ctx)
+	case service.DialogPeriodEdit:
+		w.renderPeriodEdit(ctx)
 	case service.DialogRuleAdd, service.DialogRuleEdit:
 		w.renderRule(ctx)
 	case service.DialogTimezone:
@@ -223,8 +240,8 @@ func (w *wizard) text(ctx context.Context, text string) {
 		w.textServiceEdit(ctx, text)
 	case service.DialogPeriodAdd:
 		w.textPeriodAdd(ctx, text)
-	case service.DialogTermsEdit:
-		w.textTerms(ctx, text)
+	case service.DialogPeriodEdit:
+		w.textPeriodEdit(ctx, text)
 	case service.DialogRuleAdd, service.DialogRuleEdit:
 		w.textRule(ctx, text)
 	case service.DialogTimezone:
@@ -234,10 +251,14 @@ func (w *wizard) text(ctx context.Context, text string) {
 	}
 }
 
-// nav handles v2:dialog:<action>[:arg...] callbacks.
+// nav handles v3:dialog:<action>[:arg...] callbacks.
 func (w *wizard) nav(ctx context.Context, action string, args []string) {
 	if action == "cancel" {
 		w.cancel(ctx)
+		return
+	}
+	if action == "resume" {
+		w.render(ctx)
 		return
 	}
 	if w.d.Step == replaceStep {
@@ -256,10 +277,12 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 		w.back(ctx)
 	case "skip":
 		w.skip(ctx)
+	case "skip_rest":
+		w.skipRest(ctx)
 	case "confirm":
 		w.confirm(ctx)
 	case "change_field":
-		if w.d.Action != service.DialogServiceEdit {
+		if w.d.Action != service.DialogServiceEdit && w.d.Action != service.DialogPeriodEdit {
 			w.failure(ctx, "未知操作，请重新打开流程。", false, false)
 			return
 		}
@@ -273,6 +296,19 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 			return
 		}
 		w.h.startServiceAdd(ctx, w.b, w.user, w.chatID)
+	case "new_category":
+		if w.d.Action != service.DialogServiceAdd || w.d.Step != "add_category" {
+			w.failure(ctx, "未知操作，请重新打开流程。", false, false)
+			return
+		}
+		if !w.persist(ctx, "add_category_name") {
+			return
+		}
+		w.render(ctx)
+	case "use_convention":
+		w.useConvention(ctx)
+	case "clear_value":
+		w.clearValue(ctx)
 	case "set":
 		if len(args) != 2 {
 			w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
@@ -296,15 +332,37 @@ func navRows(canBack, canSkip bool) [][]models.InlineKeyboardButton {
 	return [][]models.InlineKeyboardButton{row}
 }
 
+func optionalNav(canBack bool) [][]models.InlineKeyboardButton {
+	return [][]models.InlineKeyboardButton{
+		pair(button("上一步", cb("dialog", "back")), button("跳过", cb("dialog", "skip")), button("跳过剩余可选资料", cb("dialog", "skip_rest")), button("取消", cb("dialog", "cancel"))),
+	}
+}
+
+func (w *wizard) clearValue(ctx context.Context) {
+	if w.d.Step != "edit_value" || (w.d.Action != service.DialogServiceEdit && w.d.Action != service.DialogPeriodEdit) {
+		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+		return
+	}
+	if w.d.Action == service.DialogServiceEdit && w.dr.Values["field"] == "name" {
+		w.failure(ctx, "名称不能清空。", true, false)
+		return
+	}
+	w.dr.set("value", "")
+	if !w.persist(ctx, "edit_preview") {
+		return
+	}
+	w.render(ctx)
+}
+
 func trimmed(value string) string { return strings.TrimSpace(value) }
 
 func describeTarget(ctx context.Context, h *Handler, user service.User, d service.Dialog) string {
 	name := map[string]string{
-		service.DialogRenew:       "续期输入",
+		service.DialogRenew:       "续期",
 		service.DialogServiceAdd:  "添加服务",
 		service.DialogServiceEdit: "编辑服务",
 		service.DialogPeriodAdd:   "添加有效期",
-		service.DialogTermsEdit:   "编辑条款",
+		service.DialogPeriodEdit:  "编辑有效期",
 		service.DialogRuleAdd:     "添加提醒规则",
 		service.DialogRuleEdit:    "编辑提醒规则",
 		service.DialogTimezone:    "修改时区",
@@ -312,22 +370,22 @@ func describeTarget(ctx context.Context, h *Handler, user service.User, d servic
 	if name == "" {
 		name = "未完成流程"
 	}
-	switch {
-	case d.ServiceID != nil:
+	if d.ServiceID != nil {
 		if item, err := h.svc.GetService(ctx, user.ID, *d.ServiceID); err == nil {
-			return name + "（服务 #" + id(item.ID) + " " + item.Name + "）"
+			return name + "（" + item.Name + "）"
 		}
-	case d.ValidityPeriodID != nil:
-		return name + "（有效期 #" + id(*d.ValidityPeriodID) + "）"
-	case d.RuleID != nil:
-		return name + "（规则 #" + id(*d.RuleID) + "）"
+	}
+	if d.PeriodID != nil {
+		if p, err := h.svc.GetPeriod(ctx, user.ID, *d.PeriodID); err == nil {
+			return name + "（" + periodName(p) + "）"
+		}
 	}
 	return name
 }
 
 // confirm finalizes the preview step of the current wizard.
 func (w *wizard) confirm(ctx context.Context) {
-	if w.d.Step != "preview" && !strings.HasSuffix(w.d.Step, "_preview") {
+	if !strings.HasSuffix(w.d.Step, "_preview") {
 		w.failure(ctx, "当前步骤还不能提交，请按提示继续。", true, false)
 		return
 	}
@@ -340,8 +398,8 @@ func (w *wizard) confirm(ctx context.Context) {
 		w.confirmServiceEdit(ctx)
 	case service.DialogPeriodAdd:
 		w.confirmPeriodAdd(ctx)
-	case service.DialogTermsEdit:
-		w.confirmTerms(ctx)
+	case service.DialogPeriodEdit:
+		w.confirmPeriodEdit(ctx)
 	case service.DialogRuleAdd, service.DialogRuleEdit:
 		w.confirmRule(ctx)
 	case service.DialogTimezone:

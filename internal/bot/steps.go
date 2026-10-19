@@ -20,7 +20,7 @@ type stepSpec struct {
 
 var wizardSequences = map[string][]stepSpec{
 	service.DialogRenew: {
-		{key: "renew_choose_precision"},
+		{key: "renew_precision"},
 		{key: "renew_expiration"},
 		{key: "renew_amount", optional: true},
 		{key: "renew_notes", optional: true},
@@ -31,11 +31,11 @@ var wizardSequences = map[string][]stepSpec{
 		{key: "add_name"},
 		{key: "add_card_type"},
 		{key: "add_provider", optional: true},
+		{key: "add_identifier", optional: true},
+		{key: "add_management_url", optional: true},
 		{key: "add_phone", optional: true},
 		{key: "add_region", optional: true},
 		{key: "add_iccid", optional: true},
-		{key: "add_identifier", optional: true},
-		{key: "add_management_url", optional: true},
 		{key: "add_notes", optional: true},
 		{key: "add_preview"},
 	},
@@ -45,18 +45,24 @@ var wizardSequences = map[string][]stepSpec{
 		{key: "edit_preview"},
 	},
 	service.DialogPeriodAdd: {
-		{key: "period_type"},
 		{key: "period_name", optional: true},
 		{key: "period_precision"},
 		{key: "period_expires"},
 		{key: "period_starts", optional: true},
-		{key: "period_preview"},
-	},
-	service.DialogTermsEdit: {
 		{key: "terms_mode"},
 		{key: "terms_interval"},
 		{key: "terms_amount", optional: true},
-		{key: "terms_preview"},
+		{key: "period_preview"},
+	},
+	service.DialogPeriodEdit: {
+		{key: "edit_field"},
+		{key: "edit_value"},
+		{key: "period_precision"},
+		{key: "period_expires"},
+		{key: "terms_mode"},
+		{key: "terms_interval"},
+		{key: "terms_amount", optional: true},
+		{key: "edit_preview"},
 	},
 	service.DialogRuleAdd: {
 		{key: "rule_days"},
@@ -76,13 +82,179 @@ var wizardSequences = map[string][]stepSpec{
 	},
 }
 
-func stepIndex(action, step string) int {
-	for i, spec := range wizardSequences[action] {
-		if spec.key == step {
-			return i
+func sequence(action string) []stepSpec {
+	return wizardSequences[action]
+}
+
+// nextStep follows the fixed sequence and the code-defined branches for
+// SIM-only fields, period-edit fields, and recurring terms. It never derives a
+// step name from user input.
+func nextStep(action string, d draft, step string) string {
+	switch action {
+	case service.DialogPeriodAdd:
+		switch step {
+		case "period_name":
+			return "period_precision"
+		case "period_precision":
+			return "period_expires"
+		case "period_expires":
+			return "period_starts"
+		case "period_starts":
+			return "terms_mode"
+		case "terms_mode":
+			if d.Values["mode"] == "recurring" {
+				return "terms_interval"
+			}
+			return "period_preview"
+		case "terms_interval":
+			return "terms_amount"
+		case "terms_amount":
+			return "period_preview"
+		}
+		return ""
+	case service.DialogPeriodEdit:
+		switch step {
+		case "edit_field":
+			switch d.Values["field"] {
+			case "name", "starts":
+				return "edit_value"
+			case "expires":
+				return "period_precision"
+			case "terms":
+				return "terms_mode"
+			}
+			return ""
+		case "edit_value", "period_expires":
+			return "edit_preview"
+		case "period_precision":
+			return "period_expires"
+		case "terms_mode":
+			if d.Values["mode"] == "recurring" {
+				return "terms_interval"
+			}
+			return "edit_preview"
+		case "terms_interval":
+			return "terms_amount"
+		case "terms_amount":
+			return "edit_preview"
+		}
+		return ""
+	case service.DialogServiceAdd:
+		switch step {
+		case "add_category":
+			return "add_name"
+		case "add_name":
+			if d.Values["kind"] == "sim" {
+				return "add_card_type"
+			}
+			return "add_provider"
+		case "add_card_type":
+			return "add_provider"
+		case "add_provider":
+			return "add_identifier"
+		case "add_identifier":
+			return "add_management_url"
+		case "add_management_url":
+			if d.Values["kind"] == "sim" {
+				return "add_phone"
+			}
+			return "add_notes"
+		case "add_phone":
+			return "add_region"
+		case "add_region":
+			return "add_iccid"
+		case "add_iccid":
+			return "add_notes"
+		case "add_notes":
+			return "add_preview"
+		}
+		return ""
+	case service.DialogServiceEdit:
+		if step == "edit_field" {
+			return "edit_value"
+		}
+		if step == "edit_value" {
+			return "edit_preview"
+		}
+		return ""
+	}
+	specs := sequence(action)
+	for i, spec := range specs {
+		if spec.key != step {
+			continue
+		}
+		for _, next := range specs[i+1:] {
+			if applies(action, d, next.key) {
+				return next.key
+			}
 		}
 	}
-	return -1
+	return ""
+}
+
+func previousStep(action string, d draft, step string) string {
+	switch action {
+	case service.DialogPeriodAdd:
+		prev := map[string]string{
+			"period_precision": "period_name", "period_expires": "period_precision",
+			"period_starts": "period_expires", "terms_mode": "period_starts",
+			"terms_interval": "terms_mode", "terms_amount": "terms_interval",
+			"period_preview": "terms_amount",
+		}
+		if step == "period_preview" && d.Values["mode"] != "recurring" {
+			return "terms_mode"
+		}
+		return prev[step]
+	case service.DialogPeriodEdit:
+		switch step {
+		case "edit_value", "period_precision", "terms_mode":
+			return "edit_field"
+		case "period_expires":
+			return "period_precision"
+		case "terms_interval":
+			return "terms_mode"
+		case "terms_amount":
+			return "terms_interval"
+		case "edit_preview":
+			switch d.Values["field"] {
+			case "name", "starts":
+				return "edit_value"
+			case "expires":
+				return "period_expires"
+			case "terms":
+				if d.Values["mode"] == "recurring" {
+					return "terms_amount"
+				}
+				return "terms_mode"
+			}
+		}
+		return ""
+	case service.DialogServiceAdd, service.DialogServiceEdit, service.DialogRuleAdd, service.DialogRuleEdit, service.DialogRenew, service.DialogTimezone:
+		specs := sequence(action)
+		for i, spec := range specs {
+			if spec.key == step {
+				for j := i - 1; j >= 0; j-- {
+					if applies(action, d, specs[j].key) {
+						return specs[j].key
+					}
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
+// applies hides the SIM-only questions for generic categories and the
+// recurring-details questions for non-recurring terms.
+func applies(action string, d draft, step string) bool {
+	switch step {
+	case "add_card_type", "add_phone", "add_region", "add_iccid":
+		return d.Values["kind"] == "sim"
+	case "terms_interval", "terms_amount":
+		return d.Values["mode"] == "recurring"
+	}
+	return true
 }
 
 func optionalStep(step string) bool {
@@ -94,52 +266,6 @@ func optionalStep(step string) bool {
 		}
 	}
 	return false
-}
-
-// nextStep skips steps that do not apply to the chosen category/kind. It
-// never derives a step name from user input.
-func nextStep(action string, d draft, step string) string {
-	specs := wizardSequences[action]
-	i := stepIndex(action, step)
-	if i < 0 {
-		return ""
-	}
-	for _, spec := range specs[i+1:] {
-		if applies(action, d, spec.key) {
-			return spec.key
-		}
-	}
-	return ""
-}
-
-func previousStep(action string, d draft, step string) string {
-	specs := wizardSequences[action]
-	i := stepIndex(action, step)
-	if i < 0 {
-		return ""
-	}
-	for j := i - 1; j >= 0; j-- {
-		if applies(action, d, specs[j].key) {
-			return specs[j].key
-		}
-	}
-	return ""
-}
-
-// applies hides the SIM-only questions for generic categories and the
-// recurring-details question for non-recurring terms.
-func applies(action string, d draft, step string) bool {
-	switch step {
-	case "add_card_type", "add_phone", "add_region", "add_iccid":
-		return d.Values["kind"] == "sim"
-	case "add_identifier", "add_management_url":
-		return d.Values["kind"] != "sim"
-	case "terms_interval":
-		return d.Values["mode"] == "recurring"
-	case "terms_amount":
-		return d.Values["mode"] != ""
-	}
-	return true
 }
 
 var datePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
@@ -169,7 +295,7 @@ func parsePrecisionValue(precision, value string) error {
 }
 
 // expiration examples are rendered everywhere a user must type a cutoff.
-const expirationHelp = "示例：\n2027-02-28（date）\n2027-02-28T23:59:59+08:00（datetime，须带时区 offset）"
+const expirationHelp = "示例：\n2027-02-28（仅日期）\n2027-02-28T23:59:59+08:00（精确时间，须带时区 offset）"
 
 func parseMoney(amountText, currencyText string) (*int64, *string, error) {
 	amountText, currencyText = strings.TrimSpace(amountText), strings.ToUpper(strings.TrimSpace(currencyText))
@@ -202,14 +328,27 @@ func parseMoney(amountText, currencyText string) (*int64, *string, error) {
 	return &amount, &currencyText, nil
 }
 
+// parseSpaceMoney accepts "1000 TWD" or an empty line. A currency is never
+// inferred from the user's locale.
+func parseSpaceMoney(text string) (*int64, *string, error) {
+	fields := strings.Fields(text)
+	switch len(fields) {
+	case 0:
+		return nil, nil, nil
+	case 2:
+		return parseMoney(fields[0], fields[1])
+	default:
+		return nil, nil, fail("请发送“金额 币种”，例如 1000 TWD。")
+	}
+}
+
 // choiceValues maps a stable decimal callback code to its enum value. The
 // reverse map keeps callback payloads free of labels and user input.
 var choiceValues = map[string]map[string]string{
-	"precision":   {"1": "date", "2": "datetime"},
-	"card_type":   {"1": "physical_sim", "2": "esim"},
-	"mode":        {"1": "once", "2": "recurring", "3": "custom"},
-	"enabled":     {"0": "false", "1": "true"},
-	"period_type": {"1": "number_validity", "2": "plan_validity", "3": "data_package_validity", "4": "custom"},
+	"precision": {"1": "date", "2": "datetime"},
+	"card_type": {"1": "physical_sim", "2": "esim"},
+	"mode":      {"1": "once", "2": "recurring", "3": "custom"},
+	"enabled":   {"0": "false", "1": "true"},
 }
 
 var choiceCodes = func() map[string]map[string]string {
@@ -223,9 +362,10 @@ var choiceCodes = func() map[string]map[string]string {
 	return out
 }()
 
-var editFieldOrder = []string{"name", "category_id", "provider", "identifier", "management_url", "notes", "card_type", "phone", "region", "iccid"}
+var serviceEditFields = []string{"name", "category_id", "provider", "identifier", "management_url", "notes", "card_type", "phone", "region", "iccid"}
+var periodEditFields = []string{"name", "expires", "starts", "terms"}
 
-// choiceCallback encodes a wizard option as v2:dialog:set:<key>:<code>.
+// choiceCallback encodes a wizard option as v3:dialog:set:<key>:<code>.
 func choiceCallback(key, value string) string {
 	if codes, ok := choiceCodes[key]; ok {
 		return cb("dialog", "set", key, codes[value])
@@ -234,7 +374,13 @@ func choiceCallback(key, value string) string {
 	case "category":
 		return cb("dialog", "set", key, value)
 	case "field":
-		for i, field := range editFieldOrder {
+		for i, field := range serviceEditFields {
+			if field == value {
+				return cb("dialog", "set", key, strconv.Itoa(i+1))
+			}
+		}
+	case "pfield":
+		for i, field := range periodEditFields {
 			if field == value {
 				return cb("dialog", "set", key, strconv.Itoa(i+1))
 			}
@@ -252,13 +398,22 @@ func choiceCallback(key, value string) string {
 func decodeChoice(key, code string) (string, bool) {
 	switch key {
 	case "category":
+		if _, err := strconv.ParseInt(code, 10, 64); err != nil {
+			return "", false
+		}
 		return code, true
 	case "field":
 		n, err := strconv.Atoi(code)
-		if err != nil || n < 1 || n > len(editFieldOrder) {
+		if err != nil || n < 1 || n > len(serviceEditFields) {
 			return "", false
 		}
-		return editFieldOrder[n-1], true
+		return serviceEditFields[n-1], true
+	case "pfield":
+		n, err := strconv.Atoi(code)
+		if err != nil || n < 1 || n > len(periodEditFields) {
+			return "", false
+		}
+		return periodEditFields[n-1], true
 	case "tz":
 		n, err := strconv.Atoi(code)
 		if err != nil || n < 1 || n > len(timezoneSamples) {
@@ -277,14 +432,14 @@ func decodeChoice(key, code string) (string, bool) {
 // choiceKeys maps button value names to draft keys. Buttons never carry a
 // draft key directly, so a crafted callback cannot create arbitrary state.
 var choiceKeys = map[string]string{
-	"precision":   "precision",
-	"category":    "category_id",
-	"card_type":   "card_type",
-	"period_type": "period_type",
-	"mode":        "mode",
-	"enabled":     "enabled",
-	"field":       "field",
-	"tz":          "tz",
+	"precision": "precision",
+	"category":  "category_id",
+	"card_type": "card_type",
+	"mode":      "mode",
+	"enabled":   "enabled",
+	"field":     "field",
+	"pfield":    "field",
+	"tz":        "tz",
 }
 
 func (w *wizard) setChoice(ctx context.Context, key, value string) {
@@ -298,16 +453,20 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
 		return
 	}
-	if draftKey == "field" && !validEditField(value) {
-		w.failure(ctx, "该字段不可编辑，请重新打开流程。", false, false)
-		return
+	if draftKey == "field" {
+		if w.d.Action == service.DialogPeriodEdit {
+			if !validPeriodField(value) {
+				w.failure(ctx, "该字段不可编辑，请重新打开流程。", false, false)
+				return
+			}
+		} else if !validEditField(value) {
+			w.failure(ctx, "该字段不可编辑，请重新打开流程。", false, false)
+			return
+		}
 	}
 	w.dr.set(draftKey, value)
 
 	next := nextStep(w.d.Action, w.dr, w.d.Step)
-	if w.d.Step == "edit_field" {
-		next = "edit_value"
-	}
 	switch draftKey {
 	case "precision":
 		if value != "date" && value != "datetime" {
@@ -327,13 +486,6 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 	case "enabled":
 		if value != "true" && value != "false" {
 			w.failure(ctx, "启用状态无效，请重新打开流程。", false, false)
-			return
-		}
-	case "period_type":
-		switch value {
-		case "number_validity", "plan_validity", "data_package_validity", "custom":
-		default:
-			w.failure(ctx, "有效期类型无效，请重新打开流程。", false, false)
 			return
 		}
 	case "tz":
@@ -360,7 +512,7 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 		}
 		w.dr.set("kind", kind)
 	}
-	if w.d.Action == service.DialogServiceAdd && w.d.Step == "add_category" {
+	if w.d.Step == "edit_field" {
 		next = nextStep(w.d.Action, w.dr, w.d.Step)
 	}
 	if next == "" {
@@ -376,6 +528,14 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 func validEditField(field string) bool {
 	switch field {
 	case "name", "category_id", "provider", "identifier", "management_url", "notes", "card_type", "phone", "region", "iccid":
+		return true
+	}
+	return false
+}
+
+func validPeriodField(field string) bool {
+	switch field {
+	case "name", "expires", "starts", "terms":
 		return true
 	}
 	return false

@@ -4,225 +4,476 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"telegram.bot.remind/internal/domain"
 	"telegram.bot.remind/internal/service"
 
+	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
-// serviceDetailPage renders one page of a service and its periods. The full
-// period list is paged so a single message cannot grow without bound.
-func (h *Handler) serviceDetailPage(ctx context.Context, uid int64, item service.ServiceItem, after int64) (string, service.Page[service.Period], error) {
-	category := "#" + id(item.CategoryID)
+var serviceFilterCodes = map[string]string{
+	"1": "active", "2": "due_soon", "3": "expired",
+	"4": "no_period", "5": "archived", "6": "all",
+}
+
+func serviceFilterFromCode(code string) (string, bool) {
+	value, ok := serviceFilterCodes[code]
+	return value, ok
+}
+
+var jobFilterCodes = map[string]string{"1": "pending", "2": "failed", "3": "all"}
+
+func jobFilterFromCode(code string) (string, bool) {
+	value, ok := jobFilterCodes[code]
+	return value, ok
+}
+
+func categoryName(ctx context.Context, h *Handler, uid, categoryID int64) string {
 	for _, c := range mustCategories(ctx, h, uid) {
-		if c.ID == item.CategoryID {
-			category = c.Name + " (#" + id(c.ID) + ")"
-			break
+		if c.ID == categoryID {
+			return c.Name
 		}
 	}
+	return "类别"
+}
+
+func expiryBadge(p service.Period, now time.Time, loc *time.Location) string {
+	if p.Status != "active" {
+		return statusLabel(p.Status)
+	}
+	var local *string
+	if p.LocalExpiresDate != nil {
+		local = p.LocalExpiresDate
+	}
+	days, err := domain.CalendarDaysUntil(domain.Expiration{ExpiresAt: time.Unix(p.ExpiresAt, 0).UTC(), DatePrecision: p.DatePrecision, LocalExpiresDate: local}, now, loc)
+	if err != nil {
+		return "有效"
+	}
+	switch {
+	case days < 0:
+		return "已过期"
+	case days == 0:
+		return "今天到期"
+	case days <= service.DueSoonDays:
+		return fmt.Sprintf("%d 天后到期", days)
+	}
+	return "有效"
+}
+
+func (h *Handler) userLocation(user service.User) *time.Location {
+	loc, err := time.LoadLocation(user.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+func (h *Handler) showOverview(ctx context.Context, b *telegram.Bot, uid, chatID int64, filter service.ServiceFilter, after int64) {
+	text, overview, err := h.overviewPage(ctx, uid, filter, after)
+	if err != nil {
+		h.send(ctx, b, chatID, serviceMessage(err))
+		return
+	}
+	h.sendMarkup(ctx, b, chatID, text, h.overviewKeyboard(ctx, uid, filter, overview, after))
+}
+
+func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.ServiceFilter, after int64) (string, service.ServiceOverview, error) {
+	overview, err := h.svc.ServiceOverview(ctx, uid, after, pageSize, filter)
+	if err != nil {
+		return "", overview, err
+	}
+	user, err := h.svc.Me(ctx, uid)
+	if err != nil {
+		return "", overview, err
+	}
+	loc := h.userLocation(user)
+	now := time.Now()
 	var b strings.Builder
-	fmt.Fprintf(&b, "服务 #%s\n名称：%s\n类别：%s\n状态：%s\n服务商：%s\n公开标识：%s\n管理链接：%s\n",
-		id(item.ID), item.Name, category, item.Status, textOrDash(item.Provider), textOrDash(item.Identifier), textOrDash(item.ManagementURL))
+	b.WriteString("我的服务\n")
+	if filter.Query != "" {
+		fmt.Fprintf(&b, "搜索：%s\n", filter.Query)
+	}
+	fmt.Fprintf(&b, "全部 %d · 即将到期 %d · 已过期 %d\n", overview.Counts.Total, overview.Counts.DueSoon, overview.Counts.Expired)
+	if len(overview.Items.Data) == 0 {
+		b.WriteString("\n没有符合条件的服务。\n")
+	}
+	for i, item := range overview.Items.Data {
+		s := item.Service
+		state := "有效"
+		if s.Status == "archived" {
+			state = "已归档"
+		}
+		fmt.Fprintf(&b, "\n%d. %s [%s]\n", i+1, s.Name, state)
+		provider := "未填写服务商"
+		if s.Provider != nil && *s.Provider != "" {
+			provider = *s.Provider
+		}
+		fmt.Fprintf(&b, "   %s · %s\n", categoryName(ctx, h, uid, s.CategoryID), provider)
+		if item.PrimaryPeriod == nil {
+			b.WriteString("   未设置有效期\n")
+		} else {
+			p := item.PrimaryPeriod
+			fmt.Fprintf(&b, "   %s · %s · %s\n", periodName(*p), periodExpiry(*p), expiryBadge(*p, now, loc))
+		}
+	}
+	if overview.Items.NextCursor != nil {
+		b.WriteString("\n更多服务请使用下方分页按钮。\n")
+	}
+	return strings.TrimRight(b.String(), "\n"), overview, nil
+}
+
+func (h *Handler) overviewKeyboard(ctx context.Context, uid int64, filter service.ServiceFilter, overview service.ServiceOverview, after int64) *models.InlineKeyboardMarkup {
+	code := "1"
+	for key, value := range serviceFilterCodes {
+		if value == filter.Status {
+			code = key
+		}
+	}
+	category := int64(0)
+	if filter.CategoryID != nil {
+		category = *filter.CategoryID
+	}
+	rows := [][]models.InlineKeyboardButton{
+		pair(button("当前服务", cb("service", "list", "1", id(category), "0")), button("即将到期", cb("service", "list", "2", id(category), "0")), button("已过期", cb("service", "list", "3", id(category), "0"))),
+		pair(button("未设置有效期", cb("service", "list", "4", id(category), "0")), button("已归档", cb("service", "list", "5", id(category), "0")), button("全部（含归档）", cb("service", "list", "6", id(category), "0"))),
+	}
+	for _, item := range overview.Items.Data {
+		label := item.Service.Name
+		if item.PrimaryPeriod != nil {
+			if item.Service.Name != "" {
+				label += " · " + periodExpiry(*item.PrimaryPeriod)
+			}
+		}
+		rows = append(rows, pair(button(label, cb("service", "view", id(item.Service.ID), "0"))))
+	}
+	if overview.Items.NextCursor != nil {
+		rows = append(rows, pair(button("下一页", cb("service", "list", code, id(category), id(*overview.Items.NextCursor)))))
+	}
+	rows = append(rows,
+		pair(button("按类别", cb("service", "cats", code, id(category))), button("添加服务", cb("dialog", "new_service"))),
+		pair(button("设置", cb("settings", "view"))),
+	)
+	return markup(rows...)
+}
+
+func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid, chatID int64, code string) {
+	status, ok := serviceFilterFromCode(code)
+	if !ok {
+		h.send(ctx, b, chatID, "该按钮已失效，请发送 /services 重新打开。")
+		return
+	}
+	categories := mustCategories(ctx, h, uid)
+	rows := [][]models.InlineKeyboardButton{
+		pair(button("全部类别", cb("service", "list", code, "0", "0"))),
+	}
+	row := []models.InlineKeyboardButton{}
+	for _, c := range categories {
+		row = append(row, button(c.Name, cb("service", "list", code, id(c.ID), "0")))
+		if len(row) == 2 {
+			rows = append(rows, row)
+			row = []models.InlineKeyboardButton{}
+		}
+	}
+	if len(row) > 0 {
+		rows = append(rows, row)
+	}
+	rows = append(rows, pair(button("返回服务列表", cb("service", "list", code, "0", "0"))))
+	h.sendMarkup(ctx, b, chatID, "按类别筛选（当前状态："+statusLabel(status)+"）", markup(rows...))
+}
+
+func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user service.User, chatID, serviceID, after int64) {
+	item, err := h.svc.GetService(ctx, user.ID, serviceID)
+	if err != nil {
+		h.send(ctx, b, chatID, objectStateMessage(err))
+		return
+	}
+	text, page, err := h.serviceDetailPage(ctx, user, item, after)
+	if err != nil {
+		h.send(ctx, b, chatID, serviceMessage(err))
+		return
+	}
+	h.sendMarkup(ctx, b, chatID, text, h.serviceKeyboard(item, &page))
+}
+
+func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item service.ServiceItem, after int64) (string, service.Page[service.Period], error) {
+	category := categoryName(ctx, h, user.ID, item.CategoryID)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n类别：%s\n状态：%s\n服务商：%s\n公开标识：%s\n管理链接：%s\n",
+		item.Name, category, statusLabel(item.Status), textOrDash(item.Provider), textOrDash(item.Identifier), textOrDash(item.ManagementURL))
 	if d := item.SIMDetails; d != nil {
-		fmt.Fprintf(&b, "SIM 类型：%s\n电话：%s\n国家/地区：%s\nICCID：%s\n", d.CardType, textOrDash(d.PhoneNumber), textOrDash(d.CountryOrRegion), textOrDash(d.ICCID))
+		kind := d.CardType
+		if kind == "physical_sim" {
+			kind = "实体 SIM"
+		} else if kind == "esim" {
+			kind = "eSIM"
+		}
+		fmt.Fprintf(&b, "卡类型：%s\n号码：%s\n国家/地区：%s\nICCID：%s\n", kind, textOrDash(d.PhoneNumber), textOrDash(d.CountryOrRegion), textOrDash(d.ICCID))
 	}
 	if item.Notes != nil {
 		fmt.Fprintf(&b, "备注：%s\n", *item.Notes)
 	}
-	page, err := h.svc.ListPeriods(ctx, uid, item.ID, after, pageSize)
+	page, err := h.svc.ListPeriods(ctx, user.ID, item.ID, after, pageSize)
 	if err != nil {
 		return "", page, err
 	}
+	loc := h.userLocation(user)
+	now := time.Now()
 	b.WriteString("\n有效期：\n")
 	if after == 0 && len(page.Data) == 0 {
-		b.WriteString("（未配置；不会发送提醒）\n")
+		b.WriteString("（未配置有效期；不会发送提醒）\n")
 	}
 	for _, p := range page.Data {
-		fmt.Fprintf(&b, "#%s %s：%s [%s]，版本 %d\n  %s\n", id(p.ID), periodName(p), periodExpiry(p), p.Status, p.Cycle, termsText(p.Terms))
+		fmt.Fprintf(&b, "· %s\n  截止 %s · %s\n  %s\n", periodName(p), periodExpiry(p), expiryBadge(p, now, loc), termsText(p.Terms))
 	}
 	if page.NextCursor != nil {
-		fmt.Fprintf(&b, "\n更多有效期请使用下方分页按钮。")
+		b.WriteString("\n更多有效期请使用下方分页按钮。")
 	}
 	return strings.TrimRight(b.String(), "\n"), page, nil
 }
 
-// serviceKeyboard exposes direct actions; every ID is re-validated by the
-// callback handler before use.
 func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[service.Period]) *models.InlineKeyboardMarkup {
 	rows := [][]models.InlineKeyboardButton{}
 	if page != nil {
 		for _, p := range page.Data {
-			if item.Status != "active" {
-				rows = append(rows, pair(button("查看 #"+id(p.ID), cb("period", "view", id(p.ID)))))
-				continue
-			}
-			rows = append(rows, pair(
-				button("查看 #"+id(p.ID), cb("period", "view", id(p.ID))),
-				button("续期 #"+id(p.ID), cb("period", "renew", id(p.ID))),
-				button("编辑条款 #"+id(p.ID), cb("period", "terms", id(p.ID))),
-			))
-			rows = append(rows, pair(
-				button("规则 #"+id(p.ID), cb("period", "rules", id(p.ID))),
-				button("历史 #"+id(p.ID), cb("period", "renewals", id(p.ID))),
-			))
+			rows = append(rows, pair(button(periodName(p)+" · "+periodExpiry(p), cb("period", "view", id(p.ID)))))
 		}
 		if page.NextCursor != nil {
 			rows = append(rows, pair(button("下一页有效期", cb("service", "view", id(item.ID), id(*page.NextCursor)))))
 		}
 	}
-	rows = append(rows,
-		pair(button("编辑服务", cb("service", "edit", id(item.ID))), button("有效期列表", cb("service", "periods", id(item.ID)))),
-		pair(button("添加有效期", cb("period", "add", id(item.ID)))),
-	)
-	if item.Status == "archived" {
-		rows = append(rows, pair(button("恢复服务", cb("service", "restore", id(item.ID)))))
+	if item.Status == "active" {
+		rows = append(rows, pair(
+			button("添加有效期", cb("period", "add", id(item.ID))),
+			button("编辑服务", cb("service", "edit", id(item.ID))),
+		))
+		rows = append(rows, pair(
+			button("归档服务", cb("service", "archive_ask", id(item.ID))),
+			button("删除服务", cb("service", "delete_ask", id(item.ID))),
+		))
 	} else {
-		rows = append(rows, pair(button("归档服务", cb("service", "archive_ask", id(item.ID)))))
+		rows = append(rows, pair(
+			button("恢复服务", cb("service", "restore_ask", id(item.ID))),
+			button("删除服务", cb("service", "delete_ask", id(item.ID))),
+		))
 	}
-	rows = append(rows, pair(button("返回服务列表", cb("service", "list")), button("设置", cb("settings", "view"))))
+	rows = append(rows, pair(button("返回服务列表", cb("service", "list", "1", "0", "0"))))
 	return markup(rows...)
+}
+
+func (h *Handler) showPeriodDetail(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID int64) {
+	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
+	if err != nil {
+		h.send(ctx, b, chatID, objectStateMessage(err))
+		return
+	}
+	rules, err := h.svc.ListRules(ctx, user.ID, p.ID, 0, 100)
+	if err != nil {
+		h.send(ctx, b, chatID, serviceMessage(err))
+		return
+	}
+	h.sendMarkup(ctx, b, chatID, periodDetail(p, len(rules.Data)), h.periodKeyboard(p))
 }
 
 func (h *Handler) periodKeyboard(p service.Period) *models.InlineKeyboardMarkup {
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("续期", cb("period", "renew", id(p.ID))), button("编辑条款", cb("period", "terms", id(p.ID)))),
-		pair(button("提醒规则", cb("period", "rules", id(p.ID))), button("续期历史", cb("period", "renewals", id(p.ID)))),
-		pair(button("返回服务", cb("service", "view", id(p.ServiceID)))),
+		pair(button("续期", cb("period", "renew", id(p.ID))), button("提醒规则", cb("period", "rules", id(p.ID), "0"))),
+		pair(button("续期历史", cb("period", "renewals", id(p.ID), "0")), button("编辑有效期", cb("period", "edit", id(p.ID)))),
 	}
+	rows = append(rows,
+		pair(button("删除有效期", cb("period", "delete_ask", id(p.ID)))),
+		pair(button("返回服务", cb("service", "view", id(p.ServiceID), "0"))),
+	)
 	return markup(rows...)
 }
 
-func periodLabel(p service.Period) string {
-	return fmt.Sprintf("#%s %s %s", id(p.ID), periodName(p), periodStatusShort(p.Status))
-}
-
-func periodStatusShort(status string) string {
-	switch status {
-	case "active":
-		return "有效"
-	case "expired":
-		return "已过期"
-	case "cancelled":
-		return "已取消"
-	}
-	return status
-}
-
-func (h *Handler) periodsPage(ctx context.Context, uid int64, item service.ServiceItem, after int64) (string, service.Page[service.Period], error) {
-	page, err := h.svc.ListPeriods(ctx, uid, item.ID, after, pageSize)
+func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID, after int64) {
+	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
 	if err != nil {
-		return "", page, err
+		h.send(ctx, b, chatID, objectStateMessage(err))
+		return
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "服务 #%s %s 的有效期：\n", id(item.ID), item.Name)
+	page, err := h.svc.ListRules(ctx, user.ID, periodID, after, pageSize)
+	if err != nil {
+		h.send(ctx, b, chatID, serviceMessage(err))
+		return
+	}
+	var text strings.Builder
+	fmt.Fprintf(&text, "提醒规则 · %s\n截止 %s\n", periodName(p), periodExpiry(p))
 	if len(page.Data) == 0 {
-		b.WriteString("（无）")
-	}
-	for _, p := range page.Data {
-		fmt.Fprintf(&b, "#%s %s\n  %s [%s] 版本 %d\n  %s\n", id(p.ID), periodName(p), periodExpiry(p), p.Status, p.Cycle, termsText(p.Terms))
-	}
-	return strings.TrimRight(b.String(), "\n"), page, nil
-}
-
-func (h *Handler) serviceListPage(ctx context.Context, uid, after int64) (string, service.Page[service.ServiceItem], error) {
-	page, err := h.svc.ListServices(ctx, uid, after, pageSize, service.ServiceFilter{Status: "active"})
-	if err != nil {
-		return "", page, err
-	}
-	var b strings.Builder
-	b.WriteString("服务列表（仅活跃）：\n")
-	if len(page.Data) == 0 {
-		b.WriteString("（无）点击“添加服务”开始；也可以使用 /service add <query> 高级快速创建。")
-	}
-	for _, item := range page.Data {
-		fmt.Fprintf(&b, "#%s %s [%s]\n  服务商：%s\n", id(item.ID), item.Name, item.Status, textOrDash(item.Provider))
-	}
-	return strings.TrimRight(b.String(), "\n"), page, nil
-}
-
-func (h *Handler) periodDetailPage(ctx context.Context, uid int64, p service.Period) (string, error) {
-	page, err := h.svc.ListRules(ctx, uid, p.ID, 0, 100)
-	if err != nil {
-		return "", err
-	}
-	status := "未配置提醒（不会发送通知）"
-	if len(page.Data) > 0 {
-		status = fmt.Sprintf("%d 条规则", len(page.Data))
-	}
-	return periodDetail(p) + "\n提醒：" + status, nil
-}
-
-func (h *Handler) rulesPage(ctx context.Context, uid int64, p service.Period, after int64) (string, service.Page[service.Rule], error) {
-	page, err := h.svc.ListRules(ctx, uid, p.ID, after, pageSize)
-	if err != nil {
-		return "", page, err
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "有效期 #%s %s 的提醒规则：\n", id(p.ID), periodName(p))
-	if len(page.Data) == 0 {
-		b.WriteString("（未配置提醒；如需通知请添加规则）")
+		text.WriteString("\n尚未配置规则；添加后会按用户时区发送提醒。\n")
 	}
 	for _, r := range page.Data {
-		fmt.Fprintf(&b, "#%s 提前 %d 天 %s  启用 %t  版本 %d\n", id(r.ID), r.DaysBefore, r.ReminderTime, r.Enabled, r.Revision)
+		state := "已启用"
+		if !r.Enabled {
+			state = "已禁用"
+		}
+		fmt.Fprintf(&text, "\n· 提前 %d 天 %s · %s\n", r.DaysBefore, r.ReminderTime, state)
 	}
-	return strings.TrimRight(b.String(), "\n"), page, nil
+	rows := [][]models.InlineKeyboardButton{}
+	for _, r := range page.Data {
+		state := ""
+		if !r.Enabled {
+			state = "（已禁用）"
+		}
+		rows = append(rows, pair(button(fmt.Sprintf("提前 %d 天 %s%s", r.DaysBefore, r.ReminderTime, state), cb("rule", "view", id(r.ID)))))
+	}
+	if page.NextCursor != nil {
+		rows = append(rows, pair(button("下一页", cb("period", "rules", id(p.ID), id(*page.NextCursor)))))
+	}
+	rows = append(rows,
+		pair(button("添加规则", cb("rule", "add", id(p.ID)))),
+		pair(button("返回有效期", cb("period", "view", id(p.ID)))),
+	)
+	h.sendMarkup(ctx, b, chatID, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
-func renewalsText(p service.Period, page service.Page[service.Renewal]) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "有效期 #%s %s 的续期历史：\n", id(p.ID), periodName(p))
+func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user service.User, chatID, ruleID int64) {
+	r, err := h.svc.GetRule(ctx, user.ID, ruleID)
+	if err != nil {
+		h.send(ctx, b, chatID, objectStateMessage(err))
+		return
+	}
+	state := "已启用"
+	if !r.Enabled {
+		state = "已禁用"
+	}
+	text := fmt.Sprintf("提醒规则\n提前 %d 天 · %s · %s\n\n启用/禁用或删除只影响这一条规则；删除会同时移除该规则未发送与已发送的任务记录。",
+		r.DaysBefore, r.ReminderTime, state)
+	rows := [][]models.InlineKeyboardButton{
+		pair(button("编辑规则", cb("rule", "edit", id(r.ID))), button("删除规则", cb("rule", "delete_ask", id(r.ID)))),
+	}
+	if r.Enabled {
+		rows = append(rows, pair(button("禁用规则", cb("rule", "disable_ask", id(r.ID)))))
+	} else {
+		rows = append(rows, pair(button("启用规则", cb("rule", "enable_ask", id(r.ID)))))
+	}
+	rows = append(rows, pair(button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0"))))
+	h.sendMarkup(ctx, b, chatID, text, markup(rows...))
+}
+
+func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID, after int64) {
+	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
+	if err != nil {
+		h.send(ctx, b, chatID, objectStateMessage(err))
+		return
+	}
+	page, err := h.svc.ListRenewals(ctx, user.ID, periodID, after, pageSize)
+	if err != nil {
+		h.send(ctx, b, chatID, serviceMessage(err))
+		return
+	}
+	var text strings.Builder
+	fmt.Fprintf(&text, "续期历史 · %s\n", periodName(p))
 	if len(page.Data) == 0 {
-		b.WriteString("（无）")
+		text.WriteString("\n（无续期记录）")
 	}
 	for _, r := range page.Data {
-		fmt.Fprintf(&b, "#%s 周期 %d：%s → %s", id(r.ID), r.PreviousCycle, stamp(r.PreviousExpiresAt, r.Timezone), stamp(r.NewExpiresAt, r.Timezone))
+		fmt.Fprintf(&text, "\n· %s → %s", stamp(r.PreviousExpiresAt, r.Timezone), stamp(r.NewExpiresAt, r.Timezone))
 		if r.Amount != nil && r.Currency != nil {
-			fmt.Fprintf(&b, "  金额 %d %s", *r.Amount, *r.Currency)
+			fmt.Fprintf(&text, "\n  金额 %d %s", *r.Amount, *r.Currency)
 		}
-		b.WriteString("\n")
 		if r.Notes != nil && *r.Notes != "" {
-			fmt.Fprintf(&b, "  备注：%s\n", *r.Notes)
+			fmt.Fprintf(&text, "\n  备注：%s", *r.Notes)
 		}
+		text.WriteString("\n")
 	}
-	return strings.TrimRight(b.String(), "\n")
+	rows := [][]models.InlineKeyboardButton{}
+	if page.NextCursor != nil {
+		rows = append(rows, pair(button("下一页", cb("period", "renewals", id(p.ID), id(*page.NextCursor)))))
+	}
+	rows = append(rows, pair(button("返回有效期", cb("period", "view", id(p.ID)))))
+	h.sendMarkup(ctx, b, chatID, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
-func (h *Handler) remindersPage(ctx context.Context, user service.User, filter string, after int64) (string, service.Page[service.Job], error) {
+func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, filter string, after int64) {
 	page, err := h.svc.ListJobs(ctx, user.ID, filter, after, pageSize)
 	if err != nil {
-		return "", page, err
+		h.send(ctx, b, chatID, serviceMessage(err))
+		return
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "提醒任务（%s）：\n", filter)
+	var text strings.Builder
+	fmt.Fprintf(&text, "提醒任务（%s）\n", statusLabel(filter))
+	if filter == "all" {
+		text.Reset()
+		text.WriteString("提醒任务（全部）\n")
+	}
 	if len(page.Data) == 0 {
-		b.WriteString("（无）")
+		text.WriteString("\n（无）")
 	}
+	type jobLine struct {
+		job  service.Job
+		name string
+	}
+	lines := make([]jobLine, 0, len(page.Data))
 	for _, j := range page.Data {
-		fmt.Fprintf(&b, "#%s 项目 %s 周期 %d 状态 %s 尝试 %d\n", id(j.ID), id(j.ValidityPeriodID), j.Cycle, j.Status, j.Attempts)
-		fmt.Fprintf(&b, "  计划 %s", stamp(j.ScheduledAt, user.Timezone))
-		if j.SentAt != nil {
-			fmt.Fprintf(&b, "  实际 %s", stamp(*j.SentAt, user.Timezone))
-		}
-		if j.LastErrorCode != nil {
-			fmt.Fprintf(&b, "  原因 %s", *j.LastErrorCode)
-			if *j.LastErrorCode == "no_private_chat" {
-				b.WriteString("（请先私聊发送 /start 建立接收地址）")
+		p, err := h.svc.GetPeriod(ctx, user.ID, j.PeriodID)
+		name := "有效期"
+		if err != nil {
+			name = "（有效期已不存在）"
+		} else {
+			item, itemErr := h.svc.GetService(ctx, user.ID, p.ServiceID)
+			if itemErr == nil {
+				name = item.Name + " / " + periodName(p)
+			} else {
+				name = periodName(p)
 			}
 		}
-		b.WriteString("\n")
+		lines = append(lines, jobLine{job: j, name: name})
+		fmt.Fprintf(&text, "\n· %s\n  状态：%s · 计划 %s", name, statusLabel(j.Status), stamp(j.ScheduledAt, user.Timezone))
+		if j.SentAt != nil {
+			fmt.Fprintf(&text, "\n  实际 %s", stamp(*j.SentAt, user.Timezone))
+		}
+		if j.LastErrorCode != nil {
+			fmt.Fprintf(&text, "\n  原因 %s", *j.LastErrorCode)
+			if *j.LastErrorCode == "no_private_chat" {
+				text.WriteString("（请先私聊发送 /start 建立接收地址）")
+			}
+		}
+		text.WriteString("\n")
 	}
-	return strings.TrimRight(b.String(), "\n"), page, nil
+	rows := [][]models.InlineKeyboardButton{
+		pair(button("待发送", cb("job", "list", "1", "0")), button("失败", cb("job", "list", "2", "0")), button("全部", cb("job", "list", "3", "0"))),
+	}
+	for _, line := range lines {
+		if line.job.Status == "pending" || line.job.Status == "sending" || line.job.Status == "failed" {
+			rows = append(rows, pair(button("取消 · "+line.name, cb("job", "cancel_ask", id(line.job.ID)))))
+		}
+	}
+	if page.NextCursor != nil {
+		code := "1"
+		for k, v := range jobFilterCodes {
+			if v == filter {
+				code = k
+			}
+		}
+		rows = append(rows, pair(button("下一页", cb("job", "list", code, id(*page.NextCursor)))))
+	}
+	rows = append(rows, pair(button("返回设置", cb("settings", "view"))))
+	h.sendMarkup(ctx, b, chatID, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
-func (h *Handler) settingsText(ctx context.Context, user service.User) string {
+func (h *Handler) showSettings(ctx context.Context, b *telegram.Bot, user service.User, chatID int64) {
+	h.sendMarkup(ctx, b, chatID, h.settingsText(user), markup(
+		pair(button("修改时区", cb("settings", "timezone")), button("提醒任务", cb("job", "list", "1", "0"))),
+		pair(button("我的服务", cb("service", "list", "1", "0", "0")), button("帮助", cb("settings", "help"))),
+	))
+}
+
+func (h *Handler) settingsText(user service.User) string {
 	bound := "已绑定私聊（当前会话）"
 	if user.PrivateChatID == nil || *user.PrivateChatID != user.TelegramUserID {
 		bound = "私聊绑定状态未知；请在本私聊发送 /start"
 	}
-	return fmt.Sprintf("设置\n当前时区：%s\n私聊绑定：%s\n\n修改时区时，date 精度会按新时区重算日历日结束，datetime 的绝对时刻不变；相关有效期版本会推进，未完成提醒任务取消并重新排程。",
+	return fmt.Sprintf("设置\n当前时区：%s\n私聊绑定：%s\n\n修改时区时，仅日期截止会按新时区重算日历日结束，精确时间保持绝对时刻；相关有效期会推进版本，未完成提醒任务取消并重新排程。",
 		user.Timezone, bound)
 }
 
 func ruleLinePlain(r service.Rule) string {
-	return fmt.Sprintf("规则 #%s：提前 %d 天 %s，启用 %t，版本 %d。", id(r.ID), r.DaysBefore, r.ReminderTime, r.Enabled, r.Revision)
+	state := "已启用"
+	if !r.Enabled {
+		state = "已禁用"
+	}
+	return fmt.Sprintf("提醒规则：提前 %d 天 %s，%s。", r.DaysBefore, r.ReminderTime, state)
 }

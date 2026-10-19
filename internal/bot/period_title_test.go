@@ -9,11 +9,11 @@ import (
 
 func TestPeriodDisplayFallsBackForBlankTitle(t *testing.T) {
 	for _, name := range []string{"", " \t"} {
-		p := service.Period{ID: 1, Name: name, PeriodType: "custom", DatePrecision: "datetime", Timezone: "UTC", Status: "active", Cycle: 1}
+		p := service.Period{ID: 1, Name: name, DatePrecision: "datetime", Timezone: "UTC", Status: "active", Cycle: 1}
 		if got := periodName(p); got != "有效期" {
 			t.Fatalf("blank name: %q", got)
 		}
-		if got := periodDetail(p); !strings.Contains(got, "名称：有效期\n") {
+		if got := periodDetail(p, 0); !strings.HasPrefix(got, "有效期\n") {
 			t.Fatalf("blank detail: %q", got)
 		}
 	}

@@ -6,15 +6,15 @@ import (
 	"telegram.bot.remind/internal/domain"
 )
 
-const ruleColumns = `r.id,r.validity_period_id,r.days_before,r.reminder_time,r.enabled,r.revision,r.created_at,r.updated_at`
+const ruleColumns = `r.id,r.period_id,r.days_before,r.reminder_time,r.enabled,r.revision,r.created_at,r.updated_at`
 
 func scanRule(row scanner) (Rule, error) {
 	var v Rule
-	e := row.Scan(&v.ID, &v.ValidityPeriodID, &v.DaysBefore, &v.ReminderTime, &v.Enabled, &v.Revision, &v.CreatedAt, &v.UpdatedAt)
+	e := row.Scan(&v.ID, &v.PeriodID, &v.DaysBefore, &v.ReminderTime, &v.Enabled, &v.Revision, &v.CreatedAt, &v.UpdatedAt)
 	return v, e
 }
 func getRule(ctx context.Context, q queryer, uid, id int64) (Rule, error) {
-	v, e := scanRule(q.QueryRowContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN validity_periods p ON p.id=r.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND r.id=?", uid, id))
+	v, e := scanRule(q.QueryRowContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN service_periods p ON p.id=r.period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND r.id=?", uid, id))
 	return v, dbError(e)
 }
 func validRule(v Rule, p Period) error {
@@ -38,7 +38,7 @@ func validRule(v Rule, p Period) error {
 }
 func uniqueRule(ctx context.Context, tx *sql.Tx, v Rule) error {
 	var count int
-	if e := tx.QueryRowContext(ctx, "SELECT count(*) FROM reminder_rules WHERE validity_period_id=? AND days_before=? AND reminder_time=? AND id!=?", v.ValidityPeriodID, v.DaysBefore, v.ReminderTime, v.ID).Scan(&count); e != nil {
+	if e := tx.QueryRowContext(ctx, "SELECT count(*) FROM reminder_rules WHERE period_id=? AND days_before=? AND reminder_time=? AND id!=?", v.PeriodID, v.DaysBefore, v.ReminderTime, v.ID).Scan(&count); e != nil {
 		return e
 	}
 	if count > 0 {
@@ -47,7 +47,7 @@ func uniqueRule(ctx context.Context, tx *sql.Tx, v Rule) error {
 	return nil
 }
 func (s *Service) CreateRule(ctx context.Context, uid, pid int64, in RuleInput) (Rule, error) {
-	v := Rule{ValidityPeriodID: pid, DaysBefore: in.DaysBefore, ReminderTime: in.ReminderTime, Enabled: true, Revision: 1, CreatedAt: s.now().Unix(), UpdatedAt: s.now().Unix()}
+	v := Rule{PeriodID: pid, DaysBefore: in.DaysBefore, ReminderTime: in.ReminderTime, Enabled: true, Revision: 1, CreatedAt: s.now().Unix(), UpdatedAt: s.now().Unix()}
 	if in.Enabled != nil {
 		v.Enabled = *in.Enabled
 	}
@@ -56,16 +56,13 @@ func (s *Service) CreateRule(ctx context.Context, uid, pid int64, in RuleInput) 
 		if e != nil {
 			return e
 		}
-		if p.Status == "cancelled" {
-			return ErrConflict
-		}
 		if e = validRule(v, p); e != nil {
 			return e
 		}
 		if e = uniqueRule(ctx, tx, v); e != nil {
 			return e
 		}
-		r, e := tx.ExecContext(ctx, `INSERT INTO reminder_rules(validity_period_id,days_before,reminder_time,enabled,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, pid, v.DaysBefore, v.ReminderTime, v.Enabled, v.Revision, v.CreatedAt, v.UpdatedAt)
+		r, e := tx.ExecContext(ctx, `INSERT INTO reminder_rules(period_id,days_before,reminder_time,enabled,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, pid, v.DaysBefore, v.ReminderTime, v.Enabled, v.Revision, v.CreatedAt, v.UpdatedAt)
 		if e == nil {
 			v.ID, e = r.LastInsertId()
 		}
@@ -87,7 +84,7 @@ func (s *Service) ListRules(ctx context.Context, uid, pid, after int64, limit in
 	if _, e := s.GetPeriod(ctx, uid, pid); e != nil {
 		return out, e
 	}
-	rows, e := s.store.DB.QueryContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN validity_periods p ON p.id=r.validity_period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND p.id=? AND r.id>? ORDER BY r.id LIMIT ?", uid, pid, after, limit+1)
+	rows, e := s.store.DB.QueryContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN service_periods p ON p.id=r.period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND p.id=? AND r.id>? ORDER BY r.id LIMIT ?", uid, pid, after, limit+1)
 	if e != nil {
 		return out, ErrUnavailable
 	}
@@ -112,12 +109,9 @@ func (s *Service) UpdateRule(ctx context.Context, uid, id int64, in RulePatch) (
 		if v.Revision != in.ExpectedRevision {
 			return ErrConflict
 		}
-		p, e := s.getPeriod(ctx, tx, uid, v.ValidityPeriodID)
+		p, e := s.getPeriod(ctx, tx, uid, v.PeriodID)
 		if e != nil {
 			return e
-		}
-		if p.Status == "cancelled" {
-			return ErrConflict
 		}
 		old := v
 		if in.DaysBefore != nil {
@@ -147,18 +141,6 @@ func (s *Service) UpdateRule(ctx context.Context, uid, id int64, in RulePatch) (
 		return cancelJobs(ctx, tx, p.ID, &id, v.UpdatedAt)
 	})
 	return v, e
-}
-func (s *Service) DisableRule(ctx context.Context, uid, id, expected int64) error {
-	v, e := s.GetRule(ctx, uid, id)
-	if e != nil {
-		return e
-	}
-	if !v.Enabled {
-		return nil
-	}
-	enabled := false
-	_, e = s.UpdateRule(ctx, uid, id, RulePatch{ExpectedRevision: expected, Enabled: &enabled})
-	return e
 }
 
 // DeleteRule permanently removes a rule and its reminder jobs.

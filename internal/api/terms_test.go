@@ -41,14 +41,14 @@ func TestPeriodTermsAPILifecycle(t *testing.T) {
 		t.Helper()
 		return data(t, request(t, h, "POST", "/api/v1/services/"+serviceID+"/periods", body, 101, 201))
 	}
-	pOnce := createPeriod(vpsID, `{"period_type":"custom","name":"once","date_precision":"date","expires_at":"2027-01-31","terms":{"mode":"once","interval_count":null,"interval_unit":null,"amount":0,"currency":"USD"}}`)
-	pRecurring := createPeriod(vpsID, `{"period_type":"custom","name":"recurring","date_precision":"date","expires_at":"2027-02-28","terms":{"mode":"recurring","interval_count":1,"interval_unit":"month","amount":1200,"currency":"TWD"}}`)
-	pCustom := createPeriod(vpsID, `{"period_type":"custom","name":"custom","date_precision":"date","expires_at":"2027-03-31","terms":{"mode":"custom","interval_count":null,"interval_unit":null,"amount":null,"currency":null}}`)
-	legacy := createPeriod(vpsID, `{"period_type":"custom","name":"legacy","date_precision":"date","expires_at":"2027-04-30"}`)
+	pOnce := createPeriod(vpsID, `{"name":"once","date_precision":"date","expires_at":"2027-01-31","terms":{"mode":"once","interval_count":null,"interval_unit":null,"amount":0,"currency":"USD"}}`)
+	pRecurring := createPeriod(vpsID, `{"name":"recurring","date_precision":"date","expires_at":"2027-02-28","terms":{"mode":"recurring","interval_count":1,"interval_unit":"month","amount":1200,"currency":"TWD"}}`)
+	pCustom := createPeriod(vpsID, `{"name":"custom","date_precision":"date","expires_at":"2027-03-31","terms":{"mode":"custom","interval_count":null,"interval_unit":null,"amount":null,"currency":null}}`)
+	legacy := createPeriod(vpsID, `{"name":"legacy","date_precision":"date","expires_at":"2027-04-30"}`)
 	if termsView := legacy["terms"].(map[string]any); termsView["mode"] != "custom" || termsView["revision"] != float64(1) {
 		t.Fatalf("legacy normalized terms=%v", termsView)
 	}
-	nullTerms := createPeriod(vpsID, `{"period_type":"custom","name":"null terms","date_precision":"date","expires_at":"2027-04-30","terms":null}`)
+	nullTerms := createPeriod(vpsID, `{"name":"null terms","date_precision":"date","expires_at":"2027-04-30","terms":null}`)
 	if !reflect.DeepEqual(nullTerms["terms"], legacy["terms"]) {
 		t.Fatalf("explicit null terms differ from omitted default: null=%v omitted=%v", nullTerms["terms"], legacy["terms"])
 	}
@@ -63,7 +63,7 @@ func TestPeriodTermsAPILifecycle(t *testing.T) {
 	// Set up a reminder job with every mutable delivery field populated. Terms
 	// updates must neither alter its delivery state nor advance the period cycle.
 	rule := data(t, request(t, h, "POST", "/api/v1/periods/"+pid+"/rules", `{"days_before":1,"reminder_time":"09:00"}`, 101, 201))
-	jobInsert, err := st.DB.Exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,locked_until,attempt_token,sent_at,created_at,updated_at) VALUES(?,?,1,1,1,1801411200,'sending',3,2,3,'attempt-token',4,1,1)`, pOnce["id"], rule["id"])
+	jobInsert, err := st.DB.Exec(`INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,locked_until,attempt_token,sent_at,created_at,updated_at) VALUES(?,?,1,1,1,1801411200,'sending',3,2,3,'attempt-token',4,1,1)`, pOnce["id"], rule["id"])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestTermsStrictAPIValidation(t *testing.T) {
 	service := data(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"strict","category_id":%q}`, categoryIDs["vps"]), 101, 201))
 	sid := service["id"].(string)
 	path := "/api/v1/services/" + sid + "/periods"
-	base := `"period_type":"custom","name":"valid","date_precision":"date","expires_at":"2027-06-30"`
+	base := `"name":"valid","date_precision":"date","expires_at":"2027-06-30"`
 	valid := `{"mode":"once","interval_count":null,"interval_unit":null,"amount":0,"currency":"USD"}`
 	for _, fragment := range []string{
 		`"terms":` + valid + `,"unexpected":true`,
@@ -228,7 +228,7 @@ func TestSIMDetailsStrictAPIValidation(t *testing.T) {
 	categoryIDs := termsCategoryIDs(t, h, 101)
 	sim := data(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"sim","category_id":%q,"sim_details":{"card_type":"esim"}}`, categoryIDs["sim"]), 101, 201))
 	simID := sim["id"].(string)
-	simPeriod := data(t, request(t, h, "POST", "/api/v1/services/"+simID+"/periods", `{"period_type":"number_validity","name":"sim term","date_precision":"date","expires_at":"2027-07-31","terms":{"mode":"once","interval_count":null,"interval_unit":null,"amount":0,"currency":"USD"}}`, 101, 201))
+	simPeriod := data(t, request(t, h, "POST", "/api/v1/services/"+simID+"/periods", `{"name":"sim term","date_precision":"date","expires_at":"2027-07-31","terms":{"mode":"once","interval_count":null,"interval_unit":null,"amount":0,"currency":"USD"}}`, 101, 201))
 	if simPeriod["terms"].(map[string]any)["amount"] != float64(0) {
 		t.Fatalf("SIM service terms=%v", simPeriod["terms"])
 	}
@@ -277,7 +277,7 @@ func TestPeriodTermsRemainIndependentFromRenewalAndCycle(t *testing.T) {
 	h, _, _ := setupAPI(t)
 	vpsID := termsCategoryIDs(t, h, 101)["vps"]
 	service := data(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"vps","category_id":%q}`, vpsID), 101, 201))
-	period := data(t, request(t, h, "POST", "/api/v1/services/"+service["id"].(string)+"/periods", `{"period_type":"custom","name":"date change","date_precision":"date","expires_at":"2027-06-30"}`, 101, 201))
+	period := data(t, request(t, h, "POST", "/api/v1/services/"+service["id"].(string)+"/periods", `{"name":"date change","date_precision":"date","expires_at":"2027-06-30"}`, 101, 201))
 	pid := period["id"].(string)
 	request(t, h, "PATCH", "/api/v1/periods/"+pid, `{"expected_cycle":1,"expected_terms_revision":1,"terms":{"mode":"once","interval_count":null,"interval_unit":null,"amount":null,"currency":null}}`, 101, 200)
 	request(t, h, "PATCH", "/api/v1/periods/"+pid, `{"expected_cycle":1,"expires_at":"2027-07-31"}`, 101, 200)

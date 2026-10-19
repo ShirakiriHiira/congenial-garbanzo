@@ -79,7 +79,7 @@ func setup(t *testing.T, private bool) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.period, err = f.svc.CreatePeriod(context.Background(), f.user.ID, f.sim.ID, service.PeriodInput{PeriodType: "number_validity", Name: "号码", DatePrecision: "date", ExpiresAt: "2027-01-31"})
+	f.period, err = f.svc.CreatePeriod(context.Background(), f.user.ID, f.sim.ID, service.PeriodInput{Name: "号码", DatePrecision: "date", ExpiresAt: "2027-01-31"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,8 @@ func TestGenerationDeduplicationAndDelivery(t *testing.T) {
 	if f.sender.calls != 1 || sent != 1 {
 		t.Fatal("rule revision resent successful expiration")
 	}
-	if err := f.svc.ArchiveService(context.Background(), f.user.ID, f.sim.ID); err != nil {
+	status := "archived"
+	if _, err := f.svc.UpdateService(context.Background(), f.user.ID, f.sim.ID, service.ServicePatch{Status: &status}); err != nil {
 		t.Fatal(err)
 	}
 	active := "active"

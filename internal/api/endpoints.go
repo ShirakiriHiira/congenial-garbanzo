@@ -62,7 +62,7 @@ func (h *Handler) patchPeriod(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_input")
 		return
 	}
-	v, err := h.service.UpdatePeriod(r.Context(), currentUser(r).ID, id, service.PeriodPatch{ExpectedCycle: in.ExpectedCycle, ExpectedTermsRevision: in.ExpectedTermsRevision, Terms: termsPatch(in.Terms), PeriodType: in.PeriodType, Name: in.Name, StartsAt: in.StartsAt.serviceValue(), DatePrecision: in.DatePrecision, ExpiresAt: in.ExpiresAt})
+	v, err := h.service.UpdatePeriod(r.Context(), currentUser(r).ID, id, service.PeriodPatch{ExpectedCycle: in.ExpectedCycle, ExpectedTermsRevision: in.ExpectedTermsRevision, Terms: termsPatch(in.Terms), Name: in.Name, StartsAt: in.StartsAt.serviceValue(), DatePrecision: in.DatePrecision, ExpiresAt: in.ExpiresAt})
 	object(w, 200, periodView(v), err)
 }
 func expectedVersion(w http.ResponseWriter, r *http.Request, key string) (int64, bool) {
@@ -75,17 +75,6 @@ func expectedVersion(w http.ResponseWriter, r *http.Request, key string) (int64,
 		fail(w, 400, "invalid_input")
 	}
 	return version, ok
-}
-func (h *Handler) cancelPeriod(w http.ResponseWriter, r *http.Request) {
-	id, ok := resourceID(w, r)
-	if !ok {
-		return
-	}
-	version, ok := expectedVersion(w, r, "expected_cycle")
-	if !ok {
-		return
-	}
-	noContent(w, h.service.CancelPeriod(r.Context(), currentUser(r).ID, id, version))
 }
 func (h *Handler) deletePeriod(w http.ResponseWriter, r *http.Request) {
 	id, ok := resourceID(w, r)
@@ -158,17 +147,6 @@ func (h *Handler) patchRule(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.service.UpdateRule(r.Context(), currentUser(r).ID, id, service.RulePatch{ExpectedRevision: in.ExpectedRevision, DaysBefore: in.DaysBefore, ReminderTime: in.ReminderTime, Enabled: in.Enabled})
 	object(w, 200, ruleView(v), err)
-}
-func (h *Handler) disableRule(w http.ResponseWriter, r *http.Request) {
-	id, ok := resourceID(w, r)
-	if !ok {
-		return
-	}
-	version, ok := expectedVersion(w, r, "expected_revision")
-	if !ok {
-		return
-	}
-	noContent(w, h.service.DisableRule(r.Context(), currentUser(r).ID, id, version))
 }
 func (h *Handler) deleteRule(w http.ResponseWriter, r *http.Request) {
 	id, ok := resourceID(w, r)
@@ -355,16 +333,6 @@ func (h *Handler) patchService(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.UpdateService(r.Context(), currentUser(r).ID, id, service.ServicePatch{Name: in.Name, CategoryID: category, Provider: in.Provider.serviceValue(), Identifier: in.Identifier.serviceValue(), ManagementURL: in.ManagementURL.serviceValue(), Notes: in.Notes.serviceValue(), Status: in.Status, SIMDetails: simDetailsPatch(in.SIMDetails)})
 	object(w, 200, serviceView(v), err)
 }
-func (h *Handler) archiveService(w http.ResponseWriter, r *http.Request) {
-	id, ok := resourceID(w, r)
-	if !ok {
-		return
-	}
-	if _, ok := queryOnly(w, r); !ok {
-		return
-	}
-	noContent(w, h.service.ArchiveService(r.Context(), currentUser(r).ID, id))
-}
 func (h *Handler) deleteService(w http.ResponseWriter, r *http.Request) {
 	id, ok := resourceID(w, r)
 	if !ok {
@@ -399,6 +367,6 @@ func (h *Handler) createServicePeriod(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in, "starts_at", "terms") {
 		return
 	}
-	v, err := h.service.CreatePeriod(r.Context(), currentUser(r).ID, id, service.PeriodInput{PeriodType: in.PeriodType, Name: in.Name, StartsAt: in.StartsAt, DatePrecision: in.DatePrecision, ExpiresAt: in.ExpiresAt, Terms: in.Terms.servicePointer()})
+	v, err := h.service.CreatePeriod(r.Context(), currentUser(r).ID, id, service.PeriodInput{Name: in.Name, StartsAt: in.StartsAt, DatePrecision: in.DatePrecision, ExpiresAt: in.ExpiresAt, Terms: in.Terms.servicePointer()})
 	object(w, 201, periodView(v), err)
 }

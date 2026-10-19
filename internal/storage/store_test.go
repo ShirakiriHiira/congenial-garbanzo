@@ -160,9 +160,10 @@ func TestInitialSchemaConstraints(t *testing.T) {
 		"INSERT INTO users(id,telegram_user_id,timezone,created_at,updated_at) VALUES(1,123,'Asia/Taipei',1,1)",
 		"INSERT INTO service_items(id,user_id,name,category_id,status,created_at,updated_at) VALUES(1,1,'card',(SELECT id FROM service_categories WHERE code='sim'),'active',1,1)",
 		"INSERT INTO sim_details(service_id,card_type) VALUES(1,'esim')",
-		"INSERT INTO validity_periods(id,service_id,period_type,name,expires_at,date_precision,timezone,status,created_at,updated_at) VALUES(1,1,'custom','first',200,'datetime','Asia/Taipei','active',1,1),(2,1,'custom','second',200,'datetime','Asia/Taipei','active',1,1)",
-		"INSERT INTO reminder_rules(id,validity_period_id,days_before,reminder_time,enabled,created_at,updated_at) VALUES(1,1,0,'09:00',1,1,1)",
-		"INSERT INTO reminder_jobs(id,validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(1,1,1,1,1,100,200,'pending',100,1,1)",
+		"INSERT INTO service_periods(id,service_id,name,expires_at,date_precision,timezone,created_at,updated_at) VALUES(1,1,'first',200,'datetime','Asia/Taipei',1,1),(2,1,'second',300,'datetime','Asia/Taipei',1,1)",
+		"INSERT INTO period_terms(period_id,mode,revision) VALUES(1,'custom',1),(2,'custom',1)",
+		"INSERT INTO reminder_rules(id,period_id,days_before,reminder_time,enabled,created_at,updated_at) VALUES(1,1,0,'09:00',1,1,1)",
+		"INSERT INTO reminder_jobs(id,period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,next_attempt_at,created_at,updated_at) VALUES(1,1,1,1,1,100,200,'pending',100,1,1)",
 	}
 	for _, statement := range fixtures {
 		if _, err := s.DB.Exec(statement); err != nil {
@@ -172,14 +173,14 @@ func TestInitialSchemaConstraints(t *testing.T) {
 	invalid := []string{
 		"DELETE FROM users WHERE id=1",
 		"UPDATE sim_details SET card_type='bad' WHERE service_id=1",
-		"UPDATE validity_periods SET date_precision='date' WHERE id=1",
-		"UPDATE validity_periods SET cycle=0 WHERE id=1",
+		"UPDATE service_periods SET date_precision='date' WHERE id=1",
+		"UPDATE service_periods SET cycle=0 WHERE id=1",
 		"UPDATE reminder_rules SET reminder_time='24:00' WHERE id=1",
 		"UPDATE reminder_rules SET reminder_time='9:00' WHERE id=1",
 		"UPDATE reminder_rules SET enabled=2 WHERE id=1",
-		"UPDATE reminder_jobs SET validity_period_id=2 WHERE id=1",
-		"INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,created_at,updated_at) VALUES(1,1,1,1,100,200,'pending',1,1)",
-		"INSERT INTO renewals(validity_period_id,previous_cycle,previous_expires_at,new_expires_at,previous_date_precision,new_date_precision,timezone,renewed_at,amount,created_at) VALUES(1,1,200,300,'datetime','datetime','Asia/Taipei',1,0,1)",
+		"UPDATE reminder_jobs SET period_id=2 WHERE id=1",
+		"INSERT INTO reminder_jobs(period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,created_at,updated_at) VALUES(1,1,1,1,100,200,'pending',1,1)",
+		"INSERT INTO renewals(period_id,previous_cycle,previous_expires_at,new_expires_at,previous_date_precision,new_date_precision,timezone,renewed_at,amount,created_at) VALUES(1,1,200,300,'datetime','datetime','Asia/Taipei',1,0,1)",
 	}
 	for _, statement := range invalid {
 		if _, err := s.DB.Exec(statement); err == nil {

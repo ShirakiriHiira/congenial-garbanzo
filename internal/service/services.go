@@ -232,11 +232,11 @@ func (s *Service) UpdateService(ctx context.Context, uid, id int64, in ServicePa
 			}
 		}
 		if oldStatus != v.Status {
-			if _, err = tx.ExecContext(ctx, `UPDATE reminder_jobs SET status='cancelled',next_attempt_at=NULL,updated_at=? WHERE validity_period_id IN (SELECT id FROM validity_periods WHERE service_id=?) AND status IN('pending','failed','sending')`, v.UpdatedAt, id); err != nil {
+			if _, err = tx.ExecContext(ctx, `UPDATE reminder_jobs SET status='cancelled',next_attempt_at=NULL,updated_at=? WHERE period_id IN (SELECT id FROM service_periods WHERE service_id=?) AND status IN('pending','failed','sending')`, v.UpdatedAt, id); err != nil {
 				return err
 			}
 			if v.Status == "active" {
-				_, err = tx.ExecContext(ctx, `UPDATE validity_periods SET cycle=cycle+1,updated_at=? WHERE service_id=? AND status!='cancelled'`, v.UpdatedAt, id)
+				_, err = tx.ExecContext(ctx, `UPDATE service_periods SET cycle=cycle+1,updated_at=? WHERE service_id=?`, v.UpdatedAt, id)
 			}
 			// An archived service cannot continue a wizard against it; drop
 			// drafts atomically with the state change.
@@ -247,12 +247,6 @@ func (s *Service) UpdateService(ctx context.Context, uid, id int64, in ServicePa
 		return err
 	})
 	return v, err
-}
-
-func (s *Service) ArchiveService(ctx context.Context, uid, id int64) error {
-	status := "archived"
-	_, err := s.UpdateService(ctx, uid, id, ServicePatch{Status: &status})
-	return err
 }
 
 func (s *Service) DeleteService(ctx context.Context, uid, id int64) error {

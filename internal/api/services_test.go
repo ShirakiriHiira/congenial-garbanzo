@@ -206,7 +206,7 @@ func resourceTestCreate(t *testing.T, h http.Handler, category, name string, use
 
 func resourceTestPeriod(t *testing.T, h http.Handler, serviceID, name, expires string, user int64) map[string]any {
 	t.Helper()
-	body := fmt.Sprintf(`{"period_type":"custom","name":%q,"date_precision":"date","expires_at":%q}`, name, expires)
+	body := fmt.Sprintf(`{"name":%q,"date_precision":"date","expires_at":%q}`, name, expires)
 	result := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+serviceID+"/periods", body, user, 201))
 	resourceTestFields(t, result, map[string]any{"service_id": serviceID, "name": name, "local_expires_date": expires, "timezone": "Asia/Taipei", "cycle": float64(1)})
 	return result
@@ -260,10 +260,10 @@ func TestServicesSIMAndGenericShareOneResource(t *testing.T) {
 	}
 	patched := resourceTestObject(t, request(t, h, "PATCH", "/api/v1/services/"+legacyID, `{"provider":"updated carrier","sim_details":{"phone_number":null}}`, 101, 200))
 	resourceTestFields(t, patched, map[string]any{"provider": "updated carrier", "sim_details": map[string]any{"card_type": "physical_sim", "phone_number": nil, "country_or_region": "TW", "iccid": "legacy-secret"}})
-	legacyPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+legacyID+"/periods", `{"period_type":"number_validity","name":"legacy validity","date_precision":"date","expires_at":"2027-02-01"}`, 101, 201))
+	legacyPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+legacyID+"/periods", `{"name":"legacy validity","date_precision":"date","expires_at":"2027-02-01"}`, 101, 201))
 	resourceTestFields(t, legacyPeriod, map[string]any{"service_id": legacyID})
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services/"+legacyID+"/periods", 101).Data, resourceTestID(t, legacyPeriod))
-	newPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+newID+"/periods", `{"period_type":"plan_validity","name":"new validity","date_precision":"date","expires_at":"2027-02-02"}`, 101, 201))
+	newPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+newID+"/periods", `{"name":"new validity","date_precision":"date","expires_at":"2027-02-02"}`, 101, 201))
 	resourceTestFields(t, newPeriod, map[string]any{"service_id": newID})
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services/"+newID+"/periods", 101).Data, resourceTestID(t, newPeriod))
 }
@@ -341,11 +341,11 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 	resourceTestFields(t, second, map[string]any{"expires_at": "2027-02-20T16:00:00Z", "status": "active"})
 	r1 := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p1+"/rules", `{"days_before":1,"reminder_time":"09:00"}`, 101, 201))
 	r2 := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p2+"/rules", `{"days_before":3,"reminder_time":"10:30"}`, 101, 201))
-	resourceTestFields(t, r1, map[string]any{"validity_period_id": p1, "days_before": float64(1), "enabled": true, "revision": float64(1)})
-	resourceTestFields(t, r2, map[string]any{"validity_period_id": p2, "days_before": float64(3), "enabled": true, "revision": float64(1)})
+	resourceTestFields(t, r1, map[string]any{"period_id": p1, "days_before": float64(1), "enabled": true, "revision": float64(1)})
+	resourceTestFields(t, r2, map[string]any{"period_id": p2, "days_before": float64(3), "enabled": true, "revision": float64(1)})
 	r1id, r2id := resourceTestID(t, r1), resourceTestID(t, r2)
 	rulePatch := resourceTestObject(t, request(t, h, "PATCH", "/api/v1/rules/"+r1id, `{"expected_revision":1,"days_before":2}`, 101, 200))
-	resourceTestFields(t, rulePatch, map[string]any{"validity_period_id": p1, "days_before": float64(2), "revision": float64(2)})
+	resourceTestFields(t, rulePatch, map[string]any{"period_id": p1, "days_before": float64(2), "revision": float64(2)})
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/periods/"+p1+"/rules", 101).Data, r1id)
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/periods/"+p2+"/rules", 101).Data, r2id)
 	before := resourceTestSummary(t, h, "", 101)
@@ -355,7 +355,7 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 	resourceTestFields(t, before.Data.Items[0].PrimaryPeriod, map[string]any{"id": p1, "service_id": id})
 	body := `{"expected_cycle":1,"date_precision":"date","expires_at":"2027-04-01","amount":1200,"currency":"TWD","notes":"server renewed"}`
 	renewed := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p1+"/renewals", body, 101, 201))
-	resourceTestFields(t, renewed, map[string]any{"validity_period_id": p1, "previous_cycle": float64(1), "previous_expires_at": "2027-01-04T16:00:00Z", "new_expires_at": "2027-04-01T16:00:00Z", "amount": float64(1200), "currency": "TWD", "notes": "server renewed"})
+	resourceTestFields(t, renewed, map[string]any{"period_id": p1, "previous_cycle": float64(1), "previous_expires_at": "2027-01-04T16:00:00Z", "new_expires_at": "2027-04-01T16:00:00Z", "amount": float64(1200), "currency": "TWD", "notes": "server renewed"})
 	replayed := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p1+"/renewals", body, 101, 200))
 	if !reflect.DeepEqual(replayed, renewed) {
 		t.Fatalf("renewal replay changed response: got=%v want=%v", replayed, renewed)
@@ -375,7 +375,7 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 	after := resourceTestSummary(t, h, "", 101)
 	resourceTestFields(t, after.Data.Items[0].PrimaryPeriod, map[string]any{"id": p2})
 	secondRenewal := resourceTestObject(t, request(t, h, "POST", "/api/v1/periods/"+p2+"/renewals", `{"expected_cycle":1,"date_precision":"date","expires_at":"2027-03-01","amount":300,"currency":"TWD"}`, 101, 201))
-	resourceTestFields(t, secondRenewal, map[string]any{"validity_period_id": p2, "previous_cycle": float64(1), "previous_expires_at": "2027-02-20T16:00:00Z", "new_expires_at": "2027-03-01T16:00:00Z", "amount": float64(300)})
+	resourceTestFields(t, secondRenewal, map[string]any{"period_id": p2, "previous_cycle": float64(1), "previous_expires_at": "2027-02-20T16:00:00Z", "new_expires_at": "2027-03-01T16:00:00Z", "amount": float64(300)})
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/periods/"+p1+"/renewals", 101).Data, resourceTestID(t, renewed))
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/periods/"+p2+"/renewals", 101).Data, resourceTestID(t, secondRenewal))
 	firstAfterSibling := resourceTestObject(t, request(t, h, "GET", "/api/v1/periods/"+p1, "", 101, 200))
@@ -383,12 +383,10 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 		t.Fatalf("second renewal mutated first period: got=%v want=%v", firstAfterSibling, firstNow)
 	}
 	resourceTestIDs(t, resourceTestList(t, h, path+"/periods", 101).Data, p1, p2)
-	request(t, h, "DELETE", path, "", 101, 204)
-	archived := resourceTestObject(t, request(t, h, "GET", path, "", 101, 200))
+	archived := resourceTestObject(t, request(t, h, "PATCH", path, `{"status":"archived"}`, 101, 200))
 	resourceTestFields(t, archived, map[string]any{"id": id, "status": "archived", "name": "renamed server"})
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services", 101).Data)
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services?status=archived", 101).Data, id)
-	request(t, h, "DELETE", path, "", 101, 204)
 	restored := resourceTestObject(t, request(t, h, "PATCH", path, `{"status":"active"}`, 101, 200))
 	resourceTestFields(t, restored, map[string]any{"id": id, "status": "active", "identifier": "host-01"})
 	for _, period := range []struct {
@@ -399,7 +397,7 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 		resourceTestFields(t, got, map[string]any{"cycle": period.cycle, "service_id": id})
 	}
 	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services", 101).Data, id)
-	request(t, h, "POST", path+"/delete", "", 101, 204)
+	request(t, h, "DELETE", path, "", 101, 204)
 	for _, endpoint := range []string{path, path + "/periods", "/api/v1/periods/" + p1, "/api/v1/periods/" + p2, "/api/v1/periods/" + p1 + "/renewals", "/api/v1/rules/" + r1id, "/api/v1/rules/" + r2id} {
 		resourceTestError(t, h, "GET", endpoint, "", 101, 404, "not_found")
 	}
@@ -427,9 +425,8 @@ func TestServicesAuthenticationAndOwnership(t *testing.T) {
 		{"GET", "/api/v1/services/" + id, ""},
 		{"PATCH", "/api/v1/services/" + id, `{"name":"stolen"}`},
 		{"DELETE", "/api/v1/services/" + id, ""},
-		{"POST", "/api/v1/services/" + id + "/delete", ""},
 		{"GET", "/api/v1/services/" + id + "/periods", ""},
-		{"POST", "/api/v1/services/" + id + "/periods", `{"name":"private","period_type":"custom","date_precision":"date","expires_at":"2027-07-01"}`},
+		{"POST", "/api/v1/services/" + id + "/periods", `{"name":"private","date_precision":"date","expires_at":"2027-07-01"}`},
 	} {
 		resourceTestError(t, h, endpoint.method, endpoint.path, endpoint.body, 0, 401, "unauthorized")
 		resourceTestError(t, h, endpoint.method, endpoint.path, endpoint.body, 303, 403, "forbidden")
@@ -468,7 +465,7 @@ func TestServicesFilteringBeforePaginationAndOverviewCounts(t *testing.T) {
 			resourceTestPeriod(t, h, id, entry.name, entry.expires, 101)
 		}
 		if entry.archived {
-			request(t, h, "DELETE", "/api/v1/services/"+id, "", 101, 204)
+			request(t, h, "PATCH", "/api/v1/services/"+id, `{"status":"archived"}`, 101, 200)
 		}
 		switch entry.name {
 		case "due server":
@@ -666,12 +663,11 @@ func TestServicesFieldValidationAndSearchableFields(t *testing.T) {
 	unchanged := resourceTestObject(t, request(t, h, "GET", "/api/v1/services/"+id, "", 101, 200))
 	resourceTestFields(t, unchanged, valid)
 	periodPath := "/api/v1/services/" + id + "/periods"
-	for _, periodType := range []string{"number_validity", "plan_validity", "data_package_validity"} {
-		resourceTestError(t, h, "POST", periodPath, fmt.Sprintf(`{"period_type":%q,"date_precision":"date","expires_at":"2027-08-01"}`, periodType), 101, 400, "invalid_input")
-	}
+	// The removed legacy period field must be rejected as an unknown field.
+	resourceTestError(t, h, "POST", periodPath, `{"period_type":"custom","date_precision":"date","expires_at":"2027-08-01"}`, 101, 400, "invalid_input")
 	sim := resourceTestObject(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"sim","category_id":%q,"sim_details":{"card_type":"esim"}}`, categories["sim"]), 101, 201))
-	simPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+resourceTestID(t, sim)+"/periods", `{"period_type":"plan_validity","name":"sim plan","date_precision":"date","expires_at":"2027-08-01"}`, 101, 201))
+	simPeriod := resourceTestObject(t, request(t, h, "POST", "/api/v1/services/"+resourceTestID(t, sim)+"/periods", `{"name":"sim plan","date_precision":"date","expires_at":"2027-08-01"}`, 101, 201))
 	resourceTestFields(t, simPeriod, map[string]any{"service_id": resourceTestID(t, sim)})
-	changed := resourceTestObject(t, request(t, h, "PATCH", "/api/v1/periods/"+resourceTestID(t, simPeriod), `{"expected_cycle":1,"period_type":"custom"}`, 101, 200))
-	resourceTestFields(t, changed, map[string]any{"period_type": "custom", "service_id": resourceTestID(t, sim)})
+	changed := resourceTestObject(t, request(t, h, "PATCH", "/api/v1/periods/"+resourceTestID(t, simPeriod), `{"expected_cycle":1,"name":"renamed plan"}`, 101, 200))
+	resourceTestFields(t, changed, map[string]any{"name": "renamed plan", "service_id": resourceTestID(t, sim)})
 }

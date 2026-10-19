@@ -9,12 +9,13 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// v2 callback payloads carry an action and decimal IDs only. Drafts, notes,
-// phone numbers, ICCIDs, and URLs never enter callback data.
-const callbackPrefixV2 = "v2:"
+// v3 callback payloads carry an action and decimal IDs only. Drafts, notes,
+// phone numbers, ICCIDs and URLs never enter callback data. Old v2 payloads are
+// rejected without reading or writing any business state.
+const callbackPrefixV3 = "v3:"
 
 func cb(parts ...string) string {
-	return callbackPrefixV2 + strings.Join(parts, ":")
+	return callbackPrefixV3 + strings.Join(parts, ":")
 }
 
 func callbackID(parts []string, index int) (int64, bool) {
@@ -28,28 +29,28 @@ func callbackID(parts []string, index int) (int64, bool) {
 	return n, true
 }
 
-type callbackV2 struct {
+type callbackV3 struct {
 	scope  string
 	action string
 	args   []string
 }
 
-// parseCallbackV2 splits v2:scope:action[:arg...] without validating the
+// parseCallbackV3 splits v3:scope:action[:arg...] without validating the
 // action allowlist; handlers answer unknown scopes/actions exactly once.
-func parseCallbackV2(data string) (callbackV2, bool) {
-	if !strings.HasPrefix(data, callbackPrefixV2) {
-		return callbackV2{}, false
+func parseCallbackV3(data string) (callbackV3, bool) {
+	if !strings.HasPrefix(data, callbackPrefixV3) {
+		return callbackV3{}, false
 	}
-	parts := strings.Split(strings.TrimPrefix(data, callbackPrefixV2), ":")
-	if len(parts) < 2 || len(parts) > 6 {
-		return callbackV2{}, false
+	parts := strings.Split(strings.TrimPrefix(data, callbackPrefixV3), ":")
+	if len(parts) < 2 || len(parts) > 7 {
+		return callbackV3{}, false
 	}
 	for _, part := range parts {
 		if part == "" {
-			return callbackV2{}, false
+			return callbackV3{}, false
 		}
 	}
-	return callbackV2{scope: parts[0], action: parts[1], args: parts[2:]}, true
+	return callbackV3{scope: parts[0], action: parts[1], args: parts[2:]}, true
 }
 
 func button(text, data string) models.InlineKeyboardButton {
