@@ -376,6 +376,9 @@ func (s *Service) CancelPeriod(ctx context.Context, uid, id, expected int64) err
 		if err = savePeriod(ctx, tx, v); err != nil {
 			return err
 		}
+		if err = s.CancelDialogsForTarget(ctx, tx, uid, 0, id, 0); err != nil {
+			return err
+		}
 		return cancelJobs(ctx, tx, id, nil, v.UpdatedAt)
 	})
 }

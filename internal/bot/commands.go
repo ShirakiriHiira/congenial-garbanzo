@@ -442,57 +442,6 @@ func (h *Handler) commandDelete(ctx context.Context, user service.User, raw stri
 	return "", fail("用法：/delete sim <id> | /delete period <id> <expected_cycle>")
 }
 
-func (h *Handler) commandReminders(ctx context.Context, user service.User, raw string) (string, error) {
-	args := strings.Fields(raw)
-	if len(args) > 2 {
-		return "", fail("用法：/reminders [pending|sending|sent|failed|cancelled|all] [after_id]")
-	}
-	filter := "all"
-	after := int64(0)
-	rest := args
-	if len(rest) > 0 {
-		switch rest[0] {
-		case "pending", "sending", "sent", "failed", "cancelled", "all":
-			filter = rest[0]
-			rest = rest[1:]
-		}
-	}
-	if len(rest) > 0 {
-		var err error
-		if after, err = parseAfter(rest[0]); err != nil {
-			return "", fail("after_id 必须是非负整数。")
-		}
-	}
-	page, err := h.svc.ListJobs(ctx, user.ID, filter, after, pageSize)
-	if err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "提醒任务（%s）：\n", filter)
-	if len(page.Data) == 0 {
-		b.WriteString("（无）")
-	}
-	for _, j := range page.Data {
-		fmt.Fprintf(&b, "#%s 项目 %s 周期 %d 状态 %s 尝试 %d\n", id(j.ID), id(j.ValidityPeriodID), j.Cycle, j.Status, j.Attempts)
-		fmt.Fprintf(&b, "  计划 %s", stamp(j.ScheduledAt, user.Timezone))
-		if j.SentAt != nil {
-			fmt.Fprintf(&b, "  实际 %s", stamp(*j.SentAt, user.Timezone))
-		}
-		if j.LastErrorCode != nil {
-			fmt.Fprintf(&b, "  原因 %s", *j.LastErrorCode)
-			if *j.LastErrorCode == "no_private_chat" {
-				b.WriteString("（请先私聊发送 /start 建立接收地址）")
-			}
-		}
-		b.WriteString("\n")
-		if j.Status == "pending" || j.Status == "failed" {
-			fmt.Fprintf(&b, "  取消：/cancel job %s\n", id(j.ID))
-		}
-	}
-	appendNext(&b, page.NextCursor, "/reminders "+filter)
-	return b.String(), nil
-}
-
 func (h *Handler) commandRenew(ctx context.Context, user service.User, raw string) (string, error) {
 	fields := strings.Fields(raw)
 	if len(fields) < 2 {
@@ -764,44 +713,55 @@ func appendNext(b *strings.Builder, next *int64, prefix string) {
 	}
 }
 
+// shortHelp is the terse pointer shown after a dialog ends.
+const shortHelp = "常用入口：/service list、/service add、/reminders、/settings、/help。"
+
 func helpText(zone string) string {
 	return `服务与订阅有效期提醒机器人（兼容 SIM/eSIM）
 
 当前时区：` + zone + `
-命令（私聊使用）：
-/start、/help — 帮助
+
+日常入口（私聊使用，推荐使用按钮）：
+/service — 打开服务菜单（列表 / 添加 / 提醒任务 / 设置）
+/service list — 活跃服务列表，每条提供“查看 / 编辑 / 归档”
+/service add — 分步添加服务（选择类别后按提示填写）
+/service view <id> — 服务详情：有效期、续期、规则、历史
+/renew <period_id> — 分步续期：输入 → 预览 → 确认
+/reminders — 提醒任务；pending/failed 可直接取消
+/settings — 当前时区与私聊绑定；可修改时区
+/cancel — 取消当前未完成流程（读取命令不会打断流程）
+/help — 本帮助
+
+高级命令（立即提交；继续兼容，推荐使用上面的按钮或分步流程）：
 /service categories [after_id] — 类别列表（每页 10 条）
 /service category name=名称 — 新建自定义类别
 /service category-edit <id> name=新名称 — 改名本人自定义类别
-/service add name=名称&category_id=类别ID[&provider=服务商&identifier=公开标识&management_url=https%3A%2F%2Fexample.com&notes=普通备注] — 添加服务
-/service list [after_id] — 活跃服务列表（每页 10 条）
-/service view <id> — 服务详情、多有效期及条款
-/service edit <id> <query> — 修改服务；status=active 恢复归档服务
-/service archive <id> — 归档服务
-/service period new <service_id> period_type=custom&name=名称&date_precision=date&expires_at=2027-01-31 — 新建有效期（名称可空）
-/service terms <period_id> expected_cycle=1&expected_terms_revision=1&mode=recurring&interval_count=1&interval_unit=month[&amount=100&currency=USD] — 整体替换约定条款；mode=custom 重置
-通用字段：name/category_id/provider/identifier/management_url/notes；SIM 类别额外使用扁平 card_type/phone_number/country_or_region/iccid。
-条款 mode=once|recurring|custom；recurring 的 interval_count 为正整数、interval_unit=day|week|month|year；金额为最小货币单位，与 currency 成对。周期仅记录，续期须明确提供新截止及实际金额。
-旧 SIM 命令（保持原语义）：
-/add name=日本卡&card_type=esim&operator=... — 新建卡片（card_type 为 esim 或 physical_sim）
+/service add name=名称&category_id=类别ID[&provider=服务商&identifier=公开标识&management_url=https%3A%2F%2Fexample.com&notes=普通备注] — 高级快速创建
+/service list [after_id] — 文本列表（旧格式）
+/service view <id> — 文本详情（旧格式）
+/service edit <id> <query> — 修改服务；status=active 恢复归档
+/service archive <id> — 归档服务（会先要求确认）
+/service period new <service_id> <query> — 高级快速创建有效期
+/service terms <period_id> expected_cycle=1&expected_terms_revision=1&mode=... — 高级立即替换条款
+/renew <period_id> expected_cycle=1&date_precision=date&expires_at=2027-01-31[&amount=1000&currency=TWD&notes=...] — 高级立即续期
+
+旧 SIM 命令（保持原语义，仅 SIM）：
+/add name=日本卡&card_type=esim&operator=... — 新建卡片
 /list [after_id] — 卡片列表（每页 10 条）
 /view sim <id> [periods [after_id]] — 卡片详情/有效期列表
 /view period <id> [rules|renewals [after_id]] — 有效期详情/规则/续期历史
-/edit period new <sim_id> period_type=number_validity&name=名称&date_precision=date&expires_at=2027-01-31 — 新建有效期
 /edit sim <id> <query> — 修改卡片
-/edit period <id> expected_cycle=1&... — 修改有效期（cycle 变化会重新排程）
+/edit period new <sim_id> <query> — 新建有效期
+/edit period <id> <query> — 修改有效期
 /edit rule new <period_id> days_before=7&reminder_time=09:00 — 新建提醒规则
-/edit rule <id> expected_revision=1&... — 修改规则
+/edit rule <id> <query> — 修改规则
 /edit timezone Asia/Taipei — 修改时区
 /delete sim <id> — 归档卡片
 /delete period <id> <expected_cycle> — 取消有效期
-/reminders [pending|sending|sent|failed|cancelled|all] [after_id] — 提醒任务
-/renew <period_id> expected_cycle=1&date_precision=date&expires_at=2027-01-31[&amount=1000&currency=TWD&notes=...] — 确认续期
-/cancel — 取消续期对话
-/cancel job <id> — 取消单个任务
+/cancel job <id> — 取消任务
 /cancel rule <id> <expected_revision> — 禁用规则
 
-提醒示例：提前 30/7/3/1/0 天的 09:00。未配置规则的项目不会发送提醒。
-备注只存普通说明，不要保存密码、API Token 或私钥。
-编码：空格用 +，&、= 等字符需百分号编码；date 精度格式 YYYY-MM-DD，datetime 精度使用带时区的 RFC3339。`
+编码：高级 query 中空格用 +，&、= 等字符需百分号编码；date 精度格式 YYYY-MM-DD，datetime 使用带时区的 RFC3339。
+约定费用只作记录，不代表已付款；续期须明确提供新截止与实际金额。
+备注只存普通说明，不要保存密码、API Token 或私钥。`
 }

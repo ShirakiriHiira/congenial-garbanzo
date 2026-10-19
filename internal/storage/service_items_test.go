@@ -13,7 +13,7 @@ import (
 
 func storageMigrationSource(t *testing.T, versions ...int) fstest.MapFS {
 	t.Helper()
-	names := map[int]string{1: "001_initial.sql", 2: "002_hard_delete.sql", 3: "003_service_items.sql"}
+	names := map[int]string{1: "001_initial.sql", 2: "002_hard_delete.sql", 3: "003_service_items.sql", 4: "004_bot_dialog_steps.sql"}
 	source := make(fstest.MapFS, len(versions))
 	for _, version := range versions {
 		name := names[version]
@@ -75,6 +75,7 @@ func seedServiceUpgradeGraph(t *testing.T, s *Store) {
 		}
 		storageExec(t, s, fmt.Sprintf(`INSERT INTO reminder_jobs(id,validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,locked_until,attempt_token,sent_at,telegram_message_id,last_error_code,created_at,updated_at) VALUES(%d,%d,%d,3,4,150,%d,'%s',%d,160,%s,%s,%s,%s,%s,17,27)`, 51+i, 21+i, 31+i, 200+i, jobs[i], i+1, lease, token, sent, message, lastError))
 	}
+	// Seeded before 004, so this fixture intentionally uses the 001/002 shape.
 	storageExec(t, s, `INSERT INTO bot_dialogs(user_id,chat_id,action,validity_period_id,expected_cycle,expires_at,created_at) VALUES(7,101,'renew',22,3,999,18),(8,102,'renew',25,3,998,19)`)
 }
 
@@ -91,8 +92,12 @@ func assertServiceUpgradeGraph(t *testing.T, s *Store, upgraded bool) {
 	t.Helper()
 	for _, table := range serviceUpgradeTables {
 		projection := "SELECT * FROM " + table
-		if table == "sims" && upgraded {
+		switch {
+		case table == "sims" && upgraded:
 			projection = `SELECT s.id,s.user_id,s.name,d.card_type,s.provider,d.phone_number,d.country_or_region,d.iccid,s.notes,s.status,s.created_at,s.updated_at FROM service_items s JOIN sim_details d ON d.service_id=s.id`
+		case table == "bot_dialogs" && upgraded:
+			// 004 adds columns; compare only the columns that existed before.
+			projection = `SELECT user_id,chat_id,action,validity_period_id,expected_cycle,expires_at,created_at FROM bot_dialogs`
 		}
 		query := "SELECT (SELECT count(*) FROM (" + projection + " EXCEPT SELECT * FROM before_" + table + ")) + (SELECT count(*) FROM (SELECT * FROM before_" + table + " EXCEPT " + projection + "))"
 		var differences int
@@ -227,7 +232,7 @@ func TestServiceItemsMigrationUpgradePaths(t *testing.T) {
 				t.Fatal(err)
 			}
 			var count int
-			if err := s.DB.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 3 {
+			if err := s.DB.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 4 {
 				t.Fatalf("migration count=%d err=%v", count, err)
 			}
 			if err := s.DB.QueryRow("SELECT count(*) FROM period_terms").Scan(&count); err != nil || count != 0 {

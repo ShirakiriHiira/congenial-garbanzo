@@ -187,14 +187,23 @@ type Job struct {
 	CreatedAt         int64
 	UpdatedAt         int64
 }
+
+// Dialog is the single durable wizard state for one user. Optional targets
+// point at the object a flow operates on; validation never trusts them.
 type Dialog struct {
-	UserID           int64
-	ChatID           int64
-	Action           string
-	ValidityPeriodID int64
-	ExpectedCycle    int64
-	ExpiresAt        int64
-	CreatedAt        int64
+	UserID                int64
+	ChatID                int64
+	Action                string
+	Step                  string
+	Draft                 string
+	ServiceID             *int64
+	ValidityPeriodID      *int64
+	RuleID                *int64
+	ExpectedCycle         *int64
+	ExpectedTermsRevision *int64
+	ExpectedRevision      *int64
+	ExpiresAt             int64
+	CreatedAt             int64
 }
 
 // Optional distinguishes absent fields from explicit null in partial updates.

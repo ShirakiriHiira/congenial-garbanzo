@@ -7,7 +7,6 @@ package bot
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -135,6 +134,12 @@ func (h *Handler) handleMessage(ctx context.Context, b *telegram.Bot, msg *model
 		return
 	}
 	if text == "" {
+		// An empty body carries no wizard input; keep the draft untouched.
+		if d, err := h.svc.GetDialog(ctx, user.ID); err == nil && d.ChatID == msg.Chat.ID {
+			w := h.wizard(ctx, b, user, d)
+			w.render(ctx)
+			return
+		}
 		h.send(ctx, b, msg.Chat.ID, "请发送文本命令，使用 /help 查看用法。")
 		return
 	}
@@ -142,129 +147,29 @@ func (h *Handler) handleMessage(ctx context.Context, b *telegram.Bot, msg *model
 		h.handleDialogInput(ctx, b, user, msg, text)
 		return
 	}
-	h.handleCommand(ctx, b, user, msg, text)
-}
-
-func (h *Handler) handleCommand(ctx context.Context, b *telegram.Bot, user service.User, msg *models.Message, text string) {
-	name, target, rest, ok := splitCommand(text)
-	if !ok {
-		h.send(ctx, b, msg.Chat.ID, "未知命令。\n\n"+helpText(user.Timezone))
-		return
-	}
-	if target != "" {
-		known := h.Username()
-		if known == "" || !strings.EqualFold(target, known) {
-			return
-		}
-	}
-
-	type command func(context.Context, service.User, string) (string, error)
-	var run command
-	business := true
-	switch name {
-	case "start", "help":
-		business = false
-		run = func(_ context.Context, u service.User, _ string) (string, error) {
-			return helpText(u.Timezone), nil
-		}
-	case "service":
-		run = h.commandService
-		// Terms have their own revision and do not change the renewal cycle.
-		// Preserve a live dialog so users can record terms before confirming it.
-		args := strings.Fields(rest)
-		if len(args) > 0 && args[0] == "terms" {
-			business = false
-		}
-	case "add":
-		run = h.commandAdd
-	case "list":
-		run = h.commandList
-	case "view":
-		run = h.commandView
-	case "edit":
-		run = h.commandEdit
-	case "delete":
-		run = h.commandDelete
-	case "reminders":
-		run = h.commandReminders
-	case "renew":
-		run = h.commandRenew
-	case "cancel":
-		run = h.commandCancel
-		if rest == "" {
-			business = false // bare /cancel is the dialog cancellation command itself
-		}
-	default:
-		h.send(ctx, b, msg.Chat.ID, "未知命令。\n\n"+helpText(user.Timezone))
-		return
-	}
-
-	notice := ""
-	if business {
-		var err error
-		notice, err = h.clearDialog(ctx, user.ID)
-		if err != nil {
-			h.send(ctx, b, msg.Chat.ID, serviceMessage(err))
-			return
-		}
-	}
-	out, err := run(ctx, user, rest)
-	if err != nil {
-		var ue userError
-		if errors.As(err, &ue) {
-			out = ue.msg
-		} else {
-			out = serviceMessage(err)
-		}
-	}
-	h.send(ctx, b, msg.Chat.ID, notice+out)
-}
-
-// clearDialog removes a pending renewal dialog when a different business command
-// starts. It reports whether a dialog was actually removed.
-func (h *Handler) clearDialog(ctx context.Context, uid int64) (string, error) {
-	live := true
-	if _, err := h.svc.GetDialog(ctx, uid); err != nil {
-		if service.Code(err) != "not_found" {
-			return "", err
-		}
-		live = false // an expired row may still exist and is purged below
-	}
-	removed, err := h.svc.CancelDialog(ctx, uid)
-	if err != nil {
-		return "", err
-	}
-	if live && removed {
-		return "已取消未完成的续期对话。\n", nil
-	}
-	return "", nil
+	h.dispatchCommand(ctx, b, user, msg.Chat.ID, text, false)
 }
 
 func (h *Handler) handleDialogInput(ctx context.Context, b *telegram.Bot, user service.User, msg *models.Message, text string) {
 	d, err := h.svc.GetDialog(ctx, user.ID)
 	if err != nil {
 		if service.Code(err) == "not_found" {
-			h.send(ctx, b, msg.Chat.ID, "当前没有进行中的续期对话。\n\n"+helpText(user.Timezone))
+			if purged, _ := h.svc.PurgeExpiredDialog(ctx, user.ID); purged {
+				h.send(ctx, b, msg.Chat.ID, "对话已过期（15 分钟），本次输入未写入任何数据。\n\n"+shortHelp)
+				return
+			}
+			h.send(ctx, b, msg.Chat.ID, "当前没有进行中的对话。\n\n"+shortHelp)
 			return
 		}
 		h.send(ctx, b, msg.Chat.ID, serviceMessage(err))
 		return
 	}
 	if d.ChatID != msg.Chat.ID {
-		h.send(ctx, b, msg.Chat.ID, "当前续期对话已在其他会话中开始；请先发送 /cancel 取消。")
+		h.send(ctx, b, msg.Chat.ID, "当前对话已在其他会话中开始；请先发送 /cancel 取消。")
 		return
 	}
-	in, err := parseRenewInput(text, false)
-	if err != nil {
-		h.send(ctx, b, msg.Chat.ID, "续期失败："+err.Error()+"\n对话仍保留，可重新发送或发送 /cancel 取消。")
-		return
-	}
-	renewal, err := h.svc.RenewFromDialog(ctx, user.ID, in)
-	if err != nil {
-		h.send(ctx, b, msg.Chat.ID, "续期失败："+serviceMessage(err)+"\n对话仍保留，可重新发送或发送 /cancel 取消。")
-		return
-	}
-	h.send(ctx, b, msg.Chat.ID, renewalText(ctx, h.svc, user, renewal, "续期完成"))
+	w := h.wizard(ctx, b, user, d)
+	w.text(ctx, text)
 }
 
 // splitCommand parses "/name@bot rest". It returns the lowercase command name,

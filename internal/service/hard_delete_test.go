@@ -66,7 +66,7 @@ func TestHardDeleteCascadesAndFencesReminder(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = st.DB.ExecContext(ctx, `INSERT INTO bot_dialogs(user_id,chat_id,action,validity_period_id,expected_cycle,expires_at,created_at) VALUES(?,?,'renew',?,?,?,?)`, a.ID, a.TelegramUserID, p.ID, p.Cycle, now.Unix()+300, now.Unix()); err != nil {
+			if _, err = st.DB.ExecContext(ctx, `INSERT INTO bot_dialogs(user_id,chat_id,action,step,draft_json,validity_period_id,expected_cycle,expires_at,created_at) VALUES(?,?,'renew','renew_expiration','{}',?,?,?,?)`, a.ID, a.TelegramUserID, p.ID, p.Cycle, now.Unix()+300, now.Unix()); err != nil {
 				t.Fatal(err)
 			}
 			if ok, err := st.CheckReminder(ctx, jid, "delete-test", now, s.allowed); err != nil || !ok {

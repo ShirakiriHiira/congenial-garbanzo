@@ -68,8 +68,11 @@ func TestServiceGenericLifecycleAndRenewalDialog(t *testing.T) {
 	secondPeriod := serviceLookupInt(t, f, "SELECT id FROM validity_periods WHERE service_id=? AND name='年付'", serviceID)
 
 	detail := f.send(userA, "/service view "+id(serviceID))
-	serviceMustContain(t, detail, "VPS Pro", "月付", "年付", "约定条款：custom（版本 1）",
-		"/service period new "+id(serviceID))
+	serviceMustContain(t, detail, "VPS Pro", "月付", "年付", "约定条款：custom（版本 1）")
+	lastMarkup := f.stub.callsOf("sendMessage")
+	if got := lastMarkup[len(lastMarkup)-1].form.Get("reply_markup"); !strings.Contains(got, "v2:period:add:"+id(serviceID)) || !strings.Contains(got, "v2:service:edit:"+id(serviceID)) {
+		t.Fatalf("service detail keyboard %q", got)
+	}
 	if n := f.count("SELECT count(*) FROM validity_periods WHERE service_id=?", serviceID); n != 2 {
 		t.Fatalf("period count %d", n)
 	}
@@ -104,6 +107,9 @@ func TestServiceGenericLifecycleAndRenewalDialog(t *testing.T) {
 		f.callback(userA, "v1:renew:"+id(firstJob), nil)
 		if got := serviceLastAnswer(t, f); !strings.Contains(got, "请输入新的截止日期") {
 			t.Fatalf("repeated renew answer %q", got)
+		}
+		if text := f.stub.lastText(); !strings.Contains(text, "新截止使用哪种精度") {
+			t.Fatalf("repeated renew screen %q", text)
 		}
 	}
 	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
@@ -140,8 +146,9 @@ func TestServiceGenericLifecycleAndRenewalDialog(t *testing.T) {
 	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
 		t.Fatalf("dialog lost across restart: %d", n)
 	}
-	missingCutoff := f.send(userA, "amount=2999&currency=USD")
-	serviceMustContain(t, missingCutoff, "续期失败", "expires_at")
+	f.callback(userA, choiceCallback("precision", "date"), nil)
+	missingCutoff := f.send(userA, "not-a-date")
+	serviceMustContain(t, missingCutoff, "日期必须是存在的 YYYY-MM-DD")
 	if n := f.count("SELECT count(*) FROM renewals"); n != 0 {
 		t.Fatalf("missing explicit cutoff wrote renewal %d", n)
 	}
@@ -149,7 +156,15 @@ func TestServiceGenericLifecycleAndRenewalDialog(t *testing.T) {
 		t.Fatalf("missing cutoff removed dialog %d", n)
 	}
 
-	renewed := f.send(userA, "date_precision=date&expires_at=2027-02-28")
+	f.send(userA, "2027-02-28")
+	serviceMustContain(t, f.stub.lastText(), "本次实际续期金额")
+	f.callback(userA, cb("dialog", "skip"), nil)
+	serviceMustContain(t, f.stub.lastText(), "续期备注")
+	f.callback(userA, cb("dialog", "skip"), nil)
+	serviceMustContain(t, f.stub.lastText(), "请确认续期")
+	f.callback(userA, cb("dialog", "skip"), nil)
+	f.callback(userA, cb("dialog", "confirm"), nil)
+	renewed := f.stub.lastText()
 	serviceMustContain(t, renewed, "续期完成", "当前状态：active，版本 2", "约定条款：recurring（版本 2）")
 	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
 		t.Fatalf("renewal count %d", n)
@@ -398,8 +413,28 @@ func TestServiceEditRestoresArchived(t *testing.T) {
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,created_at,updated_at) VALUES(1,1,1,1,?,?,'pending',0,?,1,1)`,
 		f.clock.t.Add(24*time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix(), f.clock.t.Add(24*time.Hour).Unix())
 
-	archived := f.send(userA, "/service archive "+id(serviceID))
-	serviceMustContain(t, archived, "已归档", "/service edit "+id(serviceID)+" status=active")
+	ask := f.send(userA, "/service archive "+id(serviceID))
+	serviceMustContain(t, ask, "归档服务 #"+id(serviceID), "之后可恢复")
+	sends := f.stub.callsOf("sendMessage")
+	if got := sends[len(sends)-1].form.Get("reply_markup"); !strings.Contains(got, "v2:service:archive:"+id(serviceID)) {
+		t.Fatalf("archive confirmation keyboard %q", got)
+	}
+	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
+		t.Fatalf("archive confirmation opened a dialog: %d", n)
+	}
+	if got := serviceLookupString(t, f, "SELECT status FROM service_items WHERE id=?", serviceID); got != "active" {
+		t.Fatalf("archive ran before confirmation: %q", got)
+	}
+	f.callback(userA, cb("service", "archive", id(serviceID)), nil)
+	archived := f.stub.lastText()
+	serviceMustContain(t, archived, "服务 #"+id(serviceID), "状态：archived")
+	sends = f.stub.callsOf("sendMessage")
+	if got := sends[len(sends)-1].form.Get("reply_markup"); !strings.Contains(got, "v2:service:restore:"+id(serviceID)) {
+		t.Fatalf("archived detail keyboard %q", got)
+	}
+	if serviceLastAnswer(t, f) != "服务已归档" {
+		t.Fatalf("archive answer %q", serviceLastAnswer(t, f))
+	}
 	if got := serviceLookupString(t, f, "SELECT status FROM service_items WHERE id=?", serviceID); got != "archived" {
 		t.Fatalf("status %q", got)
 	}
@@ -537,6 +572,7 @@ func TestServiceCallbacksRejectForeignAndStaleJobs(t *testing.T) {
 		f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 	currentJob := serviceLookupInt(t, f, "SELECT id FROM reminder_jobs WHERE validity_period_id=1 AND cycle=2")
 	f.send(userA, "/service archive 1")
+	f.callback(userA, cb("service", "archive", "1"), nil)
 	before := len(f.stub.callsOf("answerCallbackQuery"))
 	f.callback(userA, "v1:renew:"+id(currentJob), nil)
 	if got := len(f.stub.callsOf("answerCallbackQuery")); got != before+1 {

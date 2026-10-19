@@ -238,6 +238,11 @@ func (s *Service) UpdateService(ctx context.Context, uid, id int64, in ServicePa
 			if v.Status == "active" {
 				_, err = tx.ExecContext(ctx, `UPDATE validity_periods SET cycle=cycle+1,updated_at=? WHERE service_id=? AND status!='cancelled'`, v.UpdatedAt, id)
 			}
+			// An archived service cannot continue a wizard against it; drop
+			// drafts atomically with the state change.
+			if err = s.CancelDialogsForTarget(ctx, tx, uid, id, 0, 0); err != nil {
+				return err
+			}
 		}
 		return err
 	})

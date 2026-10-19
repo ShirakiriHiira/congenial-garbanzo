@@ -394,7 +394,7 @@ func TestPlainTextWithoutDialogIsNotEchoed(t *testing.T) {
 	if strings.Contains(text, "please echo this") {
 		t.Fatalf("echo fallback present: %q", text)
 	}
-	if !strings.Contains(text, "没有进行中的续期对话") {
+	if !strings.Contains(text, "没有进行中的对话") {
 		t.Fatalf("unexpected reply: %q", text)
 	}
 }
@@ -444,36 +444,76 @@ func TestViewPagination(t *testing.T) {
 	}
 }
 
-func TestRenewalDialogLifecycle(t *testing.T) {
+func TestRenewalWizardPreviewConfirmAndExpiry(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
 	f.send(userA, "/add name=卡&card_type=esim")
 	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
 	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
-
-	jobID := int64(1)
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 
-	f.callback(userA, "v1:renew:"+id(jobID), nil)
+	f.callback(userA, "v1:renew:1", nil)
 	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
 		t.Fatalf("dialog count %d", n)
 	}
 	if answered := f.stub.callsOf("answerCallbackQuery"); len(answered) != 1 || answered[0].form.Get("callback_query_id") != "cb-1" {
 		t.Fatalf("answer %+v", answered)
 	}
-
-	// Invalid dialog input must not write data and must keep the dialog usable.
-	f.send(userA, "period_id=1&date_precision=date&expires_at=2027-03-01")
-	if n := f.count("SELECT count(*) FROM renewals"); n != 0 {
-		t.Fatalf("invalid dialog wrote renewal %d", n)
+	if text := f.stub.lastText(); !strings.Contains(text, "新截止使用哪种精度") {
+		t.Fatalf("wizard first screen: %q", text)
 	}
+
+	// Reads never discard an unfinished wizard.
+	f.send(userA, "/list")
+	f.send(userA, "/view period 1")
+	f.send(userA, "/reminders")
+	f.send(userA, "/settings")
 	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
-		t.Fatalf("dialog lost after invalid input: %d", n)
+		t.Fatalf("read-only commands removed the dialog: %d", n)
 	}
 
-	text := f.send(userA, "date_precision=date&expires_at=2027-03-01&amount=1000&currency=TWD")
-	if !strings.Contains(text, "续期完成") {
-		t.Fatalf("dialog renew: %q", text)
+	// A wrong amount keeps the user on the same step without writing.
+	f.callback(userA, choiceCallback("precision", "date"), nil)
+	f.send(userA, "date_precision=date&expires_at=2027-03-01")
+	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
+		t.Fatalf("raw query text removed the dialog: %d", n)
+	}
+	if text := f.stub.lastText(); !strings.Contains(text, "日期必须是存在的 YYYY-MM-DD") {
+		t.Fatalf("renew wizard did not explain the expected format: %q", text)
+	}
+
+	f.send(userA, "2027-03-01")
+	if text := f.stub.lastText(); !strings.Contains(text, "本次实际续期金额") {
+		t.Fatalf("amount step missing: %q", text)
+	}
+	f.send(userA, "abc")
+	if text := f.stub.lastText(); !strings.Contains(text, "金额 币种") {
+		t.Fatalf("invalid amount accepted: %q", text)
+	}
+	f.send(userA, "1000 TWD")
+	if text := f.stub.lastText(); !strings.Contains(text, "续期备注") {
+		t.Fatalf("notes step missing: %q", text)
+	}
+	f.callback(userA, cb("dialog", "skip"), nil)
+	if text := f.stub.lastText(); !strings.Contains(text, "请确认续期") || !strings.Contains(text, "1000 TWD") {
+		t.Fatalf("preview missing: %q", text)
+	}
+	if n := f.count("SELECT count(*) FROM renewals"); n != 0 {
+		t.Fatalf("preview wrote renewal %d", n)
+	}
+
+	// Back then forward keeps the entered values and shows the preview again.
+	f.callback(userA, cb("dialog", "back"), nil)
+	if text := f.stub.lastText(); !strings.Contains(text, "续期备注") {
+		t.Fatalf("back landed on %q", text)
+	}
+	f.callback(userA, cb("dialog", "skip"), nil)
+	if text := f.stub.lastText(); !strings.Contains(text, "请确认续期") {
+		t.Fatalf("skip to preview: %q", text)
+	}
+	f.callback(userA, cb("dialog", "confirm"), nil)
+	if text := f.stub.lastText(); !strings.Contains(text, "续期完成") {
+		t.Fatalf("confirm: %q", text)
 	}
 	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
 		t.Fatalf("renewal count %d", n)
@@ -482,8 +522,8 @@ func TestRenewalDialogLifecycle(t *testing.T) {
 		t.Fatalf("dialog not cleared: %d", n)
 	}
 
-	// The old button must not modify the new cycle again.
-	f.callback(userA, "v1:renew:"+id(jobID), nil)
+	// Re-pressing the pre-renewal button must not open a new cycle.
+	f.callback(userA, "v1:renew:1", nil)
 	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
 		t.Fatalf("stale callback created renewal %d", n)
 	}
@@ -495,27 +535,16 @@ func TestRenewalDialogLifecycle(t *testing.T) {
 		t.Fatalf("stale answer %q", got)
 	}
 
-	// Expired dialog: advancing the injected clock must invalidate it.
+	// Expired wizard: advancing the injected clock invalidates it.
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,2,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 	f.callback(userA, "v1:renew:2", nil)
 	f.clock.advance(16 * time.Minute)
-	text = f.send(userA, "date_precision=date&expires_at=2027-05-01")
-	if !strings.Contains(text, "没有进行中的续期对话") {
+	text := f.send(userA, "2027-05-01")
+	if !strings.Contains(text, "对话已过期") {
 		t.Fatalf("expired dialog: %q", text)
 	}
 	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
 		t.Fatalf("expired dialog wrote renewal %d", n)
-	}
-
-	// A business command clears a live dialog and tells the user.
-	f.clock.advance(-16 * time.Minute)
-	f.callback(userA, "v1:renew:2", nil)
-	text = f.send(userA, "/list")
-	if !strings.Contains(text, "已取消未完成的续期对话") {
-		t.Fatalf("dialog clear notice: %q", text)
-	}
-	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
-		t.Fatalf("dialog not cleared by command %d", n)
 	}
 }
 
@@ -527,17 +556,62 @@ func TestDialogSurvivesRestart(t *testing.T) {
 	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
 	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
 	f.callback(userA, "v1:renew:1", nil)
+	f.callback(userA, choiceCallback("precision", "date"), nil)
 
 	f.restart()
 	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 1 {
 		t.Fatalf("dialog lost across restart: %d", n)
 	}
-	text := f.send(userA, "date_precision=date&expires_at=2027-04-01")
+	f.send(userA, "2027-04-01")
+	f.callback(userA, cb("dialog", "skip"), nil)
+	f.callback(userA, cb("dialog", "skip"), nil)
+	f.callback(userA, cb("dialog", "confirm"), nil)
+	text := f.stub.lastText()
 	if !strings.Contains(text, "续期完成") {
 		t.Fatalf("post-restart renew: %q", text)
 	}
 	if n := f.count("SELECT count(*) FROM renewals"); n != 1 {
 		t.Fatalf("renewals after restart %d", n)
+	}
+}
+
+func TestWriteWizardRequiresExplicitReplacement(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	f.send(userA, "/add name=卡&card_type=esim")
+	f.send(userA, "/edit period new 1 period_type=number_validity&name=项目&date_precision=date&expires_at=2027-01-31")
+	f.send(userA, "/edit rule new 1 days_before=1&reminder_time=09:00")
+	f.exec(`INSERT INTO reminder_jobs(validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,created_at,updated_at) VALUES(1,1,1,1,?,?,'sent',1,1,1)`, f.clock.t.Add(-time.Hour).Unix(), f.clock.t.Add(48*time.Hour).Unix())
+
+	f.callback(userA, "v1:renew:1", nil)
+	before := f.count("SELECT count(*) FROM bot_dialogs")
+	f.send(userA, "/service add")
+	text := f.stub.lastText()
+	if !strings.Contains(text, "继续当前") || !strings.Contains(text, "取消并开始") {
+		t.Fatalf("replacement prompt: %q", text)
+	}
+	if n := f.count("SELECT count(*) FROM bot_dialogs"); n != before {
+		t.Fatalf("replacement prompt changed dialogs: %d", n)
+	}
+	if got := serviceLookupString(t, f, "SELECT action FROM bot_dialogs"); got != "renew" {
+		t.Fatalf("draft replaced without confirmation: %q", got)
+	}
+
+	f.callback(userA, cb("dialog", "keep"), nil)
+	if got := serviceLookupString(t, f, "SELECT action FROM bot_dialogs"); got != "renew" {
+		t.Fatalf("keep changed flow: %q", got)
+	}
+	if text := f.stub.lastText(); !strings.Contains(text, "新截止使用哪种精度") {
+		t.Fatalf("keep did not render renew: %q", text)
+	}
+
+	f.send(userA, "/service add")
+	f.callback(userA, cb("dialog", "replace"), nil)
+	if got := serviceLookupString(t, f, "SELECT action FROM bot_dialogs"); got != "service_add" {
+		t.Fatalf("replace kept old flow: %q", got)
+	}
+	if text := f.stub.lastText(); !strings.Contains(text, "添加服务") {
+		t.Fatalf("replace did not start the new flow: %q", text)
 	}
 }
 

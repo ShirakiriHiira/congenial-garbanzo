@@ -49,6 +49,8 @@ API 位于 `/api/v1`，使用 Telegram Mini App `initData` 鉴权、字符串资
 
 Bot 保留现有 SIM 命令与回调，并增加通用 `/service` 命令组管理服务、类别、有效期与条款。旧回调 wire 格式不变；回调校验所有权及当前 period cycle。续期必须显式指定新到期时间。详细语法仅见 README。
 
+Bot 交互层（`internal/bot`）只做传输校验、渲染与流程编排，所有写入仍调用 `internal/service` 的现有方法。`bot_dialogs` 每个用户最多一行，保存动作、固定步骤名、上限 16 KiB 的 JSON 草案、可选目标 ID 与版本（service/period/rule 外键、cycle、terms revision、rule revision）及 15 分钟 TTL；动作与步骤由代码白名单固定，不接受用户提交的名称。草案写入失败或过期后不写业务数据；业务失败保留草案，成功提交在同一事务内删除。读取命令不得清除草案；启动其他写流程前必须先经用户确认替换。权限与对象状态在每次消息、回调与提交事务内重新校验，按钮 ID 视为不可信输入；`v2:` 回调只携带动作与十进制 ID，不携带草案或敏感字段。旧 `v1:view`/`v1:renew` 及高级 query 命令继续可用，并复用同一 service 方法与幂等/版本检查。
+
 ## 安全与隐私
 
 - 验证 Telegram Mini App HMAC 与 `auth_date`；拒绝畸形、重复、过期凭据。不得信任客户端身份或 `initDataUnsafe`。
@@ -60,6 +62,8 @@ Bot 保留现有 SIM 命令与回调，并增加通用 `/service` 命令组管�
 - 备份含敏感用户数据，应限制访问并按运维策略加密。
 
 ## 迁移、升级与回退
+
+`004_bot_dialog_steps.sql` 将单用途续期对话表泛化为多步流程（保留原行并映射为 `renew`/`await_expiration`），以 CHECK 约束动作、步骤与草案长度，并用 `ON DELETE CASCADE` 外键在服务、有效期或规则硬删除时清理悬挂对话；不可映射的旧行使迁移整体回滚。
 
 `003_service_items.sql` 将 SIM 父表推广为通用服务、拆分 SIM 专属资料、重命名有效期父关联、增加类别和可选条款，并以 SQLite 约束保护类别归属/kind。必须保留 row ID、所有者、日期、cycle/revision、续期历史、规则、任务状态及租约/token、持久化对话与 AUTOINCREMENT 高水位。迁移事务任一步失败必须回滚。不可改写旧 migration 或其 checksum。
 
@@ -74,5 +78,6 @@ Bot 保留现有 SIM 命令与回调，并增加通用 `/service` 命令组管�
 - 混合 SIM/通用 API 覆盖类别、跨用户、类别归属与 kind 校验、分页前筛选、全量统计、字面搜索、严格嵌套 JSON 与 terms 版本冲突。
 - terms-only 修改前后 period cycle 与 reminder job 状态、attempts、token、cycle 不变；续期重放与回调 cycle fencing 保留既有行为。
 - Bot 测试覆盖通用服务创建、独立有效期/规则、服务名称提醒、回调重放、持久化续期对话及归档/删除生命周期，同时保留旧 SIM 流程。
+- Bot 交互测试覆盖：分步服务/有效期/条款/规则/时区向导最终只调用一次既有 service 方法；读取命令不清除草案；写流程替换必须确认；v2 按钮的私聊、所有权、过期、归档、取消与重复点击分支每次只应答一次且不越权写入；续期预览取消不写、确认只写一条、陈旧 cycle 拒绝且保留草案；条款修改不改变 cycle 或任务；时区修改重算 date 且保持 datetime 绝对时刻。断言基于 Telegram stub 请求与 SQLite 状态，不以源码字符串或“未 panic”作为验收。
 - 生产不提供测试身份入口或鉴权绕过。本地浏览器模式不能证明真实 Telegram 投递或原生 WebView 行为。
 - Mini App 页面和人工验收仅由 [专项规范](MINI_APP_DEVELOPMENT.md)定义；实现 API 字段仅由 README 定义。

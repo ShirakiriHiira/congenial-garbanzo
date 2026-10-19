@@ -289,54 +289,15 @@ func termsText(t service.PeriodTerms) string {
 	return b.String()
 }
 
+// serviceDetail keeps the advanced text-only command output bounded: it
+// renders the first period page and points at the interactive view for more.
 func (h *Handler) serviceDetail(ctx context.Context, uid int64, item service.ServiceItem) (string, error) {
-	category := "#" + id(item.CategoryID)
-	for after := int64(0); ; {
-		page, err := h.svc.ListCategories(ctx, uid, after, pageSize)
-		if err != nil {
-			return "", err
-		}
-		found := false
-		for _, c := range page.Data {
-			if c.ID == item.CategoryID {
-				category = c.Name + " (#" + id(c.ID) + ")"
-				found = true
-				break
-			}
-		}
-		if found || page.NextCursor == nil {
-			break
-		}
-		after = *page.NextCursor
+	text, page, err := h.serviceDetailPage(ctx, uid, item, 0)
+	if err != nil {
+		return "", err
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "服务 #%s\n名称：%s\n类别：%s\n状态：%s\n服务商：%s\n公开标识：%s\n管理链接：%s\n", id(item.ID), item.Name, category, item.Status, textOrDash(item.Provider), textOrDash(item.Identifier), textOrDash(item.ManagementURL))
-	if d := item.SIMDetails; d != nil {
-		fmt.Fprintf(&b, "SIM 类型：%s\n电话：%s\n国家/地区：%s\nICCID：%s\n", d.CardType, textOrDash(d.PhoneNumber), textOrDash(d.CountryOrRegion), textOrDash(d.ICCID))
+	if page.NextCursor != nil {
+		text += "\n\n更多有效期：/service view " + id(item.ID)
 	}
-	if item.Notes != nil {
-		fmt.Fprintf(&b, "备注：%s\n", *item.Notes)
-	}
-	b.WriteString("\n有效期：\n")
-	for after := int64(0); ; {
-		page, err := h.svc.ListPeriods(ctx, uid, item.ID, after, pageSize)
-		if err != nil {
-			return "", err
-		}
-		if after == 0 && len(page.Data) == 0 {
-			b.WriteString("（未配置；不会发送提醒）\n")
-		}
-		for _, p := range page.Data {
-			fmt.Fprintf(&b, "#%s %s：%s [%s]，版本 %d\n  %s\n  详情/规则/历史：/view period %s\n", id(p.ID), periodName(p), periodExpiry(p), p.Status, p.Cycle, termsText(p.Terms), id(p.ID))
-		}
-		if page.NextCursor == nil {
-			break
-		}
-		after = *page.NextCursor
-	}
-	fmt.Fprintf(&b, "\n添加有效期：/service period new %s period_type=custom&name=名称&date_precision=date&expires_at=2027-01-31", id(item.ID))
-	if item.SIMDetails != nil {
-		b.WriteString("\nSIM 有效期类型：number_validity、plan_validity、data_package_validity 或 custom。")
-	}
-	return b.String(), nil
+	return text, nil
 }
