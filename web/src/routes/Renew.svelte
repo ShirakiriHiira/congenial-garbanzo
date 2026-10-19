@@ -10,6 +10,7 @@
   import { formatDateTime, isValidDate, localDateAt, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
   import { formatMoney, parseMoney } from '../lib/domain/money';
+  import { formatTermsCycle } from '../lib/domain/terms';
   import { errorMessage, labels, periodTypeLabel, renewalLabels as text } from '../lib/domain/labels';
   import AsyncState from '../components/AsyncState.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
@@ -217,7 +218,7 @@
     period = conflict.current;
     if (period.status === 'cancelled') {
       conflict.dismiss();
-      back(`/app/sims/${period.sim_id}`);
+      back(`/app/services/${period.service_id}`);
       return;
     }
     reviewRequired = false;
@@ -239,15 +240,17 @@
       <h2>{period.name || periodTypeLabel(period)}</h2>
       <dl class="renew-facts">
         <dt>{text.previousExpiry}</dt><dd>{formatExpiry(period)}</dd>
+        <dt>{text.terms}</dt><dd>{formatTermsCycle(period.terms)} · {formatMoney(period.terms.amount, period.terms.currency)}</dd>
         <dt>{text.expiryInstant}</dt><dd><time datetime={period.expires_at}>{formatDateTime(period.expires_at, period.timezone)}</time></dd>
         <dt>{text.currentCycle}</dt><dd>{period.cycle}</dd>
         <dt>{text.timezone}</dt><dd>{period.timezone}</dd>
       </dl>
+      <p class="muted">{text.termsReferenceHint}</p>
       {#if periodError}<ErrorBanner message={periodError} onretry={terminal ? undefined : () => { void readPeriod(); }} />{/if}
       <Toast message={toast} ondismiss={() => { toast = ''; }} />
       {#if replayMessage}<p role="status" class="notice">{replayMessage}</p>{/if}
       {#if period.status === 'cancelled'}
-        <p class="notice">{text.cancelled}</p>
+        <p class="notice">{text.cancelledPeriodHint}</p>
       {:else}
         {#if reviewRequired && !conflict.open}
           <ErrorBanner message={text.conflictPending} onretry={terminal ? undefined : () => { void conflict.present(); }} />
@@ -255,6 +258,7 @@
         <form class="stack" onsubmit={submit} oninput={() => { dirty = true; }}>
           <DatePrecisionInput id="renew-expires" bind:precision bind:expires bind:occurrence zone={period.timezone} disabled={!writable} error={fieldError} />
           <p class="muted">{text.expiryHint}</p>
+          <p class="muted">{text.actualPaymentHint}</p>
           <MoneyInput id="renew-amount" bind:amount bind:currency disabled={!writable} />
           <FormField id="renew-notes" label={text.notes} error={notesError} hint={text.notesHint}>
             {#snippet action()}
@@ -296,7 +300,7 @@
   {:else if conflict.failed}<p role="alert">{text.conflictReloadFailed}</p>
   {:else if conflict.current}
     <dl class="renew-facts"><dt>{text.cycle}</dt><dd>{period?.cycle} → {conflict.current.cycle}</dd><dt>{text.currentExpiry}</dt><dd>{formatExpiry(conflict.current)}</dd><dt>{text.expiryInstant}</dt><dd>{formatDateTime(conflict.current.expires_at, conflict.current.timezone)}</dd></dl>
-    {#if conflict.current.status === 'cancelled'}<p>{text.cancelled}</p>{/if}
+    {#if conflict.current.status === 'cancelled'}<p>{text.cancelledPeriodHint}</p>{/if}
   {/if}
 </ConfirmDialog>
 

@@ -21,9 +21,13 @@ function popFinished(): Promise<void> {
 
 describe('application routes', () => {
   it('matches named routes without losing decimal ID precision', () => {
-    expect(router.matchRoute('/app/sims/9007199254740993/edit')).toEqual({ name: 'sim-edit', params: { id: '9007199254740993' } });
+    expect(router.matchRoute('/app/services/9007199254740993/edit')).toEqual({ name: 'service-edit', params: { id: '9007199254740993' } });
+    expect(router.matchRoute('/app/services/42/periods/new')).toEqual({ name: 'period-new', params: { id: '42' } });
     expect(router.matchRoute('/app/periods/42/rules')).toEqual({ name: 'rules', params: { id: '42' } });
-    expect(router.matchRoute('/app/sims/new').name).toBe('sim-new');
+    expect(router.matchRoute('/app/services/new').name).toBe('service-new');
+    expect(router.matchRoute('/app/sims/new').name).toBe('legacy-sim-new');
+    expect(router.matchRoute('/app/sims/42/edit').name).toBe('legacy-sim-edit');
+    expect(router.matchRoute('/app/sims/42/periods/new').name).toBe('legacy-period-new');
     expect(router.matchRoute('/outside').name).toBe('not-found');
   });
 
@@ -38,6 +42,39 @@ describe('application routes', () => {
     router.navigate('/app/settings');
     expect(seen).toHaveBeenLastCalledWith('/app/settings');
     expect(() => router.navigate('https://example.org/app/')).toThrow();
+  });
+  it('replaces a route without changing the scoped history index or adding an entry', async () => {
+    const seen = vi.fn();
+    stop = router.subscribe(seen);
+    router.navigate('/app/sims/42');
+    const indexBefore = history.state.miniapp.index;
+    router.replace('/app/services/42');
+    expect(location.pathname).toBe('/app/services/42');
+    expect(history.state.miniapp.index).toBe(indexBefore);
+    expect(seen).toHaveBeenLastCalledWith('/app/services/42');
+    const returned = popFinished();
+    router.back('/app/');
+    await returned;
+    expect(location.pathname).toBe('/app/');
+  });
+
+  it('applies the leave guard to replacement and rejects external paths', () => {
+    stop = router.subscribe(() => {});
+    router.setLeaveGuard(() => false);
+    router.replace('/app/services/9');
+    expect(location.pathname).toBe('/app/');
+    router.setLeaveGuard(() => true);
+    expect(() => router.replace('https://example.org/app/services/9')).toThrow();
+  });
+
+  it('notifies query-only changes so creation presets survive replacement', () => {
+    const seen = vi.fn();
+    stop = router.subscribe(seen);
+    router.navigate('/app/services/new');
+    const index = history.state.miniapp.index;
+    router.replace('/app/services/new?category=sim');
+    expect(seen).toHaveBeenLastCalledWith('/app/services/new?category=sim');
+    expect(history.state.miniapp.index).toBe(index);
   });
 
   it('restores rejected browser back navigation and allows confirmed back', async () => {

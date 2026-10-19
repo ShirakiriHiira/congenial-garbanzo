@@ -238,7 +238,7 @@
   </SectionHeader>
   <label class="filter">{text.filter}
     <select value={status} onchange={changeStatus} disabled={!readable() || cancelling}>
-      {#each statuses as option}<option value={option}>{option === 'all' ? labels.filterAll : reminderStatusLabels[option]}</option>{/each}
+      {#each statuses as option}<option value={option}>{option === 'all' ? '全部状态' : reminderStatusLabels[option]}</option>{/each}
     </select>
   </label>
   <p class="muted">{text.zone}：{timezone}</p>

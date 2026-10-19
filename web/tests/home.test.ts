@@ -1,47 +1,78 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import App from '../src/App.svelte';
 import { session } from '../src/lib/session.svelte';
-import type { OverviewCounts, OverviewItem, OverviewResponse, Period, Sim } from '../src/lib/api/types';
+import type { Category, OverviewCounts, Page, Period, ServiceItem, ServiceOverviewItem, ServiceOverviewResponse } from '../src/lib/api/types';
 
 const now = '2027-01-01T00:00:00Z';
 const user = { id: '1', telegram_user_id: '123', timezone: 'Asia/Taipei', has_private_chat: true, created_at: now, updated_at: now };
 const counts: OverviewCounts = { total: 105, due_soon: 1, expired: 1, no_period: 1 };
 const originalShow = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
 const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');
+let overviewURLs: URL[] = [];
 
-function sim(id: number, status: Sim['status'] = 'active'): Sim {
-  return { id: String(id), user_id: '1', name: `合成卡 ${id}`, card_type: 'esim', operator: null,
-    phone_number: null, country_or_region: null, iccid: null, notes: null, status, created_at: now, updated_at: now };
+function category(id: number, name: string, code: string | null = null, kind: Category['kind'] = 'generic'): Category {
+  return { id: String(id), user_id: code ? null : '1', code, name, kind, created_at: now, updated_at: now };
+}
+const simCategory = category(1, 'SIM 与 eSIM', 'sim', 'sim');
+const vpsCategory = category(2, 'VPS 与云服务器', 'vps');
+const customCategory = category(3, '家庭网络');
+
+function service(id: number, overrides: Partial<ServiceItem> = {}): ServiceItem {
+  return {
+    id: String(id), user_id: '1', name: `合成服务 ${id}`, category_id: vpsCategory.id,
+    provider: null, identifier: null, management_url: null, notes: null, status: 'active',
+    created_at: now, updated_at: now, sim_details: null, ...overrides,
+  };
+}
+function sim(id: number, overrides: Partial<ServiceItem> = {}): ServiceItem {
+  return service(id, {
+    name: `合成卡 ${id}`, category_id: simCategory.id,
+    sim_details: { card_type: 'esim', phone_number: '+886912345678', country_or_region: 'TW', iccid: '89860012345678901234' },
+    ...overrides,
+  });
 }
 function period(id: number, date: string, status: Period['status'] = 'active'): Period {
-  return { id: String(id), sim_id: String(id), period_type: 'number_validity', name: '号码有效期',
+  return {
+    id: String(id), service_id: String(id), sim_id: null, period_type: 'custom', name: '有效期',
     starts_at: null, expires_at: `${date}T16:00:00Z`, date_precision: 'date', local_expires_date: date,
-    timezone: 'Asia/Taipei', status, cycle: 1, created_at: now, updated_at: now };
+    timezone: 'Asia/Taipei', status, cycle: 1,
+    terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },
+    created_at: now, updated_at: now,
+  };
 }
-function item(id: number, primary: Period | null = null): OverviewItem {
-  return { sim: sim(id), primary_period: primary };
+function item(id: number, primary: Period | null = null, value: ServiceItem = service(id)): ServiceOverviewItem {
+  return { service: value, primary_period: primary };
 }
-function page(items: OverviewItem[], next: string | null = null, value = counts): OverviewResponse {
+function page(items: ServiceOverviewItem[], next: string | null = null, value = counts): ServiceOverviewResponse {
   return { data: { counts: value, items }, next_cursor: next };
 }
-function unavailable(): Response {
-  return Response.json({ error: { code: 'unavailable', message: 'unavailable' } }, { status: 503 });
+function categoriesPage(data: Category[], next: string | null = null): Page<Category> {
+  return { data, next_cursor: next };
 }
 function transport(load: (url: URL) => Response | Promise<Response>): void {
   vi.stubGlobal('fetch', vi.fn((input: string) => {
     const url = new URL(input, location.origin);
-    return Promise.resolve(url.pathname.endsWith('/me') ? Response.json({ data: user }) : load(url));
+    if (url.pathname.endsWith('/me')) return Promise.resolve(Response.json({ data: user }));
+    if (url.pathname.endsWith('/categories')) return Promise.resolve(Response.json(categoriesPage([simCategory, vpsCategory, customCategory])));
+    if (url.pathname.endsWith('/services/overview')) overviewURLs.push(url);
+    return Promise.resolve(load(url));
   }));
 }
+function overviewCalls(): URL[] { return overviewURLs; }
 function totalValue(): Element | null { return document.querySelector('dl > div:first-child dd'); }
 async function select(label: string): Promise<void> {
   await fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   await fireEvent.click(screen.getByRole('radio', { name: label }));
 }
+async function submitSearch(value: string): Promise<void> {
+  await fireEvent.input(screen.getByRole('searchbox', { name: '搜索' }), { target: { value } });
+  await fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+}
 
 beforeEach(() => {
   history.replaceState(null, '', '/app/');
+  overviewURLs = [];
   session.auth = 'missing';
   session.me = null;
   session.dirty = false;
@@ -62,181 +93,248 @@ afterEach(() => {
 });
 
 describe('home counts and pagination', () => {
-  it('shows 105 authoritative cards before loading six pages, without recomputing counts', async () => {
+  it('shows server counts before loading all pages and does not recompute them', async () => {
     transport((url) => {
       const start = Number(url.searchParams.get('after_id') ?? 0);
-      const end = Math.min(start + 20, 105);
-      return Response.json(page(Array.from({ length: end - start }, (_, index) => item(start + index + 1)), end === 105 ? null : String(end)));
+      const end = Math.min(start + 20, 25);
+      return Response.json(page(Array.from({ length: end - start }, (_, index) => item(start + index + 1)), end === 25 ? null : String(end), { ...counts, total: 25 }));
     });
     render(App);
-    await screen.findByText('合成卡 20');
-    expect(totalValue()).toHaveTextContent('105');
-    expect(screen.queryByText('合成卡 21')).not.toBeInTheDocument();
-    for (const end of [40, 60, 80, 100, 105]) {
-      await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-      await screen.findByText(`合成卡 ${end}`);
-      expect(totalValue()).toHaveTextContent('105');
-    }
-    expect(screen.getAllByRole('button', { name: /合成卡/ })).toHaveLength(105);
+    await screen.findByText('合成服务 20');
+    expect(totalValue()).toHaveTextContent('25');
+    expect(screen.queryByText('合成服务 21')).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    await screen.findByText('合成服务 25');
+    expect(totalValue()).toHaveTextContent('25');
+    expect(screen.getAllByRole('button', { name: /合成服务/ })).toHaveLength(25);
     expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument();
-    expect(screen.getByText('共 105 张卡片')).toBeInTheDocument();
+    expect(screen.getByText('共 25 项服务')).toBeInTheDocument();
   });
 
-  it('replaces counts with each successful server page rather than incrementing locally', async () => {
+  it('requests status active by default rather than sending API status all', async () => {
+    transport(() => Response.json(page([], null, { total: 0, due_soon: 0, expired: 0, no_period: 0 })));
+    render(App);
+    await waitFor(() => expect(totalValue()).toHaveTextContent('0'));
+    expect(overviewCalls()[0].searchParams.get('status')).toBe('active');
+    expect(overviewCalls()[0].searchParams.get('status')).not.toBe('all');
+    expect(overviewCalls()[0].searchParams.get('q')).toBeNull();
+    expect(overviewCalls()[0].searchParams.get('category_id')).toBeNull();
+  });
+
+  it('uses the latest server counts on a later page', async () => {
     transport((url) => Response.json(url.searchParams.has('after_id')
       ? page([item(2)], null, { ...counts, total: 110 }) : page([item(1)], '1')));
     render(App);
-    await screen.findByText('合成卡 1');
+    await screen.findByText('合成服务 1');
     await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-    await screen.findByText('合成卡 2');
+    await screen.findByText('合成服务 2');
     expect(totalValue()).toHaveTextContent('110');
-    expect(screen.getByText('共 110 张卡片')).toBeInTheDocument();
+    expect(screen.getByText('共 110 项服务')).toBeInTheDocument();
   });
 
-  it('keeps loaded cards and full counts after a failed later page and permits manual retry', async () => {
+  it('retains rows and server counts after a later page failure and retries that page', async () => {
     let fail = true;
     transport((url) => !url.searchParams.has('after_id') ? Response.json(page([item(1)], '1'))
-      : fail ? unavailable() : Response.json(page([item(2)])));
+      : fail ? Response.json({ error: { code: 'unavailable', message: 'unavailable' } }, { status: 503 })
+        : Response.json(page([item(2)])));
     render(App);
-    await screen.findByText('合成卡 1');
+    await screen.findByText('合成服务 1');
     await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('列表加载不完整');
     expect(totalValue()).toHaveTextContent('105');
-    expect(screen.getByText('合成卡 1')).toBeInTheDocument();
+    expect(screen.getByText('合成服务 1')).toBeInTheDocument();
     fail = false;
     await fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    await screen.findByText('合成卡 2');
+    await screen.findByText('合成服务 2');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('keeps the load-more control busy for repeated clicks until one page is displayed', async () => {
+  it('keeps repeated load-more clicks busy until the page resolves', async () => {
     const pending = Promise.withResolvers<Response>();
     transport((url) => url.searchParams.has('after_id') ? pending.promise : Response.json(page([item(1)], '1')));
     render(App);
-    await screen.findByText('合成卡 1');
+    await screen.findByText('合成服务 1');
     const button = screen.getByRole('button', { name: '加载更多' });
     await fireEvent.click(button);
     expect(button).toBeDisabled();
     await fireEvent.click(button);
     pending.resolve(Response.json(page([item(2)])));
-    await screen.findByText('合成卡 2');
-    expect(screen.getAllByRole('button', { name: /合成卡/ })).toHaveLength(2);
+    await screen.findByText('合成服务 2');
+    expect(screen.getAllByRole('button', { name: /合成服务/ })).toHaveLength(2);
     expect(totalValue()).toHaveTextContent('105');
   });
 
-  it('rebuilds the first page on refresh instead of retaining appended cards', async () => {
+  it('rebuilds the first page on refresh instead of retaining appended rows', async () => {
     let refreshed = false;
     transport((url) => Response.json(refreshed ? page([item(3)], null, { ...counts, total: 1 })
       : url.searchParams.has('after_id') ? page([item(2)]) : page([item(1)], '1')));
     render(App);
-    await screen.findByText('合成卡 1');
+    await screen.findByText('合成服务 1');
     await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-    await screen.findByText('合成卡 2');
+    await screen.findByText('合成服务 2');
     refreshed = true;
     await fireEvent.click(screen.getByRole('button', { name: '刷新' }));
-    await screen.findByText('合成卡 3');
-    expect(screen.queryByText('合成卡 1')).not.toBeInTheDocument();
-    expect(screen.queryByText('合成卡 2')).not.toBeInTheDocument();
+    await screen.findByText('合成服务 3');
+    expect(screen.queryByText('合成服务 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('合成服务 2')).not.toBeInTheDocument();
     expect(totalValue()).toHaveTextContent('1');
+  });
+
+  it('uses the applied filter snapshot for paging despite a changed search draft', async () => {
+    transport((url) => url.searchParams.has('after_id')
+      ? Response.json(page([item(2)], null, { ...counts, total: 2 }))
+      : url.searchParams.has('q')
+        ? Response.json(page([item(1)], '1', { ...counts, total: 2 }))
+        : Response.json(page([], null, { total: 0, due_soon: 0, expired: 0, no_period: 0 })));
+    render(App);
+    await waitFor(() => expect(totalValue()).toHaveTextContent('0'));
+    await submitSearch('vps');
+    await screen.findByText('合成服务 1');
+    await fireEvent.input(screen.getByRole('searchbox', { name: '搜索' }), { target: { value: 'draft' } });
+    expect(overviewCalls()).toHaveLength(2);
+    await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    await screen.findByText('合成服务 2');
+    expect(overviewCalls().at(-1)?.searchParams.get('q')).toBe('vps');
+    expect(overviewCalls().at(-1)?.searchParams.get('after_id')).toBe('1');
   });
 });
 
-describe('home empty, filter, and archive states', () => {
-  it('shows real zero counts and an empty message for an empty user', async () => {
+describe('home filters and service rows', () => {
+  it('shows zero counts and the empty-service message for a new account', async () => {
     transport(() => Response.json(page([], null, { total: 0, due_soon: 0, expired: 0, no_period: 0 })));
     render(App);
-    expect(await screen.findByText('还没有卡片。')).toBeInTheDocument();
+    expect(await screen.findByText('还没有服务。')).toBeInTheDocument();
     expect(totalValue()).toHaveTextContent('0');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('shows unavailable statistics and a manual retry instead of an empty-user message on failure', async () => {
+  it('shows unavailable statistics and retries a failed first page', async () => {
     let fail = true;
-    transport(() => fail ? unavailable() : Response.json(page([item(1)])));
+    transport(() => fail
+      ? Response.json({ error: { code: 'unavailable', message: 'unavailable' } }, { status: 503 })
+      : Response.json(page([item(1)])));
     render(App);
     expect(await screen.findByRole('alert')).toHaveTextContent('服务暂时不可用');
     expect(totalValue()).toHaveTextContent('—');
-    expect(screen.queryByText('还没有卡片。')).not.toBeInTheDocument();
+    expect(screen.queryByText('还没有服务。')).not.toBeInTheDocument();
     fail = false;
     await fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    await screen.findByText('合成卡 1');
+    await screen.findByText('合成服务 1');
     expect(totalValue()).toHaveTextContent('105');
   });
 
-  it('filters only loaded cards and keeps the scope note and pagination available', async () => {
-    transport((url) => Response.json(url.searchParams.has('after_id')
-      ? page([item(3, period(3, '2027-01-04'))])
-      : page([item(1, period(1, '2027-01-08')), item(2, period(2, '2027-01-09'))], '2', { ...counts, total: 4 })));
+  it('submits search explicitly and resets to the first page', async () => {
+    transport((url) => Response.json(page(
+      url.searchParams.has('q') ? [item(2)] : [item(1)], url.searchParams.has('q') ? null : '1')));
     render(App);
-    await screen.findByText('合成卡 1');
+    await screen.findByText('合成服务 1');
+    await fireEvent.input(screen.getByRole('searchbox', { name: '搜索' }), { target: { value: '  vps  ' } });
+    expect(overviewCalls()).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+    await screen.findByText('合成服务 2');
+    expect(overviewCalls().at(-1)?.searchParams.get('q')).toBe('vps');
+    expect(overviewCalls().at(-1)?.searchParams.get('after_id')).toBeNull();
+    expect(screen.queryByText('合成服务 1')).not.toBeInTheDocument();
+  });
+
+  it('applies category and no-period status immediately using server counts', async () => {
+    transport((url) => Response.json(page([item(2)], null, { total: 3, due_soon: 1, expired: 1, no_period: 1 })));
+    render(App);
+    await screen.findByText('合成服务 2');
+    await fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await fireEvent.change(screen.getByRole('combobox', { name: '类别' }), { target: { value: customCategory.id } });
+    await waitFor(() => expect(overviewCalls().at(-1)?.searchParams.get('category_id')).toBe(customCategory.id));
+    await fireEvent.click(screen.getByRole('radio', { name: '未设置有效期' }));
+    await waitFor(() => expect(overviewCalls().at(-1)?.searchParams.get('status')).toBe('no_period'));
+    expect(overviewCalls().at(-1)?.searchParams.get('category_id')).toBe(customCategory.id);
+    expect(totalValue()).toHaveTextContent('3');
+  });
+
+  it('shows archived rows from the same overview collection and uses archived counts', async () => {
+    transport((url) => Response.json(url.searchParams.get('status') === 'archived'
+      ? page([item(5, null, service(5, { name: '归档服务', status: 'archived' }))], null, { total: 2, due_soon: 0, expired: 0, no_period: 0 })
+      : page([item(1)], null, { ...counts, total: 4 })));
+    render(App);
+    await screen.findByText('合成服务 1');
+    await select('已归档');
+    await screen.findByText('归档服务');
+    expect(screen.queryByText('合成服务 1')).not.toBeInTheDocument();
+    expect(overviewCalls().at(-1)?.searchParams.get('status')).toBe('archived');
+    expect(totalValue()).toHaveTextContent('2');
+    expect(screen.getByText('共 2 项服务')).toBeInTheDocument();
+  });
+
+  it('clears all applied filters and restores the active first page', async () => {
+    transport((url) => Response.json(url.searchParams.get('status') === 'archived'
+      ? page([item(5, null, service(5, { status: 'archived' }))]) : page([item(1)])));
+    render(App);
+    await screen.findByText('合成服务 1');
+    await select('已归档');
+    await screen.findByText('合成服务 5');
+    await fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+    await screen.findByText('合成服务 1');
+    expect(overviewCalls().at(-1)?.searchParams.get('status')).toBe('active');
+    expect(overviewCalls().at(-1)?.searchParams.get('after_id')).toBeNull();
+  });
+
+  it('ignores a late response after abort even when the transport resolves it', async () => {
+    const stale = Promise.withResolvers<Response>();
+    let calls = 0;
+    transport(() => {
+      calls += 1;
+      return calls === 1 ? stale.promise : Response.json(page([item(2, null, service(2, { name: '新服务' }))]));
+    });
+    render(App);
+    await select('已归档');
+    await screen.findByText('新服务');
+    stale.resolve(Response.json(page([item(1, null, service(1, { name: '旧服务' }))])));
+    await waitFor(() => expect(screen.queryByText('旧服务')).not.toBeInTheDocument());
+    expect(screen.getByText('新服务')).toBeInTheDocument();
+  });
+
+  it('loads every category page for the filter selector', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string) => {
+      const url = new URL(input, location.origin);
+      if (url.pathname.endsWith('/me')) return Promise.resolve(Response.json({ data: user }));
+      if (url.pathname.endsWith('/categories')) {
+        return Promise.resolve(Response.json(url.searchParams.has('after_id')
+          ? categoriesPage([customCategory]) : categoriesPage([simCategory, vpsCategory], '2')));
+      }
+      if (url.pathname.endsWith('/services/overview')) overviewURLs.push(url);
+      return Promise.resolve(Response.json(page([item(1)])));
+    }));
+    render(App);
+    await screen.findByText('合成服务 1');
+    await fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    const selector = screen.getByRole('combobox', { name: '类别' });
+    expect(await within(selector).findByRole('option', { name: '家庭网络' })).toBeInTheDocument();
+    expect(within(selector).getByRole('option', { name: '全部类别' })).toBeInTheDocument();
+  });
+
+  it('masks SIM numbers and shows generic identifier, provider, and category without ICCID', async () => {
+    const simService = sim(1, { provider: '运营商甲', identifier: 'do not show', notes: '备注' });
+    const generic = service(2, { name: '云主机', identifier: 'host.example', provider: 'Example Cloud' });
+    transport(() => Response.json(page([item(1, null, simService), item(2, null, generic)])));
+    render(App);
+    const simRow = await screen.findByRole('button', { name: /合成卡 1/ });
+    expect(simRow).toHaveTextContent('+886*****5678');
+    expect(within(simRow).getByText('eSIM')).toBeInTheDocument();
+    expect(within(simRow).queryByText(/8986001234/)).not.toBeInTheDocument();
+    expect(within(simRow).queryByText('do not show')).not.toBeInTheDocument();
+    const genericRow = screen.getByRole('button', { name: /云主机/ });
+    expect(within(genericRow).getByText('host.example · Example Cloud · VPS 与云服务器')).toBeInTheDocument();
+  });
+
+  it('renders server-provided primary-period badges without locally filtering rows', async () => {
+    transport((url) => url.searchParams.get('status') === 'due_soon'
+      ? Response.json(page([item(1, period(1, '2027-01-08')), item(2, period(2, '2027-02-09'))]))
+      : Response.json(page([item(1, period(1, '2027-01-08')), item(2, period(2, '2027-02-09'))])));
+    render(App);
+    await screen.findByText('合成服务 1');
     await select('即将到期');
-    expect(screen.getByText('合成卡 1')).toBeInTheDocument();
-    expect(screen.queryByText('合成卡 2')).not.toBeInTheDocument();
-    expect(screen.getAllByText('仅筛选已加载数据')[0]).toBeVisible();
-    expect(screen.getByText('已加载 1 张 / 共 4 张')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-    await screen.findByText('合成卡 3');
-    expect(screen.queryByText('仅筛选已加载数据')).not.toBeInTheDocument();
-  });
-
-  it('loads archived cards separately, retains home counts, and ignores late abandoned archive pages', async () => {
-    const pending = Promise.withResolvers<Response>();
-    let first = true;
-    transport((url) => {
-      if (url.pathname.endsWith('/overview')) return Response.json(page([item(1)], null, { ...counts, total: 4 }));
-      if (first) { first = false; return pending.promise; }
-      return Response.json({ data: [sim(2), sim(5, 'archived')], next_cursor: null });
-    });
-    render(App);
-    await screen.findByText('合成卡 1');
-    await select('已归档');
-    expect(screen.queryByText('合成卡 1')).not.toBeInTheDocument();
-    expect(totalValue()).toHaveTextContent('4');
-    await select('全部');
-    pending.resolve(Response.json({ data: [sim(9, 'archived')], next_cursor: null }));
-    await select('已归档');
-    await screen.findByText('合成卡 5');
-    expect(screen.queryByText('合成卡 2')).not.toBeInTheDocument();
-    expect(screen.queryByText('合成卡 9')).not.toBeInTheDocument();
-    expect(screen.getByText('已加载 1 张归档卡片')).toBeInTheDocument();
-    expect(totalValue()).toHaveTextContent('4');
-    await select('全部');
-    expect(screen.getByText('合成卡 1')).toBeInTheDocument();
-  });
-
-  it('keeps archive pagination available after an active-only page without changing overview statistics', async () => {
-    transport((url) => {
-      if (url.pathname.endsWith('/overview')) return Response.json(page([item(1)], null, { ...counts, total: 4 }));
-      return Response.json(url.searchParams.has('after_id')
-        ? { data: [sim(5, 'archived')], next_cursor: null }
-        : { data: [sim(2)], next_cursor: '2' });
-    });
-    render(App);
-    await screen.findByText('合成卡 1');
-    await select('已归档');
-    await screen.findByText('已加载的数据中没有归档卡片。');
-    expect(screen.queryByText('合成卡 2')).not.toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-    await screen.findByText('合成卡 5');
-    expect(screen.getByText('已加载 1 张归档卡片')).toBeInTheDocument();
-    expect(totalValue()).toHaveTextContent('4');
-    expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument();
-  });
-
-  it('renders day 0, 7, and 8 through badges and gives server expired status precedence', async () => {
-    transport(() => Response.json(page([
-      item(1, period(1, '2027-01-01')), item(2, period(2, '2027-01-08')),
-      item(3, period(3, '2027-01-09')), item(4, period(4, '2027-02-01', 'expired')),
-    ], null, { total: 4, due_soon: 2, expired: 1, no_period: 0 })));
-    render(App);
-    await screen.findByText('合成卡 4');
-    expect(within(screen.getByRole('button', { name: /合成卡 1 / })).getByText('今天到期')).toBeInTheDocument();
-    expect(within(screen.getByRole('button', { name: /合成卡 2 / })).getByText('7 天后到期')).toBeInTheDocument();
-    const eighthDay = within(screen.getByRole('button', { name: /合成卡 3 / }));
-    expect(eighthDay.getByText('有效')).toBeInTheDocument();
-    expect(eighthDay.getByText('剩余 8 天')).toBeInTheDocument();
-    expect(within(screen.getByRole('button', { name: /合成卡 4 / })).getByText('已过期')).toBeInTheDocument();
-    await select('已过期');
-    expect(screen.getAllByRole('button', { name: /合成卡/ })).toHaveLength(1);
+    await screen.findByText('合成服务 1');
+    expect(screen.getByText('合成服务 2')).toBeInTheDocument();
+    expect(overviewCalls().at(-1)?.searchParams.get('status')).toBe('due_soon');
+    expect(within(screen.getByRole('button', { name: /合成服务 1/ })).getByText('7 天后到期')).toBeInTheDocument();
   });
 });

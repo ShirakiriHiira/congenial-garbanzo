@@ -2,6 +2,11 @@ export type ID = string;
 
 export type CardType = "physical_sim" | "esim";
 export type SimStatus = "active" | "archived";
+export type ServiceStatus = "active" | "archived";
+export type CategoryKind = "sim" | "generic";
+export type ServiceStatusFilter = "active" | "due_soon" | "expired" | "no_period" | "archived" | "all";
+export type TermsMode = "once" | "recurring" | "custom";
+export type IntervalUnit = "day" | "week" | "month" | "year";
 export type PeriodType =
   | "number_validity"
   | "plan_validity"
@@ -11,6 +16,95 @@ export type DatePrecision = "date" | "datetime";
 export type PeriodStatus = "active" | "expired" | "cancelled";
 export type ReminderStatus = "pending" | "sending" | "sent" | "failed" | "cancelled";
 export type ReminderStatusFilter = ReminderStatus | "all";
+
+export interface ServiceFilter {
+  q?: string;
+  category_id?: ID;
+  status?: ServiceStatusFilter;
+}
+
+export interface PeriodTermsInput {
+  mode: TermsMode;
+  interval_count: number | null;
+  interval_unit: IntervalUnit | null;
+  amount: number | null;
+  currency: string | null;
+}
+
+export interface PeriodTerms extends PeriodTermsInput {
+  revision: number;
+}
+
+export interface Category {
+  id: ID;
+  user_id: ID | null;
+  code: string | null;
+  name: string;
+  kind: CategoryKind;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SimDetails {
+  card_type: CardType;
+  phone_number: string | null;
+  country_or_region: string | null;
+  iccid: string | null;
+}
+
+export interface ServiceItem {
+  id: ID;
+  user_id: ID;
+  name: string;
+  category_id: ID;
+  provider: string | null;
+  identifier: string | null;
+  management_url: string | null;
+  notes: string | null;
+  status: ServiceStatus;
+  created_at: string;
+  updated_at: string;
+  sim_details: SimDetails | null;
+}
+
+export interface ServiceCreateInput {
+  name: string;
+  category_id: ID;
+  provider?: string | null;
+  identifier?: string | null;
+  management_url?: string | null;
+  notes?: string | null;
+  sim_details?: SimDetailsCreateInput | null;
+}
+
+export interface ServiceUpdateInput {
+  name?: string;
+  category_id?: ID;
+  provider?: string | null;
+  identifier?: string | null;
+  management_url?: string | null;
+  notes?: string | null;
+  status?: ServiceStatus;
+  sim_details?: SimDetailsUpdateInput | null;
+}
+
+export interface SimDetailsCreateInput {
+  card_type: CardType;
+  phone_number?: string | null;
+  country_or_region?: string | null;
+  iccid?: string | null;
+}
+
+export interface SimDetailsUpdateInput {
+  card_type?: CardType;
+  phone_number?: string | null;
+  country_or_region?: string | null;
+  iccid?: string | null;
+}
+
+export interface CategoryNameInput {
+  name: string;
+}
 
 export interface User {
   id: ID;
@@ -38,7 +132,8 @@ export interface Sim {
 
 export interface Period {
   id: ID;
-  sim_id: ID;
+  service_id: ID;
+  sim_id: ID | null;
   period_type: PeriodType;
   name: string;
   starts_at: string | null;
@@ -48,8 +143,22 @@ export interface Period {
   timezone: string;
   status: PeriodStatus;
   cycle: number;
+  terms: PeriodTerms;
   created_at: string;
   updated_at: string;
+}
+
+export interface ServiceOverviewItem {
+  service: ServiceItem;
+  primary_period: Period | null;
+}
+
+export interface ServiceOverviewResponse {
+  data: {
+    counts: OverviewCounts;
+    items: ServiceOverviewItem[];
+  };
+  next_cursor: ID | null;
 }
 
 export interface Rule {
@@ -106,43 +215,9 @@ export interface OverviewCounts {
   no_period: number;
 }
 
-export interface OverviewItem {
-  sim: Sim;
-  primary_period: Period | null;
-}
-
-export interface OverviewResponse {
-  data: {
-    counts: OverviewCounts;
-    items: OverviewItem[];
-  };
-  next_cursor: ID | null;
-}
-
 export interface Page<T> {
   data: T[];
   next_cursor: ID | null;
-}
-
-export interface SimCreateInput {
-  name: string;
-  card_type: CardType;
-  operator?: string | null;
-  phone_number?: string | null;
-  country_or_region?: string | null;
-  iccid?: string | null;
-  notes?: string | null;
-}
-
-export interface SimUpdateInput {
-  name?: string;
-  card_type?: CardType;
-  operator?: string | null;
-  phone_number?: string | null;
-  country_or_region?: string | null;
-  iccid?: string | null;
-  notes?: string | null;
-  status?: SimStatus;
 }
 
 export interface PeriodCreateInput {
@@ -151,6 +226,7 @@ export interface PeriodCreateInput {
   starts_at?: string | null;
   date_precision: DatePrecision;
   expires_at: string;
+  terms?: PeriodTermsInput | null;
 }
 
 export interface PeriodUpdateInput {
@@ -160,6 +236,8 @@ export interface PeriodUpdateInput {
   starts_at?: string | null;
   date_precision?: DatePrecision;
   expires_at?: string;
+  terms?: PeriodTermsInput | null;
+  expected_terms_revision?: number;
 }
 
 export interface RuleCreateInput {

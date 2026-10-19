@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { api } from '../lib/api/resources';
   import { ApiError } from '../lib/api/errors';
-  import type { DatePrecision, Period, PeriodType, PeriodCreateInput, PeriodUpdateInput } from '../lib/api/types';
+  import type { DatePrecision, Period, PeriodType, PeriodCreateInput, PeriodUpdateInput, PeriodTermsInput, TermsMode, IntervalUnit } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
   import { acceptMe, canWrite, session } from '../lib/session.svelte';
@@ -10,7 +10,9 @@
   import { getInitData } from '../lib/telegram/sdk';
   import { instantToWallTime, isValidDate, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
-  import { errorMessage, periodTypeLabels, labels } from '../lib/domain/labels';
+  import { parseMoney } from '../lib/domain/money';
+  import { errorMessage, intervalUnitLabels, periodTypeLabel, periodTypeLabels, labels, termsModeLabels } from '../lib/domain/labels';
+  import MoneyInput from '../components/MoneyInput.svelte';
   import FormField from '../components/FormField.svelte';
   import DatePrecisionInput from '../components/DatePrecisionInput.svelte';
   import DateTimeInput from '../components/DateTimeInput.svelte';
@@ -19,11 +21,21 @@
   import Toast from '../components/Toast.svelte';
 
   let { id, mode }: { id: string; mode: 'new' | 'edit' } = $props();
-  type Snapshot = { name: string; type: PeriodType; precision: DatePrecision; expires: string; occurrence?: Occurrence; starts: string; startsOccurrence?: Occurrence };
+  type Snapshot = { name: string; type: PeriodType; precision: DatePrecision; expires: string; occurrence?: Occurrence; starts: string; startsOccurrence?: Occurrence; terms: PeriodTermsInput };
   let entity = $state<Period | null>(null);
   let zone = $state('');
   let name = $state('');
   let periodType = $state<PeriodType>('number_validity');
+  let serviceIsSIM = $state(true);
+  let termsMode = $state<TermsMode>('custom');
+  let intervalCount = $state('');
+  let intervalUnit = $state<IntervalUnit>('month');
+  let amount = $state('');
+  let currency = $state('');
+  let unsafeMoney = $state(false);
+  let unsafeTermsReset = $state(false);
+  let termsError = $state('');
+  let intervalError = $state('');
   let precision = $state<DatePrecision>('date');
   let expires = $state('');
   let occurrence = $state<Occurrence | undefined>();
@@ -37,13 +49,32 @@
   let startsError = $state('');
   let notice = $state('');
   let stale = $state(false);
+  function readTerms(): PeriodTermsInput {
+    return { mode: termsMode, interval_count: termsMode === 'recurring' ? Number(intervalCount) : null, interval_unit: termsMode === 'recurring' ? intervalUnit : null, amount: amount === '' ? null : Number(amount), currency: currency === '' ? null : currency };
+  }
+  function isExplicitUnsafeReset(terms: PeriodTermsInput): boolean {
+    return unsafeTermsReset && terms.mode === 'custom' && terms.interval_count === null && terms.interval_unit === null && terms.amount === null && terms.currency === null;
+  }
+  function sameTerms(a: PeriodTermsInput, b: PeriodTermsInput): boolean {
+    const unsafeUneditedAmount = !isExplicitUnsafeReset(a) && a.amount === null && a.currency === null && b.amount !== null && !Number.isSafeInteger(b.amount);
+    return a.mode === b.mode && a.interval_count === b.interval_count && a.interval_unit === b.interval_unit && (a.amount === b.amount || unsafeUneditedAmount) && (a.currency === b.currency || unsafeUneditedAmount);
+  }
+  function fillTerms(terms: PeriodTermsInput): void {
+    termsMode = terms.mode;
+    intervalCount = terms.interval_count === null ? '' : String(terms.interval_count);
+    intervalUnit = terms.interval_unit ?? 'month';
+    unsafeMoney = terms.amount !== null && !Number.isSafeInteger(terms.amount);
+    unsafeTermsReset = false;
+    amount = terms.amount === null || unsafeMoney ? '' : String(terms.amount);
+    currency = amount === '' ? '' : terms.currency ?? '';
+  }
   let alive = true;
   const controller = new AbortController();
   const submitter = new Submitter();
   const conflict = new ConflictFlow<Period>(() => api.period(id, controller.signal));
   const dirty = $derived(baseline
-    ? name !== baseline.name || periodType !== baseline.type || precision !== baseline.precision || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence
-    : name !== '' || expires !== '' || starts !== '' || precision !== 'date' || periodType !== 'number_validity');
+    ? name !== baseline.name || (serviceIsSIM && periodType !== baseline.type) || precision !== baseline.precision || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence || !sameTerms(readTerms(), baseline.terms)
+    : name !== '' || expires !== '' || starts !== '' || precision !== 'date' || periodType !== 'number_validity' || termsMode !== 'custom' || amount !== '' || currency !== '');
   $effect(() => { session.dirty = dirty; });
   $effect(() => { expires; precision; occurrence; expiresError = ''; });
   $effect(() => { starts; startsOccurrence; startsError = ''; });
@@ -53,14 +84,11 @@
     const resolvedExpires = resolvedPrecision === 'date' ? current.local_expires_date ?? '' : instantToWallTime(current.expires_at, current.timezone);
     const resolvedStarts = current.starts_at ? instantToWallTime(current.starts_at, current.timezone) : null;
     return {
-      name: current.name, type: current.period_type, precision: resolvedPrecision,
+      name: current.name, type: current.period_type, precision: resolvedPrecision, terms: { mode: current.terms.mode, interval_count: current.terms.interval_count, interval_unit: current.terms.interval_unit, amount: current.terms.amount, currency: current.terms.currency },
       expires: typeof resolvedExpires === 'string' ? resolvedExpires : resolvedExpires.value,
       occurrence: typeof resolvedExpires === 'string' ? undefined : resolvedExpires.occurrence,
       starts: resolvedStarts?.value ?? '', startsOccurrence: resolvedStarts?.occurrence,
     };
-  }
-  function snapshot(): Snapshot {
-    return { name, type: periodType, precision, expires, occurrence, starts, startsOccurrence };
   }
   function fill(current: Period) {
     entity = current;
@@ -70,10 +98,11 @@
     precision = current.date_precision;
     const resolved = snapshotOf(current);
     expires = resolved.expires;
+    fillTerms(resolved.terms);
     occurrence = resolved.occurrence;
     if (current.starts_at) { const wall = instantToWallTime(current.starts_at, zone); starts = wall.value; startsOccurrence = wall.occurrence; }
     else { starts = ''; startsOccurrence = undefined; }
-    baseline = snapshot();
+    baseline = resolved;
   }
   async function load() {
     loading = true;
@@ -81,14 +110,12 @@
     if (!getInitData() || session.auth === 'expired' || session.auth === 'forbidden') { loading = false; return; }
     try {
       if (mode === 'edit') {
-        const [current] = await Promise.all([
-          api.period(id, controller.signal),
-          session.me ? Promise.resolve() : api.me(controller.signal).then(acceptMe),
-        ]);
-        if (alive) fill(current);
+        const current = await api.period(id, controller.signal);
+        const [user, service] = await Promise.all([session.me ? Promise.resolve(session.me) : api.me(controller.signal), api.service(current.service_id, controller.signal)]);
+        if (alive) { acceptMe(user); fill(current); serviceIsSIM = service.sim_details !== null || current.sim_id !== null; }
       } else {
-        const user = session.me ?? await api.me(controller.signal);
-        if (alive) { acceptMe(user); zone = user.timezone; }
+        const [user, service] = await Promise.all([session.me ? Promise.resolve(session.me) : api.me(controller.signal), api.service(id, controller.signal)]);
+        if (alive) { acceptMe(user); zone = user.timezone; serviceIsSIM = service.sim_details !== null; }
       }
     } catch (cause) { if (alive && !controller.signal.aborted) loadError = cause; }
     finally { if (alive) loading = false; }
@@ -98,9 +125,14 @@
 
   function prepare(): { expiresValue: string; startsValue?: string } | null {
     nameError = Array.from(name).length > 200 ? '名称最多 200 个字符' : '';
-    expiresError = startsError = '';
+    expiresError = startsError = termsError = '';
+    intervalError = termsMode === 'recurring' && (!/^\d+$/.test(intervalCount) || !Number.isSafeInteger(Number(intervalCount)) || Number(intervalCount) <= 0) ? '周期次数必须是正整数' : '';
     let expiresValue = '';
     let startsValue: string | undefined;
+    try {
+      parseMoney(amount, currency);
+      if (unsafeMoney && baseline && amount === '' && !isExplicitUnsafeReset(readTerms()) && !sameTerms(readTerms(), baseline.terms)) throw new Error('原约定费用无法精确显示，请重新填写金额和币种后再修改条款');
+    } catch (cause) { termsError = cause instanceof Error ? cause.message : '条款无效'; }
     try {
       if (!expires) throw new Error(entity && precision !== entity.date_precision ? '切换精度后，请重新填写截止日期或时间' : '请填写截止日期或时间');
       if (precision === 'date') {
@@ -112,7 +144,7 @@
       try { startsValue = wallTimeToRFC3339(starts, zone, startsOccurrence); }
       catch (cause) { startsError = cause instanceof Error ? cause.message : '开始时间无效'; }
     }
-    if (nameError || expiresError || startsError) return null;
+    if (nameError || expiresError || startsError || termsError || intervalError) return null;
     return { expiresValue, startsValue };
   }
   async function submit(event: SubmitEvent) {
@@ -124,14 +156,15 @@
       try {
         let saved: Period;
         if (mode === 'new') {
-          const body: PeriodCreateInput = { name, period_type: periodType, date_precision: precision, expires_at: prepared.expiresValue };
+          const body: PeriodCreateInput = { name, period_type: serviceIsSIM ? periodType : 'custom', date_precision: precision, expires_at: prepared.expiresValue, terms: readTerms() };
           if (prepared.startsValue) body.starts_at = prepared.startsValue;
           saved = await api.createPeriod(id, body, controller.signal);
         } else {
           if (!entity || !baseline) return;
           const body: PeriodUpdateInput = { expected_cycle: entity.cycle };
+          if (!sameTerms(readTerms(), baseline.terms)) { body.terms = readTerms(); body.expected_terms_revision = entity.terms.revision; }
           if (name !== baseline.name) body.name = name;
-          if (periodType !== baseline.type) body.period_type = periodType;
+          if (serviceIsSIM && periodType !== baseline.type) body.period_type = periodType;
           if (precision !== baseline.precision) { body.date_precision = precision; body.expires_at = prepared.expiresValue; }
           else if (expires !== baseline.expires || occurrence !== baseline.occurrence) body.expires_at = prepared.expiresValue;
           if (starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence) body.starts_at = prepared.startsValue ?? null;
@@ -140,7 +173,7 @@
         if (!alive) return;
         fill(saved);
         session.dirty = false;
-        if (mode === 'new') navigate(`/app/sims/${saved.sim_id}`);
+        if (mode === 'new') navigate(`/app/services/${saved.service_id}`);
         else notice = '有效期已保存，页面已使用服务端返回的最新周期。';
       } catch (cause) {
         if (alive && mode === 'edit' && cause instanceof ApiError && cause.kind === 'conflict') { stale = true; await conflict.present(); }
@@ -163,10 +196,15 @@
     if (oldBaseline) {
       if (name === oldBaseline.name) name = resolved.name;
       if (periodType === oldBaseline.type) periodType = resolved.type;
+      if (precision === oldBaseline.precision) precision = resolved.precision;
+      if (expires === oldBaseline.expires && occurrence === oldBaseline.occurrence) { expires = resolved.expires; occurrence = resolved.occurrence; }
+      if (starts === oldBaseline.starts && startsOccurrence === oldBaseline.startsOccurrence) { starts = resolved.starts; startsOccurrence = resolved.startsOccurrence; }
+      if (sameTerms(readTerms(), oldBaseline.terms)) fillTerms(resolved.terms);
+      if (isExplicitUnsafeReset(readTerms()) && sameTerms(readTerms(), resolved.terms)) { unsafeTermsReset = false; unsafeMoney = resolved.terms.amount !== null && !Number.isSafeInteger(resolved.terms.amount); }
     }
     baseline = resolved;
     stale = false;
-    nameError = expiresError = startsError = '';
+    nameError = expiresError = startsError = termsError = intervalError = '';
     submitter.clear();
     conflict.dismiss();
   }
@@ -176,20 +214,27 @@
   <h1 id="period-form-title">{mode === 'new' ? '添加有效期' : '编辑有效期'}</h1>
   {#if loading}<p role="status">{labels.loading}</p>
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={load} />
-  {:else if entity?.status === 'cancelled'}<p class="notice">该有效期已取消，不可恢复，也不能再编辑。请返回卡片详情。</p>
+  {:else if entity?.status === 'cancelled'}<p class="notice">该有效期已取消，不可恢复，也不能再编辑。请返回服务详情。</p>
   {:else if zone}
     <p class="muted">时区：{zone}</p>
     {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
     <Toast message={notice} ondismiss={() => { notice = ''; }} />
     <form class="stack" onsubmit={submit} novalidate>
-      <FormField id="period-type" label="有效期类型" required>
-        {#snippet children(field)}<select id={field.id} bind:value={periodType} disabled={!canWrite() || submitter.busy}>{#each Object.entries(periodTypeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}
-      </FormField>
+      {#if serviceIsSIM}<FormField id="period-type" label="有效期类型" required>
+        {#snippet children(field)}<select id={field.id} bind:value={periodType} disabled={!canWrite() || submitter.busy}>{#each Object.entries(periodTypeLabels) as [value, label]}<option {value}>{value === 'custom' ? '自定义' : label}</option>{/each}</select>{/snippet}
+      </FormField>{/if}
       <FormField id="period-name" label="有效期名称" hint="可选" error={nameError}>
         {#snippet children(field)}<input id={field.id} bind:value={name} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
       </FormField>
       <DatePrecisionInput id="period-expires" bind:precision bind:expires bind:occurrence {zone} disabled={!canWrite() || submitter.busy} error={expiresError} />
       <DateTimeInput id="period-starts" label="开始时间（可选）" bind:value={starts} bind:occurrence={startsOccurrence} {zone} disabled={!canWrite() || submitter.busy} error={startsError} />
+      <fieldset class="terms stack"><legend>约定条款</legend>
+        <FormField id="terms-mode" label="条款类型" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
+        {#if termsMode === 'recurring'}<FormField id="terms-count" label="周期次数" required error={intervalError}>{#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={intervalCount} disabled={!canWrite() || submitter.busy} />{/snippet}</FormField><FormField id="terms-unit" label="周期单位" required>{#snippet children(field)}<select id={field.id} bind:value={intervalUnit} disabled={!canWrite() || submitter.busy}>{#each Object.entries(intervalUnitLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>{/if}
+        <MoneyInput id="period-terms-money" label="约定费用（最小货币单位）" bind:amount bind:currency disabled={!canWrite() || submitter.busy} error={termsError} />
+        {#if unsafeMoney && isExplicitUnsafeReset(readTerms())}<p class="notice">保存后将把约定条款重置为自定义且无费用；原金额不会被四舍五入写入。</p>
+        {:else if unsafeMoney}<div class="unsafe-money"><p class="notice">{"已保存的约定费用无法精确编辑；保留空白可保存其他资料，修改条款请重新填写金额和币种，或明确重置为无费用条款。"}</p><button class="text-button" type="button" onclick={() => { termsMode = 'custom'; intervalCount = ''; intervalUnit = 'month'; amount = ''; currency = ''; termsError = ''; unsafeTermsReset = true; }} disabled={!canWrite() || submitter.busy}>重置约定条款</button></div>{/if}
+      </fieldset>
       {#if submitter.error && !conflict.open}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
       {#if stale && !conflict.open}<ErrorBanner message="草稿已保留。请先读取最新值，再继续编辑。" onretry={() => { void conflict.retry(); }} />{/if}
       <button class="primary" type="submit" disabled={!canWrite() || submitter.busy || stale || conflict.open || conflict.failed || (mode === 'edit' && !dirty)}>{submitter.busy ? '保存中…' : '保存有效期'}</button>
@@ -199,6 +244,6 @@
 <ConfirmDialog bind:open={conflict.open} title="有效期周期冲突" message="草稿已保留。服务端记录已变化；取最新值后请重新编辑并再次保存，不会自动提交或合并。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
   {#if conflict.loading}<p role="status">正在读取最新有效期…</p>
   {:else if conflict.failed}<ErrorBanner message="读取最新有效期失败，保存已暂停。" onretry={() => { void conflict.retry(); }} />
-  {:else if conflict.current}<p>周期：{entity?.cycle} → {conflict.current.cycle}</p><p>服务端名称：{conflict.current.name}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{#if conflict.current.status === 'cancelled'}<p>该有效期已取消，不可恢复。取最新值后只能返回。</p>{/if}{/if}
+  {:else if conflict.current}<p>周期：{entity?.cycle} → {conflict.current.cycle}</p><p>条款版本：{entity?.terms.revision} → {conflict.current.terms.revision}</p><p>服务端名称：{conflict.current.name || periodTypeLabel(conflict.current)}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{#if conflict.current.status === 'cancelled'}<p>该有效期已取消，不可恢复。取最新值后只能返回。</p>{/if}{/if}
 </ConfirmDialog>
-<style>.muted{color:var(--text-secondary);margin:0}</style>
+<style>.muted{color:var(--text-secondary);margin:0}.terms{min-width:0;margin:0;padding:12px;border:1px solid var(--border);border-radius:8px}.terms legend{padding:0 4px;font-weight:600}.unsafe-money{display:grid;justify-items:start;gap:4px}.unsafe-money .text-button{margin-block:0}</style>

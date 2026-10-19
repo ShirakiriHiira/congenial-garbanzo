@@ -1,14 +1,18 @@
 import type {
+  Category,
   ID,
   OverviewCounts,
-  OverviewItem,
-  OverviewResponse,
   Page,
   Period,
+  PeriodTerms,
   ReminderJob,
   Renewal,
   Rule,
+  ServiceItem,
+  ServiceOverviewItem,
+  ServiceOverviewResponse,
   Sim,
+  SimDetails,
   User,
 } from "./types";
 
@@ -153,11 +157,79 @@ function decodeSim(value: unknown, path = "data"): Sim {
   };
 }
 
+function decodeCategory(value: unknown, path = "data"): Category {
+  const source = object(value, path);
+  return {
+    id: id(field(source, "id", path), `${path}.id`),
+    user_id: nullableID(field(source, "user_id", path), `${path}.user_id`),
+    code: nullableText(field(source, "code", path), `${path}.code`),
+    name: text(field(source, "name", path), `${path}.name`),
+    kind: oneOf(field(source, "kind", path), ["sim", "generic"], `${path}.kind`),
+    created_at: timestamp(field(source, "created_at", path), `${path}.created_at`),
+    updated_at: timestamp(field(source, "updated_at", path), `${path}.updated_at`),
+  };
+}
+
+function decodeSimDetails(value: unknown, path: string): SimDetails {
+  const source = object(value, path);
+  return {
+    card_type: oneOf(field(source, "card_type", path), ["physical_sim", "esim"], `${path}.card_type`),
+    phone_number: nullableText(field(source, "phone_number", path), `${path}.phone_number`),
+    country_or_region: nullableText(field(source, "country_or_region", path), `${path}.country_or_region`),
+    iccid: nullableText(field(source, "iccid", path), `${path}.iccid`),
+  };
+}
+
+function decodeService(value: unknown, path = "data"): ServiceItem {
+  const source = object(value, path);
+  const details = field(source, "sim_details", path);
+  return {
+    id: id(field(source, "id", path), `${path}.id`),
+    user_id: id(field(source, "user_id", path), `${path}.user_id`),
+    name: text(field(source, "name", path), `${path}.name`),
+    category_id: id(field(source, "category_id", path), `${path}.category_id`),
+    provider: nullableText(field(source, "provider", path), `${path}.provider`),
+    identifier: nullableText(field(source, "identifier", path), `${path}.identifier`),
+    management_url: nullableText(field(source, "management_url", path), `${path}.management_url`),
+    notes: nullableText(field(source, "notes", path), `${path}.notes`),
+    status: oneOf(field(source, "status", path), ["active", "archived"], `${path}.status`),
+    created_at: timestamp(field(source, "created_at", path), `${path}.created_at`),
+    updated_at: timestamp(field(source, "updated_at", path), `${path}.updated_at`),
+    sim_details: details === null ? null : decodeSimDetails(details, `${path}.sim_details`),
+  };
+}
+
+function decodeTerms(value: unknown, path: string): PeriodTerms {
+  const source = object(value, path);
+  const mode = oneOf(field(source, "mode", path), ["once", "recurring", "custom"], `${path}.mode`);
+  const rawCount = field(source, "interval_count", path);
+  const rawUnit = field(source, "interval_unit", path);
+  const rawAmount = field(source, "amount", path);
+  const rawCurrency = field(source, "currency", path);
+  const interval_count = rawCount === null ? null : nonNegativeInteger(rawCount, `${path}.interval_count`);
+  const interval_unit = rawUnit === null ? null : oneOf(rawUnit, ["day", "week", "month", "year"], `${path}.interval_unit`);
+  const amount = rawAmount === null ? null : nonNegativeWholeNumber(rawAmount, `${path}.amount`);
+  const currency = nullableText(rawCurrency, `${path}.currency`);
+  const revision = nonNegativeInteger(field(source, "revision", path), `${path}.revision`);
+  if (revision < 1) fail(`${path}.revision`, "expected a positive integer");
+  if (mode === "recurring") {
+    if (interval_count === null || interval_count < 1 || interval_unit === null) {
+      fail(path, "recurring terms require a positive interval count and unit");
+    }
+  } else if (interval_count !== null || interval_unit !== null) {
+    fail(path, "non-recurring terms cannot include an interval");
+  }
+  if ((amount === null) !== (currency === null)) fail(path, "amount and currency must be paired");
+  if (currency !== null && !/^[A-Z]{3}$/.test(currency)) fail(`${path}.currency`, "expected three uppercase letters");
+  return { mode, interval_count, interval_unit, amount, currency, revision };
+}
+
 function decodePeriod(value: unknown, path = "data"): Period {
   const source = object(value, path);
   return {
     id: id(field(source, "id", path), `${path}.id`),
-    sim_id: id(field(source, "sim_id", path), `${path}.sim_id`),
+    service_id: id(field(source, "service_id", path), `${path}.service_id`),
+    sim_id: nullableID(field(source, "sim_id", path), `${path}.sim_id`),
     period_type: oneOf(field(source, "period_type", path), ["number_validity", "plan_validity", "data_package_validity", "custom"], `${path}.period_type`),
     name: text(field(source, "name", path), `${path}.name`),
     starts_at: nullableTimestamp(field(source, "starts_at", path), `${path}.starts_at`),
@@ -167,6 +239,7 @@ function decodePeriod(value: unknown, path = "data"): Period {
     timezone: text(field(source, "timezone", path), `${path}.timezone`),
     status: oneOf(field(source, "status", path), ["active", "expired", "cancelled"], `${path}.status`),
     cycle: nonNegativeInteger(field(source, "cycle", path), `${path}.cycle`),
+    terms: decodeTerms(field(source, "terms", path), `${path}.terms`),
     created_at: timestamp(field(source, "created_at", path), `${path}.created_at`),
     updated_at: timestamp(field(source, "updated_at", path), `${path}.updated_at`),
   };
@@ -255,33 +328,30 @@ export const sim: Decoder<Sim> = (value) => decodeObject(value, decodeSim);
 export const period: Decoder<Period> = (value) => decodeObject(value, decodePeriod);
 export const rule: Decoder<Rule> = (value) => decodeObject(value, decodeRule);
 export const renewal: Decoder<Renewal> = (value) => decodeObject(value, decodeRenewal);
-export const reminder: Decoder<ReminderJob> = (value) => decodeObject(value, decodeReminder);
-export const sims: Decoder<Page<Sim>> = (value) => decodePage(value, decodeSim);
-export const periods: Decoder<Page<Period>> = (value) => decodePage(value, decodePeriod);
-export const rules: Decoder<Page<Rule>> = (value) => decodePage(value, decodeRule);
-export const renewals: Decoder<Page<Renewal>> = (value) => decodePage(value, decodeRenewal);
-export const reminders: Decoder<Page<ReminderJob>> = (value) => decodePage(value, decodeReminder);
+export const category: Decoder<Category> = (value) => decodeObject(value, decodeCategory);
+export const categories: Decoder<Page<Category>> = (value) => decodePage(value, decodeCategory);
+export const service: Decoder<ServiceItem> = (value) => decodeObject(value, decodeService);
+export const services: Decoder<Page<ServiceItem>> = (value) => decodePage(value, decodeService);
 
-export const overview: Decoder<OverviewResponse> = (value) => {
+export const serviceOverview: Decoder<ServiceOverviewResponse> = (value) => {
   const source = object(value, "response");
   const data = object(field(source, "data", "response"), "response.data");
   const counts = object(field(data, "counts", "response.data"), "response.data.counts");
   const rawItems = field(data, "items", "response.data");
-  if (!Array.isArray(rawItems)) {
-    fail("response.data.items", "expected an array");
-  }
+  if (!Array.isArray(rawItems)) fail("response.data.items", "expected an array");
   const decodedCounts: OverviewCounts = {
     total: nonNegativeInteger(field(counts, "total", "response.data.counts"), "response.data.counts.total"),
     due_soon: nonNegativeInteger(field(counts, "due_soon", "response.data.counts"), "response.data.counts.due_soon"),
     expired: nonNegativeInteger(field(counts, "expired", "response.data.counts"), "response.data.counts.expired"),
     no_period: nonNegativeInteger(field(counts, "no_period", "response.data.counts"), "response.data.counts.no_period"),
   };
-  const items: OverviewItem[] = rawItems.map((entry, index) => {
-    const item = object(entry, `response.data.items[${index}]`);
-    const primary = field(item, "primary_period", `response.data.items[${index}]`);
+  const items: ServiceOverviewItem[] = rawItems.map((entry, index) => {
+    const path = `response.data.items[${index}]`;
+    const item = object(entry, path);
+    const primary = field(item, "primary_period", path);
     return {
-      sim: decodeSim(field(item, "sim", `response.data.items[${index}]`), `response.data.items[${index}].sim`),
-      primary_period: primary === null ? null : decodePeriod(primary, `response.data.items[${index}].primary_period`),
+      service: decodeService(field(item, "service", path), `${path}.service`),
+      primary_period: primary === null ? null : decodePeriod(primary, `${path}.primary_period`),
     };
   });
   return {
@@ -289,6 +359,12 @@ export const overview: Decoder<OverviewResponse> = (value) => {
     next_cursor: nullableID(field(source, "next_cursor", "response"), "response.next_cursor"),
   };
 };
+
+export const reminder: Decoder<ReminderJob> = (value) => decodeObject(value, decodeReminder);
+export const periods: Decoder<Page<Period>> = (value) => decodePage(value, decodePeriod);
+export const rules: Decoder<Page<Rule>> = (value) => decodePage(value, decodeRule);
+export const renewals: Decoder<Page<Renewal>> = (value) => decodePage(value, decodeRenewal);
+export const reminders: Decoder<Page<ReminderJob>> = (value) => decodePage(value, decodeReminder);
 
 export const noContent: Decoder<void> = (value) => {
   if (value !== undefined) {

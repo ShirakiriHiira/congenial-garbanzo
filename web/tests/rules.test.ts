@@ -8,10 +8,11 @@ import { failSession, session } from '../src/lib/session.svelte';
 
 const stamp = '2027-01-01T00:00:00Z';
 const period: Period = {
-  id: '10', sim_id: '2', period_type: 'number_validity', name: '合成有效期',
+  id: '10', service_id: '2', sim_id: null, period_type: 'custom', name: '合成有效期',
   starts_at: null, expires_at: '2027-02-01T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-02-01', timezone: 'Asia/Taipei', status: 'active',
   cycle: 3, created_at: stamp, updated_at: stamp,
+  terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },
 };
 const rule: Rule = {
   id: '20', validity_period_id: '10', days_before: 7, reminder_time: '09:00',
@@ -211,6 +212,13 @@ describe('rules route consumer behavior', () => {
     expect(await screen.findByRole('article', { name: '提前 7 天 09:00' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '添加规则' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '编辑规则' })).not.toBeInTheDocument();
+  });
+
+  it('shows an unnamed generic period without a SIM label', async () => {
+    vi.mocked(api.period).mockResolvedValue({ ...period, name: '' });
+    render(Rules, { id: '10' });
+    expect(await screen.findByText('有效期 · Asia/Taipei')).toBeInTheDocument();
+    expect(screen.queryByText(/号码有效期/)).not.toBeInTheDocument();
   });
 
   it('loads the account on a direct open so adding a rule is allowed', async () => {

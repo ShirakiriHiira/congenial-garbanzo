@@ -137,6 +137,8 @@ describe('reminder records', () => {
     expect(screen.getByRole('listitem')).toBeInTheDocument();
     await fireEvent.click(within(row).getByRole('button', { name: '重试' }));
     expect(await within(row).findByText('有效期周期')).toBeInTheDocument();
+    expect(within(row).getByText('规则版本')).toBeInTheDocument();
+    expect(within(row).queryByText('条款版本')).not.toBeInTheDocument();
     expect(row).toHaveTextContent('已发送');
     expect(row).toHaveTextContent('尝试次数1');
     expect(within(row).queryByRole('button', { name: '取消提醒' })).not.toBeInTheDocument();

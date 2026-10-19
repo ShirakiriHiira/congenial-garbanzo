@@ -1,24 +1,33 @@
 <script module lang="ts">
-  export type FilterValue = 'all' | 'due_soon' | 'expired' | 'archived';
+  export type HomeStatus = 'active' | 'due_soon' | 'expired' | 'no_period' | 'archived';
 </script>
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { labels } from '../lib/domain/labels';
+  import type { Category, OverviewCounts } from '../lib/api/types';
+  import { labels, serviceStatusLabels } from '../lib/domain/labels';
 
-  let { open = $bindable(false), value, loadedCount, total, hasMore, onselect }: {
+  let {
+    open = $bindable(false), status, categoryID, categories, categoriesError, counts,
+    categoryLoading, onstatus, oncategory, onreloadcategories,
+  }: {
     open: boolean;
-    value: FilterValue;
-    loadedCount: number;
-    total: number;
-    hasMore: boolean;
-    onselect: (value: FilterValue) => void;
+    status: HomeStatus;
+    categoryID: string | null;
+    categories: Category[];
+    categoriesError: string;
+    counts: OverviewCounts | null;
+    categoryLoading: boolean;
+    onstatus: (status: HomeStatus) => void;
+    oncategory: (id: string) => void;
+    onreloadcategories: () => void;
   } = $props();
   const uid = $props.id();
-  const options: { value: FilterValue; label: string }[] = [
-    { value: 'all', label: labels.filterAll },
+  const options: { value: HomeStatus; label: string }[] = [
+    { value: 'active', label: serviceStatusLabels.active },
     { value: 'due_soon', label: labels.dueSoon },
     { value: 'expired', label: labels.expiredCount },
+    { value: 'no_period', label: labels.filterNoPeriod },
     { value: 'archived', label: labels.filterArchived },
   ];
   let dialog = $state<HTMLDialogElement>();
@@ -36,9 +45,12 @@
     closeDialog();
     restoreFocus();
   }
-  function select(next: FilterValue) {
-    onselect(next);
+  function select(next: HomeStatus) {
+    onstatus(next);
     close();
+  }
+  function selectCategory(event: Event) {
+    oncategory((event.currentTarget as HTMLSelectElement).value);
   }
   $effect(() => {
     if (open && dialog && !dialog.open) {
@@ -78,31 +90,41 @@
     <legend class="sr-only">{labels.filter}</legend>
     {#each options as option}
       <label>
-        <input type="radio" name={`${uid}-filter`} value={option.value} checked={value === option.value} onchange={() => select(option.value)} />
+        <input type="radio" name={`${uid}-filter`} value={option.value} checked={status === option.value} onchange={() => select(option.value)} />
         <span>{option.label}</span>
       </label>
     {/each}
   </fieldset>
-  {#if open}
-    <p class="count">{labels.loadedOfTotal(loadedCount, total)}</p>
-    {#if hasMore && (value === 'due_soon' || value === 'expired')}
-      <p class="note">{labels.filterLoadedOnly}</p>
-    {/if}
-    {#if value === 'archived'}
-      <p class="note">{labels.filterArchivedSource}</p>
-    {/if}
+  <label class="category">
+    <span>{labels.category}</span>
+    <select value={categoryID ?? ''} onchange={selectCategory} disabled={categoryLoading}>
+      <option value="">{labels.allCategories}</option>
+      {#each categories as category}
+        <option value={category.id}>{category.name}</option>
+      {/each}
+    </select>
+  </label>
+  {#if categoriesError}
+    <p class="note" role="alert">{categoriesError} <button type="button" class="text-button" onclick={onreloadcategories}>{labels.retry}</button></p>
+  {/if}
+  {#if open && counts}
+    <p class="count">{labels.cardsTotal(counts.total)}</p>
+  {/if}
+  {#if status === 'archived'}
+    <p class="note">{labels.filterArchivedNote}</p>
   {/if}
 </dialog>
 
 <style>
   dialog{position:fixed;inset:auto 0 0;width:calc(100% - 32px);max-width:448px;max-height:calc(100dvh - 32px);margin:0 auto;padding:14px 16px calc(16px + env(safe-area-inset-bottom));border:1px solid var(--border-strong);border-radius:12px 12px 0 0;background:var(--page-bg);color:var(--text);overflow:auto}
-  dialog::backdrop{background:var(--header-bg);opacity:.7}
-  .sheet-header{display:flex;justify-content:space-between;align-items:center;gap:12px}
-  h2{font-size:16px;margin:0;overflow-wrap:anywhere}
-  .close{display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;border-radius:999px;background:transparent;color:var(--text-secondary)}
-  fieldset{padding:0;margin:4px 0 12px;border:0;border-radius:0}
-  label{display:flex;align-items:center;gap:12px;min-height:44px;margin:0;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;font-weight:400;cursor:pointer}
-  label span{overflow-wrap:anywhere}
-  input{flex:0 0 20px;width:20px;height:20px;min-height:20px;margin:0;padding:0;accent-color:var(--icon-esim-fg)}
+  dialog::backdrop{background:rgba(0,0,0,.55)}
+  .sheet-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+  h2{margin:0;font-size:14px;line-height:1.4}
+  .close{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border-color:transparent;background:transparent}
+  fieldset{display:grid;gap:2px;margin:0;padding:0;border:0}
+  label{display:flex;align-items:center;gap:10px;min-height:44px;font-size:13px;color:var(--text)}
+  input{width:18px;height:18px;margin:0;accent-color:var(--icon-esim-fg)}
+  .category{display:grid;gap:6px;margin-top:8px}
+  .category select{width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--border-strong);border-radius:10px;background:var(--page-bg);color:var(--text)}
   .count,.note{margin:8px 0 0;font-size:12px;line-height:1.5;color:var(--text-secondary);overflow-wrap:anywhere}
 </style>

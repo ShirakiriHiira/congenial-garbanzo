@@ -5,9 +5,10 @@ import { session } from '../src/lib/session.svelte';
 import type { Period, Renewal, RenewalCreateInput } from '../src/lib/api/types';
 
 const initialPeriod: Period = {
-  id: '11', sim_id: '3', period_type: 'number_validity', name: '合成测试有效期',
+  id: '11', service_id: '3', sim_id: null, period_type: 'custom', name: '合成测试有效期',
   starts_at: null, expires_at: '2027-01-31T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-01-31', timezone: 'Asia/Taipei', status: 'active', cycle: 4,
+  terms: { mode: 'recurring', interval_count: 1, interval_unit: 'month', amount: 1299, currency: 'USD', revision: 2 },
   created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
 const user = {
@@ -97,6 +98,26 @@ describe('renewal route', () => {
     expect(await screen.findByText('暂无续期记录。')).toBeInTheDocument();
     expect(String(api.fetcher.mock.calls[0]?.[0])).toBe('/api/v1/periods/11');
     expect(screen.getByRole('radio', { name: '日期' })).toBeChecked();
+  });
+
+  it('shows descriptive terms without inferring actual payment', async () => {
+    const api = transport();
+    render(Renew, { id: '11' });
+    expect(await screen.findByText('每 1 月 · 1299 USD（最小货币单位）')).toBeInTheDocument();
+    expect(screen.getByLabelText('金额（最小货币单位）')).toHaveValue('');
+    expect(screen.getByLabelText('币种')).toHaveValue('');
+    await fillDate();
+    await send();
+    await screen.findByText('续期成功');
+    expect(api.writes[0]).not.toHaveProperty('amount');
+    expect(api.writes[0]).not.toHaveProperty('currency');
+    expect(api.writes[0]).not.toHaveProperty('expected_terms_revision');
+  });
+
+  it('uses the generic fallback for an unnamed period', async () => {
+    transport({ period: { ...initialPeriod, name: '', sim_id: null, period_type: 'custom' } });
+    render(Renew, { id: '11' });
+    expect(await screen.findByRole('heading', { name: '有效期' })).toBeInTheDocument();
   });
 
   it('loads the account on a direct open so the form is writable without a read-only notice', async () => {
@@ -370,7 +391,7 @@ describe('renewal route', () => {
   it('does not offer renewal for a cancelled period', async () => {
     transport({ period: { ...initialPeriod, status: 'cancelled' } });
     render(Renew, { id: '11' });
-    expect(await screen.findByText('此有效期已取消且不可恢复，请返回卡片详情。')).toBeInTheDocument();
+    expect(await screen.findByText('此有效期已取消且不可恢复，请返回服务详情。')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '确认续期' })).not.toBeInTheDocument();
   });
 

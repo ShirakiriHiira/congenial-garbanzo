@@ -5,12 +5,14 @@ import { expiryDisplay, formatExpiry } from '../src/lib/domain/expiry';
 import { maskPhone } from '../src/lib/domain/mask';
 import { formatMoney, parseMoney } from '../src/lib/domain/money';
 import { ApiError } from '../src/lib/api/errors';
-import { errorLabels, errorMessage, periodTypeLabel } from '../src/lib/domain/labels';
+import { errorLabels, errorMessage, intervalUnitLabels, periodTypeLabel, termsModeLabels } from '../src/lib/domain/labels';
+import { formatTermsCycle } from '../src/lib/domain/terms';
 
 const period: Period = {
-  id: '1', sim_id: '2', period_type: 'number_validity', name: '合成号码有效期',
+  id: '1', service_id: '2', sim_id: '2', period_type: 'number_validity', name: '合成号码有效期',
   starts_at: null, expires_at: '2027-01-08T16:00:00Z', date_precision: 'date',
   local_expires_date: '2027-01-08', timezone: 'Asia/Taipei', status: 'active', cycle: 1,
+  terms: { mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null, revision: 1 },
   created_at: '2027-01-01T00:00:00Z', updated_at: '2027-01-01T00:00:00Z',
 };
 const now = '2027-01-01T00:00:00Z';
@@ -117,5 +119,17 @@ describe('安全中文标签', () => {
   });
   it('自定义有效期使用名称', () => {
     expect(periodTypeLabel({ period_type: 'custom', name: '合成自定义有效期' })).toBe('合成自定义有效期');
+  });
+});
+
+describe('通用条款与默认有效期名称', () => {
+  it('未命名的自定义有效期显示为有效期', () => {
+    expect(periodTypeLabel({ period_type: 'custom', name: '' })).toBe('有效期');
+  });
+  it('约定周期只描述条款，不推导日期', () => {
+    expect(formatTermsCycle({ mode: 'once', interval_count: null, interval_unit: null, amount: null, currency: null })).toBe(termsModeLabels.once);
+    expect(formatTermsCycle({ mode: 'recurring', interval_count: 3, interval_unit: 'month', amount: 0, currency: 'CNY' })).toBe('每 3 月');
+    expect(formatTermsCycle({ mode: 'recurring', interval_count: 1, interval_unit: 'year', amount: null, currency: null })).toBe(`每 1 ${intervalUnitLabels.year}`);
+    expect(formatTermsCycle({ mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null })).toBe('自定义周期');
   });
 });

@@ -1,8 +1,9 @@
 import { request } from "./client";
 import { ApiError } from "./errors";
 import {
+  categories as decodeCategories,
+  category as decodeCategory,
   noContent,
-  overview as decodeOverview,
   period as decodePeriod,
   periods as decodePeriods,
   reminder as decodeReminder,
@@ -11,13 +12,16 @@ import {
   renewals as decodeRenewals,
   rule as decodeRule,
   rules as decodeRules,
+  service as decodeService,
+  serviceOverview as decodeServiceOverview,
+  services as decodeServices,
   sim as decodeSim,
-  sims as decodeSims,
   user as decodeUser,
 } from "./decode";
 import type {
+  Category,
+  CategoryNameInput,
   ID,
-  OverviewResponse,
   Page,
   Period,
   PeriodCreateInput,
@@ -29,9 +33,12 @@ import type {
   Rule,
   RuleCreateInput,
   RuleUpdateInput,
+  ServiceCreateInput,
+  ServiceFilter,
+  ServiceItem,
+  ServiceOverviewResponse,
+  ServiceUpdateInput,
   Sim,
-  SimCreateInput,
-  SimUpdateInput,
   User,
   UserUpdateInput,
 } from "./types";
@@ -66,6 +73,15 @@ function pageQuery(after: ID | null, extra?: Record<string, string>): string {
   return text.length > 0 ? `?${text}` : "";
 }
 
+function serviceQuery(after: ID | null, filter: ServiceFilter = {}): string {
+  const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
+  if (after !== null) query.set("after_id", after);
+  if (filter.q !== undefined && filter.q !== "") query.set("q", filter.q);
+  if (filter.category_id !== undefined && filter.category_id !== "") query.set("category_id", filter.category_id);
+  if (filter.status !== undefined) query.set("status", filter.status);
+  return `?${query.toString()}`;
+}
+
 function entityPath(base: string, id: ID): string {
   return `${base}/${encodeURIComponent(id)}`;
 }
@@ -93,33 +109,47 @@ export const api = {
 
   updateMe: (body: UserUpdateInput, signal?: AbortSignal): Promise<User> => writeEntity("/me", "PATCH", body, signal, decodeUser),
 
-  overview: async (after: ID | null = null, signal?: AbortSignal): Promise<OverviewResponse> => {
-    const result = (await request(`/overview${pageQuery(after)}`, { signal }, decodeOverview)).data;
+  categories: (after: ID | null = null, signal?: AbortSignal): Promise<Page<Category>> =>
+    getPage(`/categories${pageQuery(after)}`, after, signal, decodeCategories),
+
+  createCategory: (body: CategoryNameInput, signal?: AbortSignal): Promise<Category> =>
+    writeEntity("/categories", "POST", body, signal, decodeCategory),
+
+  updateCategory: (id: ID, body: CategoryNameInput, signal?: AbortSignal): Promise<Category> =>
+    writeEntity(entityPath("/categories", id), "PATCH", body, signal, decodeCategory),
+
+  services: (after: ID | null = null, filter: ServiceFilter = {}, signal?: AbortSignal): Promise<Page<ServiceItem>> =>
+    getPage(`/services${serviceQuery(after, filter)}`, after, signal, decodeServices),
+
+  serviceOverview: async (after: ID | null = null, filter: ServiceFilter = {}, signal?: AbortSignal): Promise<ServiceOverviewResponse> => {
+    const result = (await request(`/services/overview${serviceQuery(after, filter)}`, { signal }, decodeServiceOverview)).data;
     if (after !== null) assertCursorAdvance(after, result.next_cursor);
     return result;
   },
 
-  sims: (after: ID | null = null, signal?: AbortSignal): Promise<Page<Sim>> => getPage(`/sims${pageQuery(after)}`, after, signal, decodeSims),
+  service: (id: ID, signal?: AbortSignal): Promise<ServiceItem> => getEntity(entityPath("/services", id), signal, decodeService),
+
+  createService: (body: ServiceCreateInput, signal?: AbortSignal): Promise<ServiceItem> =>
+    writeEntity("/services", "POST", body, signal, decodeService),
+
+  updateService: (id: ID, body: ServiceUpdateInput, signal?: AbortSignal): Promise<ServiceItem> =>
+    writeEntity(entityPath("/services", id), "PATCH", body, signal, decodeService),
+
+  archiveService: (id: ID, signal?: AbortSignal): Promise<void> => deleteEntity(entityPath("/services", id), signal),
+
+  deleteService: async (id: ID, signal?: AbortSignal): Promise<void> => {
+    await request(`${entityPath("/services", id)}/delete`, { method: "POST", signal }, noContent);
+  },
 
   sim: (id: ID, signal?: AbortSignal): Promise<Sim> => getEntity(entityPath("/sims", id), signal, decodeSim),
 
-  createSim: (body: SimCreateInput, signal?: AbortSignal): Promise<Sim> => writeEntity("/sims", "POST", body, signal, decodeSim),
-
-  updateSim: (id: ID, body: SimUpdateInput, signal?: AbortSignal): Promise<Sim> => writeEntity(entityPath("/sims", id), "PATCH", body, signal, decodeSim),
-
-  archiveSim: (id: ID, signal?: AbortSignal): Promise<void> => deleteEntity(entityPath("/sims", id), signal),
-
-  deleteSim: async (id: ID, signal?: AbortSignal): Promise<void> => {
-    await request(`${entityPath("/sims", id)}/delete`, { method: "POST", signal }, noContent);
-  },
-
-  periods: (simID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Period>> =>
-    getPage(`${entityPath("/sims", simID)}/periods${pageQuery(after)}`, after, signal, decodePeriods),
+  periods: (serviceID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Period>> =>
+    getPage(`${entityPath("/services", serviceID)}/periods${pageQuery(after)}`, after, signal, decodePeriods),
 
   period: (id: ID, signal?: AbortSignal): Promise<Period> => getEntity(entityPath("/periods", id), signal, decodePeriod),
 
-  createPeriod: (simID: ID, body: PeriodCreateInput, signal?: AbortSignal): Promise<Period> =>
-    writeEntity(`${entityPath("/sims", simID)}/periods`, "POST", body, signal, decodePeriod),
+  createPeriod: (serviceID: ID, body: PeriodCreateInput, signal?: AbortSignal): Promise<Period> =>
+    writeEntity(`${entityPath("/services", serviceID)}/periods`, "POST", body, signal, decodePeriod),
 
   updatePeriod: (id: ID, body: PeriodUpdateInput, signal?: AbortSignal): Promise<Period> =>
     writeEntity(entityPath("/periods", id), "PATCH", body, signal, decodePeriod),
