@@ -116,4 +116,33 @@ cd web && npm run check && npm test && npm run build
 
 ## 9. Git Commit Convention
 
-`type: concise English description`，类型包括 `feat,fix,refactor,docs,test,style,build,ci,perf,chore`。每次只提交逻辑相关内容，不提交密钥、用户数据或临时文件。未经明确授权不执行 commit、amend、reset 或历史重写。
+- Use the format `type: concise English description`.
+- Commit messages must contain only a single-line title by default. Do not add a commit body or footer.
+- Keep titles concise, specific, and easy to understand.
+- Use the appropriate type:
+  - `feat`: Add a new feature.
+  - `fix`: Fix a bug.
+  - `refactor`: Refactor code without changing intended behavior.
+  - `docs`: Update documentation.
+  - `test`: Add or update tests.
+  - `style`: Make formatting or style changes without changing behavior.
+  - `build`: Change build configuration or dependencies.
+  - `ci`: Change CI/CD configuration.
+  - `perf`: Improve performance.
+  - `chore`: Perform maintenance tasks.
+- Do not include issue numbers, issue references, or closing keywords such as `Closes #1145` unless explicitly instructed by the user.
+- When explicitly instructed to reference or close an issue, include the requested reference in the commit message. If this requires a body or footer, add only the explicitly requested content and keep the title unchanged.
+- Do not add unrequested descriptions, test reports, co-author trailers, or other metadata.
+
+Examples:
+
+- `feat: add expiry notifications`
+- `fix: prevent duplicate reminders`
+- `docs: define Git commit guidelines`
+
+Example with explicit user authorization to close an issue:
+
+```
+feat: add expiry notifications
+Closes #1145
+```
