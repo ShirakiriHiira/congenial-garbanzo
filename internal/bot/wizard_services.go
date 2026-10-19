@@ -1052,11 +1052,12 @@ func (w *wizard) renderRule(ctx context.Context) {
 		w.reply(ctx, head+"\n请输入提前天数（大于等于 0 的整数），例如 7。", navRows(w.d.Action == service.DialogRuleEdit, false)...)
 	case "rule_time":
 		w.reply(ctx, "请输入提醒时间 HH:MM（24 小时制，时区 "+w.user.Timezone+"），例如 09:00。", navRows(true, false)...)
-	case "rule_enabled":
-		w.reply(ctx, "是否启用该规则？", pair(button("启用", choiceCallback("enabled", "true")), button("禁用", choiceCallback("enabled", "false"))),
-			pair(button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))))
 	case "rule_preview":
-		w.reply(ctx, rulePreviewText(p, w.dr), pair(button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(button("取消", cb("dialog", "cancel"))))
+		toggle := button("改为禁用", cb("dialog", "toggle_enabled"))
+		if w.dr.Values["enabled"] == "false" {
+			toggle = button("改为启用", cb("dialog", "toggle_enabled"))
+		}
+		w.reply(ctx, rulePreviewText(p, w.dr), pair(button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))), pair(toggle), pair(button("取消", cb("dialog", "cancel"))))
 	default:
 		w.abort(ctx, "提醒规则流程状态无效")
 	}

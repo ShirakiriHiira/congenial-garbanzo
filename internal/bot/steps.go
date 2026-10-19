@@ -68,13 +68,11 @@ var wizardSequences = map[string][]stepSpec{
 	service.DialogRuleAdd: {
 		{key: "rule_days"},
 		{key: "rule_time"},
-		{key: "rule_enabled"},
 		{key: "rule_preview"},
 	},
 	service.DialogRuleEdit: {
 		{key: "rule_days"},
 		{key: "rule_time"},
-		{key: "rule_enabled"},
 		{key: "rule_preview"},
 	},
 	service.DialogTimezone: {
@@ -394,7 +392,6 @@ var choiceValues = map[string]map[string]string{
 	"precision": {"1": "date", "2": "datetime"},
 	"card_type": {"1": "physical_sim", "2": "esim"},
 	"mode":      {"1": "once", "2": "recurring", "3": "custom"},
-	"enabled":   {"0": "false", "1": "true"},
 }
 
 var choiceCodes = func() map[string]map[string]string {
@@ -482,7 +479,6 @@ var choiceKeys = map[string]string{
 	"category":  "category_id",
 	"card_type": "card_type",
 	"mode":      "mode",
-	"enabled":   "enabled",
 	"field":     "field",
 	"pfield":    "field",
 	"tz":        "tz",
@@ -527,11 +523,6 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 	case "mode":
 		if value != "once" && value != "recurring" && value != "custom" {
 			w.failure(ctx, "条款模式无效，请重新打开流程。", false, false)
-			return
-		}
-	case "enabled":
-		if value != "true" && value != "false" {
-			w.failure(ctx, "启用状态无效，请重新打开流程。", false, false)
 			return
 		}
 	case "tz":

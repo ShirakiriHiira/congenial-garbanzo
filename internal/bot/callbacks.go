@@ -96,7 +96,7 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 	case "new_service":
 		h.startServiceAdd(ctx, b, user, chatID)
 		return "请选择类别"
-	case "resume", "confirm", "keep", "replace", "back", "skip", "skip_rest", "set", "change_field", "new_category", "use_convention", "clear_value":
+	case "resume", "confirm", "keep", "replace", "back", "skip", "skip_rest", "set", "change_field", "new_category", "use_convention", "clear_value", "toggle_enabled":
 	default:
 		return "未知操作"
 	}

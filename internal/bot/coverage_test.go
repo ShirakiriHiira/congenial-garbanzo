@@ -161,6 +161,47 @@ func TestWizardAcceptsLocalWallClockTimes(t *testing.T) {
 	}
 }
 
+func TestRulePreviewTogglesEnabledBeforeSaving(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	item := f.createService("Host", "vps")
+	p := f.createPeriod(item.ID, "月付", "date", "2027-06-30")
+	f.callback(userA, cb("rule", "add", id(p.ID)), nil)
+	f.send(userA, "1")
+	f.send(userA, "09:00")
+	f.callback(userA, cb("dialog", "toggle_enabled"), nil)
+	if text := f.stub.lastText(); !strings.Contains(text, "启用：否") {
+		t.Fatalf("toggle did not disable: %q", text)
+	}
+	if !strings.Contains(markupOf(f), "改为启用") {
+		t.Fatalf("toggle label did not flip: %q", markupOf(f))
+	}
+	f.callback(userA, cb("dialog", "confirm"), nil)
+	if got := f.scalar("SELECT enabled FROM reminder_rules WHERE id=1"); got != 0 {
+		t.Fatalf("disabled rule enabled=%d", got)
+	}
+}
+
+func TestRuleEditPreservesDisabledState(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	item := f.createService("Host", "vps")
+	p := f.createPeriod(item.ID, "月付", "date", "2027-06-30")
+	r := f.createRule(p.ID, 2, "08:00")
+	f.exec(`UPDATE reminder_rules SET enabled=0 WHERE id=?`, r.ID)
+
+	f.callback(userA, cb("rule", "edit", id(r.ID)), nil)
+	f.send(userA, "3")
+	f.send(userA, "08:30")
+	if text := f.stub.lastText(); !strings.Contains(text, "启用：否") {
+		t.Fatalf("edit preview did not preserve disabled state: %q", text)
+	}
+	f.callback(userA, cb("dialog", "confirm"), nil)
+	if got := serviceLookupString(t, f, "SELECT days_before||':'||reminder_time||':'||enabled FROM reminder_rules WHERE id=1"); got != "3:08:30:0" {
+		t.Fatalf("edited rule=%q", got)
+	}
+}
+
 func TestPeriodEditWizardFieldsAndConflict(t *testing.T) {
 	f := newFixture(t)
 	f.start(userA)
@@ -226,10 +267,18 @@ func TestRuleWizardLifecycle(t *testing.T) {
 	f.callback(userA, cb("rule", "add", id(p.ID)), nil)
 	f.send(userA, "3")
 	f.send(userA, "09:00")
-	f.callback(userA, choiceCallback("enabled", "true"), nil)
+	if text := f.stub.lastText(); !strings.Contains(text, "请确认提醒规则") || !strings.Contains(text, "启用：是") {
+		t.Fatalf("preview: %q", text)
+	}
+	if !strings.Contains(markupOf(f), "v3:dialog:toggle_enabled") {
+		t.Fatalf("enabled toggle missing: %q", markupOf(f))
+	}
 	f.callback(userA, cb("dialog", "confirm"), nil)
 	if n := f.count("SELECT count(*) FROM reminder_rules"); n != 1 {
 		t.Fatalf("rule count=%d", n)
+	}
+	if got := f.scalar("SELECT enabled FROM reminder_rules WHERE id=1"); got != 1 {
+		t.Fatalf("default enabled=%d", got)
 	}
 	f.callback(userA, cb("rule", "view", "1"), nil)
 	text := f.stub.lastText()
@@ -250,7 +299,6 @@ func TestRuleWizardLifecycle(t *testing.T) {
 	f.callback(userA, cb("rule", "edit", "1"), nil)
 	f.send(userA, "2")
 	f.send(userA, "08:30")
-	f.callback(userA, choiceCallback("enabled", "true"), nil)
 	f.callback(userA, cb("dialog", "confirm"), nil)
 	if got := serviceLookupString(t, f, "SELECT days_before||':'||reminder_time FROM reminder_rules WHERE id=1"); got != "2:08:30" {
 		t.Fatalf("edited rule=%q", got)

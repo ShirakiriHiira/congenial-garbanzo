@@ -309,6 +309,8 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 		w.useConvention(ctx)
 	case "clear_value":
 		w.clearValue(ctx)
+	case "toggle_enabled":
+		w.toggleEnabled(ctx)
 	case "set":
 		if len(args) != 2 {
 			w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
@@ -318,6 +320,24 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 	default:
 		w.failure(ctx, "未知操作，请重新打开流程。", false, false)
 	}
+}
+
+// toggleEnabled flips the pending rule's enabled state at the preview step.
+// The step gate is explicit so a crafted callback cannot change other flows.
+func (w *wizard) toggleEnabled(ctx context.Context) {
+	if (w.d.Action != service.DialogRuleAdd && w.d.Action != service.DialogRuleEdit) || w.d.Step != "rule_preview" {
+		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+		return
+	}
+	if w.dr.Values["enabled"] == "false" {
+		w.dr.set("enabled", "true")
+	} else {
+		w.dr.set("enabled", "false")
+	}
+	if !w.persist(ctx, w.d.Step) {
+		return
+	}
+	w.render(ctx)
 }
 
 func navRows(canBack, canSkip bool) [][]models.InlineKeyboardButton {
