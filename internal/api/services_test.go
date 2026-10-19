@@ -263,15 +263,6 @@ func TestServicesMixedLegacyAndGenericResources(t *testing.T) {
 			t.Fatalf("unexpected primary period: %v", item)
 		}
 	}
-	legacyOverview := data(t, request(t, h, "GET", "/api/v1/overview", "", 101, 200))
-	counts := legacyOverview["counts"].(map[string]any)
-	resourceTestFields(t, counts, map[string]any{"total": float64(2), "due_soon": float64(0), "expired": float64(0), "no_period": float64(2)})
-	legacyItems := legacyOverview["items"].([]any)
-	legacyRows := make([]map[string]any, 0, len(legacyItems))
-	for _, raw := range legacyItems {
-		legacyRows = append(legacyRows, raw.(map[string]any)["sim"].(map[string]any))
-	}
-	resourceTestIDs(t, legacyRows, legacyID, newID)
 	patched := resourceTestObject(t, request(t, h, "PATCH", "/api/v1/services/"+legacyID, `{"provider":"updated carrier","sim_details":{"phone_number":null}}`, 101, 200))
 	resourceTestFields(t, patched, map[string]any{"provider": "updated carrier", "sim_details": map[string]any{"card_type": "physical_sim", "phone_number": nil, "country_or_region": "TW", "iccid": "legacy-secret"}})
 	legacyRead := resourceTestObject(t, request(t, h, "GET", "/api/v1/sims/"+legacyID, "", 101, 200))

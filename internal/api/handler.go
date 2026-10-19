@@ -79,7 +79,6 @@ func (h *Handler) apiMux() *http.ServeMux {
 
 	add("GET /me", h.getMe)
 	add("PATCH /me", h.patchMe)
-	add("GET /overview", h.overview)
 	add("GET /categories", h.listCategories)
 	add("POST /categories", h.createCategory)
 	add("PATCH /categories/{id}", h.patchCategory)

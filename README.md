@@ -128,7 +128,6 @@ SQLite 数据目录权限 0700、文件权限 0600；启用 WAL、外键、5 秒
 | GET, PATCH | `/api/v1/me` | 当前用户；PATCH 时区 |
 | GET, POST | `/api/v1/categories` | 列出可见内置/本人类别；创建本人 generic 类别 |
 | PATCH | `/api/v1/categories/{id}` | 只接受 `{"name":"..."}`；仅本人自定义类别，内置/他人类别拒绝 |
-| GET | `/api/v1/overview` | 旧 SIM-only 全量统计与主有效期分页；只接受 `limit,after_id` |
 | GET | `/api/v1/services` | 服务列表；`q,category_id,status,limit,after_id` |
 | POST | `/api/v1/services` | 创建服务 |
 | GET, PATCH, DELETE | `/api/v1/services/{id}` | 读取/更新/归档，PATCH `status=active` 恢复 |
@@ -149,7 +148,7 @@ SQLite 数据目录权限 0700、文件权限 0600；启用 WAL、外键、5 秒
 | GET | `/api/v1/reminders/{id}` | 提醒任务详情 |
 | POST | `/api/v1/reminders/{id}/cancel` | 取消可取消任务 |
 
-旧 `/api/v1/overview` 只返回 SIM，保留 `{sim,primary_period}`，仅接受 `limit,after_id`。新 `/api/v1/services/overview` 返回 `{service,primary_period}`。通用列表与 overview 只接受 `q,category_id,status,limit,after_id`；status 是 `active`（默认）、`due_soon`、`expired`、`no_period`、`archived`、`all`。搜索只查 name/provider/identifier。筛选在分页前应用；counts 覆盖全匹配结果，并与 items 使用同一读快照/当前时刻。主有效期为未取消的最早截止，同截止取最大 ID。临期按用户时区日历日 0–7 天计算。
+`/api/v1/services/overview` 返回 `{service,primary_period}`。通用列表与 overview 只接受 `q,category_id,status,limit,after_id`；status 是 `active`（默认）、`due_soon`、`expired`、`no_period`、`archived`、`all`。搜索只查 name/provider/identifier。筛选在分页前应用；counts 覆盖全匹配结果，并与 items 使用同一读快照/当前时刻。主有效期为未取消的最早截止，同截止取最大 ID。临期按用户时区日历日 0–7 天计算。
 
 资源 ID 是十进制字符串；cycle/revision/金额为整数。列表按 ID 升序 keyset 分页，limit 默认 20、范围 1–100；`after_id` 为非负十进制字符串。列表响应 `{"data":...,"next_cursor":...}`，单对象 `{"data":...}`，错误 `{"error":{"code":"...","message":"..."}}`。创建 201、读取/修改 200、归档/取消/删除 204；新续期 201，同参数重放 200。非法输入 400、未认证 401、白名单外 403、缺失/他人资源 404、版本冲突 409、超大请求 413、Content-Type 错误 415、不可用 503、内部错误 500。JSON 上限 64 KiB，必须 `application/json`，拒绝未知字段/尾随 JSON。查询串拒绝未知、重复、空键。
 
@@ -213,9 +212,7 @@ period PATCH 必带 `expected_cycle`；若包含 terms，还必带 `expected_ter
 {"data":{"counts":{"total":0,"due_soon":0,"expired":0,"no_period":0},"items":[]},"next_cursor":null}
 ```
 
-旧 SIM 创建 payload 保持 `{ "name":"Travel SIM", "card_type":"esim", "operator":"Carrier", "phone_number":null, "country_or_region":null, "iccid":null, "notes":null }`，响应字段仍为 `id,user_id,name,card_type,operator,phone_number,country_or_region,iccid,notes,status,created_at,updated_at`；旧 overview item 仍为 `{ "sim":<旧 SIM 对象>, "primary_period":<有效期对象或 null> }`。通用 service 用 `provider`。period 以 `service_id` 为规范父键，旧 `sim_id` 仅对 SIM 返回数字字符串，绝不伪造。精确模型不在 MINI_APP 文档重复。
-
-旧 `/api/v1/overview?limit=20&after_id=0` 只接受 `limit,after_id`，未知参数（包括 `status`）返回 400。空响应为 `{"data":{"counts":{"total":0,"due_soon":0,"expired":0,"no_period":0},"items":[]},"next_cursor":null}`；有数据时每个 item 为 `{"sim":<与 /sims/{id} 相同的对象>,"primary_period":<与 /periods/{id} 相同或 null>}`。统计只包含当前用户 `active` SIM，包含无主有效期 SIM；归档 SIM 通过 `/sims` 分页获取。主有效期忽略 `cancelled`，取最早截止，同截止取最大 ID；已过期项目仍可成为主有效期。`expired` 比较 `expires_at <= now`；`due_soon` 是未过期且用户时区到期日距今天 0–7 个日历日（含今天）；`no_period` 是无任何未取消有效期的 SIM 数。每张 SIM 只归类一次，超过 7 天只计入 `total`；统计来自同一读快照/当前时刻，不随分页改变。
+旧 SIM 创建 payload 保持 `{ "name":"Travel SIM", "card_type":"esim", "operator":"Carrier", "phone_number":null, "country_or_region":null, "iccid":null, "notes":null }`，响应字段仍为 `id,user_id,name,card_type,operator,phone_number,country_or_region,iccid,notes,status,created_at,updated_at`。通用 service 用 `provider`。period 以 `service_id` 为规范父键，旧 `sim_id` 仅对 SIM 返回数字字符串，绝不伪造。精确模型不在 MINI_APP 文档重复。
 
 其他共用资源响应字段：规则 `id,validity_period_id,days_before,reminder_time,enabled,revision,created_at,updated_at`；续期 `id,validity_period_id,previous_cycle,previous_expires_at,new_expires_at,previous_date_precision,new_date_precision,previous_local_expires_date,new_local_expires_date,timezone,renewed_at,amount,currency,notes,created_at`；提醒任务 `id,validity_period_id,reminder_rule_id,cycle,rule_revision,scheduled_at,expires_at_snapshot,status,attempts,next_attempt_at,sent_at,telegram_message_id,last_error_code,created_at,updated_at`。规则创建接受 `days_before,reminder_time,enabled`（enabled 默认 true）；PATCH 要 `expected_revision`。续期请求必需 `expected_cycle,date_precision,expires_at`，可选 `amount,currency,notes`，金额/币种同时提供或省略。me 响应字段为 `id,telegram_user_id,timezone,has_private_chat,created_at,updated_at`，PATCH 接受 IANA `timezone`。
 

@@ -9,8 +9,25 @@ import (
 	"telegram.bot.remind/internal/domain"
 )
 
-// Service filters share the primary-period definition with the legacy overview,
-// but never join sim_details as an ownership or resource-kind restriction.
+// DueSoonDays is the shared calendar-day window for the service overview.
+const DueSoonDays = 7
+
+type OverviewCounts struct {
+	Total    int
+	DueSoon  int
+	Expired  int
+	NoPeriod int
+}
+
+const primaryPeriodSQL = `(
+    SELECT p2.id FROM validity_periods p2
+    WHERE p2.service_id = s.id AND p2.status != 'cancelled'
+    ORDER BY p2.expires_at, p2.id DESC LIMIT 1
+)`
+
+// Service filters share the primary-period definition with the service
+// overview, but never join sim_details as an ownership or resource-kind
+// restriction.
 func serviceFilterQuery(uid int64, filter ServiceFilter) (string, []any, string, error) {
 	filter.Query = strings.TrimSpace(filter.Query)
 	if !text(filter.Query, 200, false) {

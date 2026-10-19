@@ -105,10 +105,6 @@ func TestGenericServicesMixedCategoriesAndFilters(t *testing.T) {
 	if err != nil || len(legacy.Data) != 1 || legacy.Data[0].ID != sim.ID || legacy.NextCursor != nil {
 		t.Fatalf("legacy page %+v %v", legacy, err)
 	}
-	legacyOverview, err := s.Overview(ctx, a.ID, 0, 10)
-	if err != nil || legacyOverview.Counts.Total != 1 || legacyOverview.Items.Data[0].SIM.ID != sim.ID {
-		t.Fatalf("legacy overview %+v %v", legacyOverview, err)
-	}
 	if _, err = s.UpdateService(ctx, a.ID, sim.ID, ServicePatch{CategoryID: &vpsID}); err != ErrConflict {
 		t.Fatalf("cross-kind category: %v", err)
 	}

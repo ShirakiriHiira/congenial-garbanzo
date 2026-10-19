@@ -29,7 +29,7 @@
 
 SIM 专属字段保存在 `sim_details`，以 service item 为主键并级联删除：卡类型、号码、国家/地区、ICCID。通用项目没有 SIM detail 行。SIM 标识与普通备注不是秘密存储；任何字段均不得保存密码、API Token、私钥。
 
-兼容边界：旧 `/sims`、旧 overview、既有 SIM Bot 命令及其请求/响应字段仅面向 SIM，绝不返回通用项目或伪造 SIM ID。共享有效期、规则、续期、提醒任务与回调通过通用 service item 关系归属，不依赖 SIM detail 表。既有 ID 与旧字段含义保持稳定。
+兼容边界：旧 `/sims` 及其请求/响应字段仅面向 SIM，绝不返回通用项目或伪造 SIM ID。共享有效期、规则、续期、提醒任务与回调通过通用 service item 关系归属，不依赖 SIM detail 表。既有 ID 与旧字段含义保持稳定。
 
 ### 有效期、条款、规则与续期
 
@@ -45,7 +45,7 @@ API 位于 `/api/v1`，使用 Telegram Mini App `initData` 鉴权、字符串资
 
 通用 API 提供类别管理、服务 CRUD/列表、全量过滤 overview 及服务有效期操作。overview 的筛选在分页前执行，items/counts 使用同一读快照及当前时间。搜索仅检索公开 name/provider/identifier，通配符按字面处理；不能搜索备注、号码、ICCID 等敏感 SIM 信息。counts 是完整筛选集统计，不随 cursor/limit 改变。
 
-兼容 API 仍仅限 SIM，保留旧路由、`operator` 等字段、响应结构、归档/删除及 overview 语义。旧 SIM 有效期路由及 Bot 创建命令在创建前必须验证 SIM 身份。共享 period/rule/renewal/reminder/callback 使用稳定旧 ID，并采用通用所有权关联。
+兼容 API 仍仅限 SIM，保留旧路由、`operator` 等字段、响应结构、归档/删除语义。旧 SIM 有效期路由在创建前必须验证 SIM 身份。共享 period/rule/renewal/reminder/callback 使用稳定旧 ID，并采用通用所有权关联。
 
 Bot 只保留按钮与分步向导：`/service` 管理服务、有效期、条款与规则，`/renew` 走“输入—预览—确认”，`/reminders`、`/settings`、`/cancel` 提供直接操作。不再接受 query 字符串或旧 SIM 命令；所有写入都调用同一 `internal/service` 方法。详细语法仅见 README。
 
