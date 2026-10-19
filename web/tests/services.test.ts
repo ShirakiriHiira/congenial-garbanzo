@@ -5,8 +5,6 @@ import ServiceForm from '../src/routes/ServiceForm.svelte';
 import ServiceDetail from '../src/routes/ServiceDetail.svelte';
 import { session } from '../src/lib/session.svelte';
 import type { Category, Period, ServiceItem, User } from '../src/lib/api/types';
-import { navigate } from '../src/lib/router';
-import { tick } from 'svelte';
 
 const now = '2026-01-01T00:00:00Z';
 const user: User = { id: '7', telegram_user_id: '77', timezone: 'Asia/Taipei', has_private_chat: true, created_at: now, updated_at: now };
@@ -228,42 +226,6 @@ describe('service detail', () => {
     expect(calls.some((path) => path.includes('/rules?') && path.includes('after_id=1'))).toBe(true);
     expect(calls.some((path) => path.includes('/renewals?') && path.includes('after_id=1'))).toBe(true);
   });
-  it('verifies legacy SIM identity before replacing its URL with the canonical service URL', async () => {
-    history.replaceState(null, '', '/app/sims/42');
-    const legacy = { id: '42', user_id: '7', name: '旧 SIM', card_type: 'esim', operator: null, phone_number: null, country_or_region: null, iccid: null, notes: null, status: 'active', created_at: now, updated_at: now };
-    const calls: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
-      const url = new URL(input, location.origin);
-      calls.push(url.pathname);
-      if (url.pathname.endsWith('/me')) return json(user);
-      if (url.pathname.endsWith('/sims/42')) return json(legacy);
-      if (url.pathname.endsWith('/services/42/periods')) return page([]);
-      if (url.pathname.endsWith('/categories')) return page([simCategory]);
-      if (url.pathname.endsWith('/services/42')) return json(simService());
-      return json(user);
-    }));
-    render(App);
-    await screen.findByRole('heading', { name: '漫游卡' });
-    expect(location.pathname).toBe('/app/services/42');
-    expect(calls.indexOf('/api/v1/sims/42')).toBeGreaterThanOrEqual(0);
-    expect(calls.indexOf('/api/v1/sims/42')).toBeLessThan(calls.indexOf('/api/v1/services/42'));
-  });
-
-  it('does not treat a non-SIM legacy ID as a service route', async () => {
-    history.replaceState(null, '', '/app/sims/42');
-    const calls: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
-      const url = new URL(input, location.origin);
-      calls.push(url.pathname);
-      if (url.pathname.endsWith('/me')) return json(user);
-      if (url.pathname.endsWith('/sims/42')) return Response.json({ error: { code: 'not_found', message: 'not found' } }, { status: 404 });
-      return json(user);
-    }));
-    render(App);
-    await screen.findByText('此页面不存在');
-    expect(location.pathname).toBe('/app/sims/42');
-    expect(calls.some((path) => path.endsWith('/services/42'))).toBe(false);
-  });
   it('requires confirmation for archive, restore, and cascade deletion', async () => {
     let current = service();
     const calls: Array<[string, RequestInit]> = [];
@@ -296,60 +258,5 @@ describe('service detail', () => {
     expect(calls.some(([path, init]) => path.endsWith('/services/42') && init.method === 'DELETE')).toBe(true);
     const deletion = calls.find(([path, init]) => path.endsWith('/services/42/delete') && init.method === 'POST');
     expect(deletion?.[1].body).toBeUndefined();
-  });
-});
-
-describe('legacy route lifecycle', () => {
-  it('replaces the legacy creation URL and presets the built-in SIM category', async () => {
-    history.replaceState(null, '', '/app/sims/new');
-    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
-      const url = new URL(input, location.origin);
-      if (url.pathname.endsWith('/categories')) return page([genericCategory, simCategory]);
-      return json(user);
-    }));
-    render(App);
-    expect(await screen.findByRole('combobox', { name: '类别' })).toHaveValue('1');
-    expect(location.pathname).toBe('/app/services/new');
-    expect(location.search).toBe('?category=sim');
-  });
-
-  it('ignores a legacy identity response after the route changes', async () => {
-    history.replaceState(null, '', '/app/sims/42');
-    const pending = Promise.withResolvers<Response>();
-    const calls: string[] = [];
-    let identitySignal: AbortSignal | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: string, init: RequestInit = {}) => {
-      const url = new URL(input, location.origin);
-      calls.push(url.pathname);
-      if (url.pathname.endsWith('/sims/42')) { identitySignal = init.signal as AbortSignal; return pending.promise; }
-      return json(user);
-    }));
-    render(App);
-    await vi.waitFor(() => expect(calls.some((path) => path.endsWith('/sims/42'))).toBe(true));
-    navigate('/app/settings');
-    await tick();
-    expect((identitySignal as AbortSignal | undefined)?.aborted).toBe(true);
-    pending.resolve(json({ id: '42', user_id: '7', name: '旧 SIM', card_type: 'esim', operator: null, phone_number: null, country_or_region: null, iccid: null, notes: null, status: 'active', created_at: now, updated_at: now }));
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(location.pathname).toBe('/app/settings');
-    expect(calls.some((path) => path.endsWith('/services/42'))).toBe(false);
-  });
-
-  it('aborts identity resolution when the application unmounts', async () => {
-    history.replaceState(null, '', '/app/sims/42');
-    const pending = Promise.withResolvers<Response>();
-    let signal: AbortSignal | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: string, init: RequestInit = {}) => {
-      if (new URL(input, location.origin).pathname.endsWith('/sims/42')) { signal = init.signal as AbortSignal; return pending.promise; }
-      return json(user);
-    }));
-    const app = render(App);
-    await vi.waitFor(() => expect(signal).toBeDefined());
-    app.unmount();
-    expect((signal as AbortSignal | undefined)?.aborted).toBe(true);
-    pending.resolve(Response.json({ error: { code: 'not_found', message: 'not found' } }, { status: 404 }));
-    await Promise.resolve();
-    expect(location.pathname).toBe('/app/sims/42');
   });
 });

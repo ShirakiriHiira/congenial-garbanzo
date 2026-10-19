@@ -25,9 +25,6 @@ describe('application routes', () => {
     expect(router.matchRoute('/app/services/42/periods/new')).toEqual({ name: 'period-new', params: { id: '42' } });
     expect(router.matchRoute('/app/periods/42/rules')).toEqual({ name: 'rules', params: { id: '42' } });
     expect(router.matchRoute('/app/services/new').name).toBe('service-new');
-    expect(router.matchRoute('/app/sims/new').name).toBe('legacy-sim-new');
-    expect(router.matchRoute('/app/sims/42/edit').name).toBe('legacy-sim-edit');
-    expect(router.matchRoute('/app/sims/42/periods/new').name).toBe('legacy-period-new');
     expect(router.matchRoute('/outside').name).toBe('not-found');
   });
 
@@ -46,7 +43,7 @@ describe('application routes', () => {
   it('replaces a route without changing the scoped history index or adding an entry', async () => {
     const seen = vi.fn();
     stop = router.subscribe(seen);
-    router.navigate('/app/sims/42');
+    router.navigate('/app/services/41');
     const indexBefore = history.state.miniapp.index;
     router.replace('/app/services/42');
     expect(location.pathname).toBe('/app/services/42');
@@ -103,7 +100,7 @@ describe('application routes', () => {
   it('uses the supplied fallback for a direct deep link', async () => {
     stop?.();
     vi.resetModules();
-    history.replaceState(null, '', '/app/sims/42');
+    history.replaceState(null, '', '/app/services/42');
     router = await import('../src/lib/router');
     stop = router.subscribe(() => {});
     router.back('/app/');

@@ -1,5 +1,5 @@
 import { ApiError, type ApiErrorKind } from '../api/errors';
-import type { CardType, IntervalUnit, Period, PeriodStatus, PeriodType, ReminderStatus, ServiceStatus, SimStatus, TermsMode } from '../api/types';
+import type { CardType, IntervalUnit, Period, PeriodStatus, PeriodType, ReminderStatus, ServiceStatus, TermsMode } from '../api/types';
 
 export const labels = {
   appName: 'SERVICE MANAGER',
@@ -66,7 +66,6 @@ export const labels = {
 export type LabelKey = keyof typeof labels;
 
 export const cardTypeLabels: Record<CardType, string> = { physical_sim: '实体 SIM', esim: 'eSIM' };
-export const simStatusLabels: Record<SimStatus, string> = { active: '使用中', archived: '已归档' };
 export const serviceStatusLabels: Record<ServiceStatus, string> = { active: '使用中', archived: '已归档' };
 export const termsModeLabels: Record<TermsMode, string> = { once: '一次性', recurring: '周期性', custom: '自定义' };
 export const intervalUnitLabels: Record<IntervalUnit, string> = { day: '天', week: '周', month: '月', year: '年' };

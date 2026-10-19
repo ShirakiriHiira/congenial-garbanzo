@@ -1,7 +1,6 @@
 export type ID = string;
 
 export type CardType = "physical_sim" | "esim";
-export type SimStatus = "active" | "archived";
 export type ServiceStatus = "active" | "archived";
 export type CategoryKind = "sim" | "generic";
 export type ServiceStatusFilter = "active" | "due_soon" | "expired" | "no_period" | "archived" | "all";
@@ -111,21 +110,6 @@ export interface User {
   telegram_user_id: ID;
   timezone: string;
   has_private_chat: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Sim {
-  id: ID;
-  user_id: ID;
-  name: string;
-  card_type: CardType;
-  operator: string | null;
-  phone_number: string | null;
-  country_or_region: string | null;
-  iccid: string | null;
-  notes: string | null;
-  status: SimStatus;
   created_at: string;
   updated_at: string;
 }

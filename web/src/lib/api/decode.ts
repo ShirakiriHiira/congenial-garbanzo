@@ -11,7 +11,6 @@ import type {
   ServiceItem,
   ServiceOverviewItem,
   ServiceOverviewResponse,
-  Sim,
   SimDetails,
   User,
 } from "./types";
@@ -134,24 +133,6 @@ function decodeUser(value: unknown, path = "data"): User {
     telegram_user_id: id(field(source, "telegram_user_id", path), `${path}.telegram_user_id`),
     timezone: text(field(source, "timezone", path), `${path}.timezone`),
     has_private_chat: boolean(field(source, "has_private_chat", path), `${path}.has_private_chat`),
-    created_at: timestamp(field(source, "created_at", path), `${path}.created_at`),
-    updated_at: timestamp(field(source, "updated_at", path), `${path}.updated_at`),
-  };
-}
-
-function decodeSim(value: unknown, path = "data"): Sim {
-  const source = object(value, path);
-  return {
-    id: id(field(source, "id", path), `${path}.id`),
-    user_id: id(field(source, "user_id", path), `${path}.user_id`),
-    name: text(field(source, "name", path), `${path}.name`),
-    card_type: oneOf(field(source, "card_type", path), ["physical_sim", "esim"], `${path}.card_type`),
-    operator: nullableText(field(source, "operator", path), `${path}.operator`),
-    phone_number: nullableText(field(source, "phone_number", path), `${path}.phone_number`),
-    country_or_region: nullableText(field(source, "country_or_region", path), `${path}.country_or_region`),
-    iccid: nullableText(field(source, "iccid", path), `${path}.iccid`),
-    notes: nullableText(field(source, "notes", path), `${path}.notes`),
-    status: oneOf(field(source, "status", path), ["active", "archived"], `${path}.status`),
     created_at: timestamp(field(source, "created_at", path), `${path}.created_at`),
     updated_at: timestamp(field(source, "updated_at", path), `${path}.updated_at`),
   };
@@ -324,7 +305,6 @@ function decodeObject<T>(value: unknown, item: Decoder<T>): T {
 }
 
 export const user: Decoder<User> = (value) => decodeObject(value, decodeUser);
-export const sim: Decoder<Sim> = (value) => decodeObject(value, decodeSim);
 export const period: Decoder<Period> = (value) => decodeObject(value, decodePeriod);
 export const rule: Decoder<Rule> = (value) => decodeObject(value, decodeRule);
 export const renewal: Decoder<Renewal> = (value) => decodeObject(value, decodeRenewal);

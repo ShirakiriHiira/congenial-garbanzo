@@ -15,7 +15,6 @@ import {
   service as decodeService,
   serviceOverview as decodeServiceOverview,
   services as decodeServices,
-  sim as decodeSim,
   user as decodeUser,
 } from "./decode";
 import type {
@@ -38,7 +37,6 @@ import type {
   ServiceItem,
   ServiceOverviewResponse,
   ServiceUpdateInput,
-  Sim,
   User,
   UserUpdateInput,
 } from "./types";
@@ -140,8 +138,6 @@ export const api = {
   deleteService: async (id: ID, signal?: AbortSignal): Promise<void> => {
     await request(`${entityPath("/services", id)}/delete`, { method: "POST", signal }, noContent);
   },
-
-  sim: (id: ID, signal?: AbortSignal): Promise<Sim> => getEntity(entityPath("/sims", id), signal, decodeSim),
 
   periods: (serviceID: ID, after: ID | null = null, signal?: AbortSignal): Promise<Page<Period>> =>
     getPage(`${entityPath("/services", serviceID)}/periods${pageQuery(after)}`, after, signal, decodePeriods),

@@ -1,11 +1,9 @@
-export type RouteName = 'home' | 'service-new' | 'service-detail' | 'service-edit' | 'period-new' | 'period-edit' | 'rules' | 'renew' | 'reminders' | 'settings' | 'legacy-sim-new' | 'legacy-sim-detail' | 'legacy-sim-edit' | 'legacy-period-new' | 'not-found';
+export type RouteName = 'home' | 'service-new' | 'service-detail' | 'service-edit' | 'period-new' | 'period-edit' | 'rules' | 'renew' | 'reminders' | 'settings' | 'not-found';
 export interface RouteMatch { name: RouteName; params: { id?: string } }
 const routes: [RegExp, RouteName][] = [
   [/^\/app\/?$/, 'home'], [/^\/app\/services\/new\/?$/, 'service-new'],
   [/^\/app\/services\/(\d+)\/?$/, 'service-detail'], [/^\/app\/services\/(\d+)\/edit\/?$/, 'service-edit'],
   [/^\/app\/services\/(\d+)\/periods\/new\/?$/, 'period-new'],
-  [/^\/app\/sims\/new\/?$/, 'legacy-sim-new'], [/^\/app\/sims\/(\d+)\/?$/, 'legacy-sim-detail'],
-  [/^\/app\/sims\/(\d+)\/edit\/?$/, 'legacy-sim-edit'], [/^\/app\/sims\/(\d+)\/periods\/new\/?$/, 'legacy-period-new'],
   [/^\/app\/periods\/(\d+)\/edit\/?$/, 'period-edit'], [/^\/app\/periods\/(\d+)\/rules\/?$/, 'rules'],
   [/^\/app\/periods\/(\d+)\/renew\/?$/, 'renew'], [/^\/app\/reminders\/?$/, 'reminders'], [/^\/app\/settings\/?$/, 'settings'],
 ];
