@@ -71,8 +71,9 @@ export const serviceStatusLabels: Record<ServiceStatus, string> = { active: '使
 export const termsModeLabels: Record<TermsMode, string> = { once: '一次性', recurring: '周期性', custom: '暂不设置' };
 export const intervalUnitLabels: Record<IntervalUnit, string> = { day: '天', week: '周', month: '月', year: '年' };
 export const periodStatusLabels: Record<PeriodStatus, string> = { active: '有效', expired: '已过期' };
+// SIM services have no generic identifier: their public facts live in
+// sim_details, so the map covers the remaining categories only.
 export const serviceFieldLabels: Record<string, { provider: string; identifier: string }> = {
-  sim: { provider: '运营商', identifier: '公开标识' },
   vps: { provider: '服务商', identifier: '主机名或 IP' },
   domain: { provider: '注册商', identifier: '域名' },
   subscription: { provider: '服务商', identifier: '账号标识' },

@@ -177,7 +177,7 @@
     <div class="section stack"><SectionHeader title="服务资料">{#snippet children()}{/snippet}</SectionHeader><dl class="profile">
       {#if category}<div><dt>类别</dt><dd>{category.name}</dd></div>{/if}
       {#if service.provider}<div><dt>{service.sim_details ? '运营商' : serviceFields.provider}</dt><dd>{service.provider}</dd></div>{/if}
-      {#if service.identifier}<div><dt>{serviceFields.identifier}</dt><dd>{service.identifier}</dd></div>{/if}
+      {#if service.identifier && !service.sim_details}<div><dt>{serviceFields.identifier}</dt><dd>{service.identifier}</dd></div>{/if}
       {#if managementURL}<div><dt>管理链接</dt><dd><a href={managementURL} target="_blank" rel="noopener noreferrer">{service.management_url}</a></dd></div>{/if}
       {#if service.sim_details}<div><dt>卡片类型</dt><dd>{cardTypeLabels[service.sim_details.card_type]}</dd></div>{#if service.sim_details.phone_number}<div><dt>手机号</dt><dd>{maskPhone(service.sim_details.phone_number)}</dd></div>{/if}{#if service.sim_details.country_or_region}<div><dt>国家或地区</dt><dd>{service.sim_details.country_or_region}</dd></div>{/if}{/if}
       {#if service.notes}<div><dt>备注</dt><dd class="preserve">{service.notes}</dd></div>{/if}

@@ -200,8 +200,11 @@ func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user s
 func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item service.ServiceItem, after int64) (string, service.Page[service.Period], error) {
 	category := categoryName(ctx, h, user.ID, item.CategoryID)
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n类别：%s\n状态：%s\n服务商：%s\n公开标识：%s\n管理链接：%s\n",
-		item.Name, category, statusLabel(item.Status), textOrDash(item.Provider), textOrDash(item.Identifier), textOrDash(item.ManagementURL))
+	fmt.Fprintf(&b, "%s\n类别：%s\n状态：%s\n服务商：%s\n", item.Name, category, statusLabel(item.Status), textOrDash(item.Provider))
+	if item.SIMDetails == nil {
+		fmt.Fprintf(&b, "公开标识：%s\n", textOrDash(item.Identifier))
+	}
+	fmt.Fprintf(&b, "管理链接：%s\n", textOrDash(item.ManagementURL))
 	if d := item.SIMDetails; d != nil {
 		kind := d.CardType
 		if kind == "physical_sim" {

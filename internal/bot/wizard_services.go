@@ -51,7 +51,7 @@ func (w *wizard) renderServiceAdd(ctx context.Context) {
 	case "add_provider":
 		w.reply(ctx, "可选：服务商/运营商（例如 Carrier、Cloud Provider）。", optionalNav(true)...)
 	case "add_identifier":
-		w.reply(ctx, "可选：公开标识（主机名、域名、账号标识或公开号码；不要填密码）。", optionalNav(true)...)
+		w.reply(ctx, "可选：公开标识（主机名、域名、账号标识；不要填密码）。", optionalNav(true)...)
 	case "add_management_url":
 		w.reply(ctx, "可选：管理链接（必须是无内嵌凭据的 http(s) 绝对地址）。", optionalNav(true)...)
 	case "add_phone":
@@ -77,8 +77,11 @@ func (w *wizard) renderServiceAddPreview(ctx context.Context) {
 		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "请确认新建服务：\n类别：%s\n名称：%s\n服务商：%s\n公开标识：%s\n管理链接：%s\n备注：%s\n",
-		categoryName, w.dr.Values["name"], shown(w.dr, "provider"), shown(w.dr, "identifier"), shown(w.dr, "management_url"), shown(w.dr, "notes"))
+	fmt.Fprintf(&b, "请确认新建服务：\n类别：%s\n名称：%s\n服务商：%s\n", categoryName, w.dr.Values["name"], shown(w.dr, "provider"))
+	if kind != "sim" {
+		fmt.Fprintf(&b, "公开标识：%s\n", shown(w.dr, "identifier"))
+	}
+	fmt.Fprintf(&b, "管理链接：%s\n备注：%s\n", shown(w.dr, "management_url"), shown(w.dr, "notes"))
 	if kind == "sim" {
 		fmt.Fprintf(&b, "卡类型：%s\n号码：%s\n国家/地区：%s\nICCID：%s\n", cardTypeLabel(w.dr.Values["card_type"]), shown(w.dr, "phone"), shown(w.dr, "region"), shown(w.dr, "iccid"))
 	}
@@ -164,12 +167,13 @@ func (w *wizard) confirmServiceAdd(ctx context.Context) {
 		return
 	}
 	in := service.ServiceInput{Name: w.dr.Values["name"], CategoryID: categoryID,
-		Provider: opt(w.dr, "provider"), Identifier: opt(w.dr, "identifier"),
-		ManagementURL: opt(w.dr, "management_url"), Notes: opt(w.dr, "notes")}
+		Provider: opt(w.dr, "provider"), ManagementURL: opt(w.dr, "management_url"), Notes: opt(w.dr, "notes")}
 	if w.dr.Values["kind"] == "sim" {
 		in.SIMDetails = &service.SIMDetails{CardType: w.dr.Values["card_type"], PhoneNumber: opt(w.dr, "phone"),
 			CountryOrRegion: opt(w.dr, "region"), ICCID: opt(w.dr, "iccid")}
+		w.dr.del("identifier")
 	} else {
+		in.Identifier = opt(w.dr, "identifier")
 		for _, key := range []string{"card_type", "phone", "region", "iccid"} {
 			w.dr.del(key)
 		}
@@ -375,7 +379,11 @@ func editValue(item service.ServiceItem, field string) string {
 }
 
 func editFieldRows(item service.ServiceItem) [][]models.InlineKeyboardButton {
-	fields := [][2]string{{"name", "名称"}, {"category_id", "类别"}, {"provider", "服务商"}, {"identifier", "公开标识"}, {"management_url", "管理链接"}, {"notes", "备注"}}
+	fields := [][2]string{{"name", "名称"}, {"category_id", "类别"}, {"provider", "服务商"}}
+	if item.SIMDetails == nil {
+		fields = append(fields, [2]string{"identifier", "公开标识"})
+	}
+	fields = append(fields, [2]string{"management_url", "管理链接"}, [2]string{"notes", "备注"})
 	if item.SIMDetails != nil {
 		fields = append(fields, [2]string{"card_type", "SIM 卡类型"}, [2]string{"phone", "号码"}, [2]string{"region", "国家/地区"}, [2]string{"iccid", "ICCID"})
 	}
@@ -453,6 +461,15 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	case "provider":
 		set(&patch.Provider)
 	case "identifier":
+		item, err := w.h.svc.GetService(ctx, w.user.ID, *w.d.ServiceID)
+		if err != nil {
+			w.stepError(ctx, "服务已不存在，请重新打开编辑。", false, false)
+			return
+		}
+		if item.SIMDetails != nil {
+			w.stepError(ctx, "SIM 服务不使用公开标识，请返回选择其他字段。", false, false)
+			return
+		}
 		set(&patch.Identifier)
 	case "management_url":
 		set(&patch.ManagementURL)

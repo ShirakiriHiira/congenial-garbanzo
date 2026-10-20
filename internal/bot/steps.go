@@ -150,6 +150,9 @@ func nextStep(action string, d draft, step string) string {
 		case "add_card_type":
 			return "add_provider"
 		case "add_provider":
+			if d.Values["kind"] == "sim" {
+				return "add_management_url"
+			}
 			return "add_identifier"
 		case "add_identifier":
 			return "add_management_url"
@@ -244,12 +247,15 @@ func previousStep(action string, d draft, step string) string {
 	return ""
 }
 
-// applies hides the SIM-only questions for generic categories and the
-// recurring-details questions for non-recurring terms.
+// applies hides the SIM-only questions for generic categories, the generic
+// identifier for SIM, and the recurring-details questions for non-recurring
+// terms.
 func applies(action string, d draft, step string) bool {
 	switch step {
 	case "add_card_type", "add_phone", "add_region", "add_iccid":
 		return d.Values["kind"] == "sim"
+	case "add_identifier":
+		return d.Values["kind"] != "sim"
 	case "terms_interval", "terms_amount":
 		return d.Values["mode"] == "recurring"
 	}

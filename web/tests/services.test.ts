@@ -139,6 +139,20 @@ describe('service form and categories', () => {
     expect(screen.getByRole('textbox', { name: 'ICCID' })).toHaveValue('8988600000000000000');
   });
 
+  it('never offers the generic identifier for SIM services', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = new URL(input, location.origin);
+      if (url.pathname.endsWith('/categories')) return page([simCategory, genericCategory]);
+      if (url.pathname.endsWith('/services/42')) return json(simService());
+      return json(user);
+    }));
+    render(ServiceForm, { props: { id: '42' } });
+    await screen.findByRole('combobox', { name: '类别' });
+    expect(screen.queryByRole('textbox', { name: '公开标识' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '运营商' })).toHaveValue('运营商');
+    expect(screen.getByRole('textbox', { name: 'ICCID' })).toHaveValue('8988600000000000000');
+  });
+
   it('rejects credential URLs, relative URLs, non-HTTP protocols, and oversized URLs', async () => {
     const fetcher = vi.fn(async (input: string, _init: RequestInit = {}) => {
       const url = new URL(input, location.origin);
@@ -177,6 +191,8 @@ describe('service detail', () => {
     await screen.findByRole('heading', { name: '漫游卡' });
     expect(screen.getByText(/\+886.*5678/)).toBeInTheDocument();
     expect(screen.queryByText('8988600000000000000')).not.toBeInTheDocument();
+    expect(screen.queryByText('公开标识')).not.toBeInTheDocument();
+    expect(screen.queryByText('host.example')).not.toBeInTheDocument();
     expect(await screen.findByText('约定周期：每 1 月')).toBeInTheDocument();
     expect(await screen.findByText('约定费用：12.99 USD')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'https://manage.example/' });

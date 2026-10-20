@@ -16,7 +16,7 @@
   let { id, initialKind }: { id?: string; initialKind?: CategoryKind } = $props();
   type GeneralKey = 'provider' | 'identifier' | 'management_url' | 'notes';
   type SimKey = 'phone_number' | 'country_or_region' | 'iccid';
-  const generalFields: { key: GeneralKey; label: string; limit: number }[] = [
+  const allGeneralFields: { key: GeneralKey; label: string; limit: number }[] = [
     { key: 'provider', label: '服务商', limit: 200 },
     { key: 'identifier', label: '公开标识', limit: 200 },
     { key: 'management_url', label: '管理链接', limit: 2048 },
@@ -50,6 +50,9 @@
   const category = $derived(categories.find((item) => item.id === categoryID) ?? null);
   const serviceFields = $derived(fieldLabels(category?.code));
   const kind = $derived(category?.kind ?? initialKind ?? 'generic');
+  // A SIM service carries its own public facts in sim_details; the generic
+  // identifier is only offered to the other categories.
+  const generalFields = $derived(kind === 'sim' ? allGeneralFields.filter(({ key }) => key !== 'identifier') : allGeneralFields);
   const entityKind = $derived(entity?.sim_details ? 'sim' : entity ? categories.find((item) => item.id === entity?.category_id)?.kind ?? 'generic' : null);
   const dirty = $derived(entity
     ? name !== entity.name || categoryID !== entity.category_id || generalFields.some(({ key }) => general[key] !== (entity?.[key] ?? '') || cleared[key]) || (kind === 'sim' && (cardType !== (entity.sim_details?.card_type ?? 'physical_sim') || simFields.some(({ key }) => sim[key] !== (entity?.sim_details?.[key] ?? '') || cleared[key])))
@@ -237,10 +240,12 @@
           {#snippet action()}{#if general.provider}<button type="button" class="text-button" aria-label={kind === 'sim' ? '清除运营商' : '清除服务商'} disabled={!canWrite() || submitter.busy} onclick={() => { general.provider = ''; cleared.provider = Boolean(id); }}>清除</button>{/if}{/snippet}
           {#snippet children(field)}<input id={field.id} bind:value={general.provider} maxlength="200" oninput={() => { cleared.provider = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
         </FormField>
-        <FormField id="service-identifier" label={serviceFields.identifier} error={errors.identifier}>
-          {#snippet action()}{#if general.identifier}<button type="button" class="text-button" aria-label="清除公开标识" disabled={!canWrite() || submitter.busy} onclick={() => { general.identifier = ''; cleared.identifier = Boolean(id); }}>清除</button>{/if}{/snippet}
-          {#snippet children(field)}<input id={field.id} bind:value={general.identifier} maxlength="200" oninput={() => { cleared.identifier = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
-        </FormField>
+        {#if kind !== 'sim'}
+          <FormField id="service-identifier" label={serviceFields.identifier} error={errors.identifier}>
+            {#snippet action()}{#if general.identifier}<button type="button" class="text-button" aria-label="清除公开标识" disabled={!canWrite() || submitter.busy} onclick={() => { general.identifier = ''; cleared.identifier = Boolean(id); }}>清除</button>{/if}{/snippet}
+            {#snippet children(field)}<input id={field.id} bind:value={general.identifier} maxlength="200" oninput={() => { cleared.identifier = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
+          </FormField>
+        {/if}
         <FormField id="service-url" label="管理链接" error={errors.management_url}>
           {#snippet action()}{#if general.management_url}<button type="button" class="text-button" aria-label="清除管理链接" disabled={!canWrite() || submitter.busy} onclick={() => { general.management_url = ''; cleared.management_url = Boolean(id); }}>清除</button>{/if}{/snippet}
           {#snippet children(field)}<input id={field.id} type="url" bind:value={general.management_url} maxlength="2048" oninput={() => { cleared.management_url = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}

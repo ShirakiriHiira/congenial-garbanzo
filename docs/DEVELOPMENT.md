@@ -12,7 +12,7 @@
 | --- | --- |
 | User | Telegram 用户、时区、私聊绑定；所有数据按用户隔离 |
 | Category | 内置类别（`sim`/`vps`/`subscription`/`domain`/`other`）或单用户自定义 generic 类别；类别名称只用于展示 |
-| ServiceItem | 属于用户与类别；状态 `active`/`archived`；`provider`、`identifier`、`management_url`、`notes` 承载通用类型信息 |
+| ServiceItem | 属于用户与类别；状态 `active`/`archived`；`provider`、`management_url`、`notes` 承载通用类型信息；`identifier` 仅非 SIM 类别可使用（SIM 固定为 NULL，由数据库触发器强制） |
 | SIMDetails | 仅 SIM 类别：卡类型、号码、国家/地区、ICCID；与 ServiceItem 一对一 |
 | Period | 属于服务；名称可空、开始可空、截止必填、日期精度、用户时区、`cycle` |
 | PeriodTerms | 每个有效期始终一行；`once`/`recurring`/`custom`、周期、金额、币种、独立 `revision` |

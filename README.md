@@ -8,7 +8,7 @@
 
 - 服务、内置/自定义类别、多个有效期。
 - SIM 专属资料：卡类型、号码、国家/地区、ICCID。
-- 通用服务字段：服务商、公开标识、管理链接、备注、类别。
+- 通用服务字段：服务商、公开标识、管理链接、备注、类别；公开标识不用于 SIM。
 - 有效期条款：一次性、周期性、暂不设置；Mini App 金额可输入小数，按 ISO 4217 币种小数位换算为整数最小货币单位传输，币种为三位大写字母。
 - 每用户时区的提醒规则；提前天数、提醒时刻、启用/禁用。
 - 显式确认续期，保留续期前后截止与付款记录；不自动推进日期。
@@ -20,7 +20,7 @@
 
 | 类别 | 服务商字段 | 公开标识字段 | 额外字段 |
 | --- | --- | --- | --- |
-| SIM/eSIM | 运营商 | 公开标识 | 卡类型、号码、国家/地区、ICCID |
+| SIM/eSIM | 运营商 | 不提供 | 卡类型、号码、国家/地区、ICCID |
 | VPS/云服务器 | 服务商 | 主机名或 IP | 无 |
 | 域名 | 注册商 | 域名 | 无 |
 | 软件/AI 订阅 | 服务商 | 账号标识 | 无 |
@@ -127,7 +127,7 @@ Mini App 设置页可选 1 小时、6 小时、24 小时或 7 天；选择保存
 
 精确字段：
 
-- Service：`id,user_id,name,category_id,provider,identifier,management_url,notes,status,created_at,updated_at,sim_details`；`sim_details` 仅 SIM 非空，含 `card_type,phone_number,country_or_region,iccid`。
+- Service：`id,user_id,name,category_id,provider,identifier,management_url,notes,status,created_at,updated_at,sim_details`；`sim_details` 仅 SIM 非空，含 `card_type,phone_number,country_or_region,iccid`；`identifier` 仅非 SIM 类别可用，SIM 写入非 null 返回 400 `invalid_input`。
 - Period：`id,service_id,name,starts_at,expires_at,date_precision,local_expires_date,timezone,status,cycle,terms,created_at,updated_at`；`status` 只由截止时间计算为 `active`/`expired`。
 - Terms：`mode,interval_count,interval_unit,amount,currency,revision`。
 - Rule：`id,period_id,days_before,reminder_time,enabled,revision,created_at,updated_at`。

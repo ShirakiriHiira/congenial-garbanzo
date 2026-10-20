@@ -119,6 +119,11 @@ func (s *Service) CreateService(ctx context.Context, uid int64, in ServiceInput)
 		if (kind == "sim") != (v.SIMDetails != nil) {
 			return ErrInvalid
 		}
+		// A SIM service identifies itself through sim_details; the generic
+		// identifier belongs to every other category only.
+		if kind == "sim" && v.Identifier != nil {
+			return ErrInvalid
+		}
 		r, err := tx.ExecContext(ctx, `INSERT INTO service_items(user_id,name,category_id,provider,identifier,management_url,notes,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, uid, v.Name, v.CategoryID, v.Provider, v.Identifier, v.ManagementURL, v.Notes, v.Status, v.CreatedAt, v.UpdatedAt)
 		if err != nil {
 			return err
@@ -194,6 +199,9 @@ func (s *Service) UpdateService(ctx context.Context, uid, id int64, in ServicePa
 			v.Provider = in.Provider.Value
 		}
 		if in.Identifier.Set {
+			if oldKind == "sim" && in.Identifier.Value != nil {
+				return ErrInvalid
+			}
 			v.Identifier = in.Identifier.Value
 		}
 		if in.ManagementURL.Set {
