@@ -13,16 +13,16 @@ import (
 
 // startRenewWizard opens the renewal flow for one period. An existing
 // different wizard is never discarded silently.
-func (h *Handler) startRenewWizard(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID int64) {
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogRenew, periodID, service.DialogRenew+":"+id(periodID)) {
+func (h *Handler) startRenewWizard(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, periodID int64) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogRenew, periodID, service.DialogRenew+":"+id(periodID)) {
 		return
 	}
-	d, err := h.svc.StartPeriodRenewDialog(ctx, user.ID, periodID, chatID)
+	d, err := h.svc.StartPeriodRenewDialog(ctx, user.ID, periodID, resp.chatID)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始续期："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始续期："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, d)
+	w := h.wizard(ctx, b, user, d, resp)
 	w.renderRenew(ctx)
 }
 
@@ -197,10 +197,10 @@ func (w *wizard) confirmRenew(ctx context.Context) {
 		if service.Code(err) == "conflict" {
 			hint = "续期失败：有效期已被其他操作更新，本次未写入。\n草稿仍保留；请取消后重新打开有效期详情查看最新状态。"
 		}
-		w.h.send(ctx, w.b, w.chatID, hint)
+		w.h.send(ctx, w.b, w.resp, hint)
 		return
 	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, renewalText(ctx, w.h.svc, w.user, renewal, "续期完成"), markup(
+	w.h.sendMarkup(ctx, w.b, w.resp, renewalText(ctx, w.h.svc, w.user, renewal, "续期完成"), markup(
 		pair(button("查看续期历史", cb("period", "renewals", id(renewal.PeriodID), "0")), button("再次续期", cb("period", "renew", id(renewal.PeriodID)))),
 		pair(button("返回服务", cb("service", "view", id(renewal.PeriodID), "0"))),
 	))

@@ -148,56 +148,57 @@ func (h *Handler) handleMessage(ctx context.Context, b *telegram.Bot, msg *model
 			if msg.Chat.Type == models.ChatTypePrivate {
 				target = msg.From.ID // never trust a sender-relative chat mismatch
 			}
-			h.send(ctx, b, target, "请在私聊中使用此机器人。")
+			h.send(ctx, b, &responder{chatID: target}, "请在私聊中使用此机器人。")
 		}
 		return
 	}
+	resp := &responder{chatID: msg.Chat.ID}
 	uid := msg.From.ID
 	if !h.svc.Allowed(uid) {
-		h.send(ctx, b, msg.Chat.ID, "无权限使用此机器人。")
+		h.send(ctx, b, resp, "无权限使用此机器人。")
 		return
 	}
 	user, err := h.svc.Authenticate(ctx, uid, &msg.Chat.ID)
 	if err != nil {
-		h.send(ctx, b, msg.Chat.ID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
 	if text == "" {
 		// An empty body carries no wizard input; keep the draft untouched.
 		if d, err := h.svc.GetDialog(ctx, user.ID); err == nil && d.ChatID == msg.Chat.ID {
-			w := h.wizard(ctx, b, user, d)
+			w := h.wizard(ctx, b, user, d, resp)
 			w.render(ctx)
 			return
 		}
-		h.send(ctx, b, msg.Chat.ID, "请发送文本命令，使用 /help 查看用法。")
+		h.send(ctx, b, resp, "请发送文本命令，使用 /help 查看用法。")
 		return
 	}
 	if !strings.HasPrefix(text, "/") {
-		h.handleDialogInput(ctx, b, user, msg, text)
+		h.handleDialogInput(ctx, b, user, msg, resp, text)
 		return
 	}
-	h.dispatchCommand(ctx, b, user, msg.Chat.ID, text, false)
+	h.dispatchCommand(ctx, b, user, resp, text, false)
 }
 
-func (h *Handler) handleDialogInput(ctx context.Context, b *telegram.Bot, user service.User, msg *models.Message, text string) {
+func (h *Handler) handleDialogInput(ctx context.Context, b *telegram.Bot, user service.User, msg *models.Message, resp *responder, text string) {
 	d, err := h.svc.GetDialog(ctx, user.ID)
 	if err != nil {
 		if service.Code(err) == "not_found" {
 			if purged, _ := h.svc.PurgeExpiredDialog(ctx, user.ID); purged {
-				h.send(ctx, b, msg.Chat.ID, "对话已过期（15 分钟），本次输入未写入任何数据。\n\n"+shortHelp)
+				h.send(ctx, b, resp, "对话已过期（15 分钟），本次输入未写入任何数据。\n\n"+shortHelp)
 				return
 			}
-			h.send(ctx, b, msg.Chat.ID, "当前没有进行中的对话。\n\n"+shortHelp)
+			h.send(ctx, b, resp, "当前没有进行中的对话。\n\n"+shortHelp)
 			return
 		}
-		h.send(ctx, b, msg.Chat.ID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	if d.ChatID != msg.Chat.ID {
-		h.send(ctx, b, msg.Chat.ID, "当前对话已在其他会话中开始；请先发送 /cancel 取消。")
+	if d.ChatID != resp.chatID {
+		h.send(ctx, b, resp, "当前对话已在其他会话中开始；请先发送 /cancel 取消。")
 		return
 	}
-	w := h.wizard(ctx, b, user, d)
+	w := h.wizard(ctx, b, user, d, resp)
 	w.text(ctx, text)
 }
 
@@ -235,11 +236,20 @@ func splitCommand(text string) (name, target, rest string, ok bool) {
 	return name, target, rest, true
 }
 
-func (h *Handler) send(ctx context.Context, b *telegram.Bot, chatID int64, text string) {
+func (h *Handler) send(ctx context.Context, b *telegram.Bot, resp *responder, text string) {
 	if text == "" {
 		return
 	}
-	for _, chunk := range chunks(text, 3800) {
+	parts := chunks(text, 3800)
+	chatID, editID := resp.next()
+	if editID > 0 && len(parts) == 1 {
+		// The buttons belonged to the replaced body, so the edit clears them.
+		if _, err := b.EditMessageText(ctx, &telegram.EditMessageTextParams{ChatID: chatID, MessageID: editID, Text: parts[0], ReplyMarkup: noKeyboard}); err == nil || editNotModified(err) {
+			return
+		}
+		h.logger.Warn("telegram edit failed", "code", "telegram_error")
+	}
+	for _, chunk := range parts {
 		if _, err := b.SendMessage(ctx, &telegram.SendMessageParams{ChatID: chatID, Text: chunk}); err != nil {
 			h.logger.Warn("telegram reply failed", "code", "telegram_error")
 			return

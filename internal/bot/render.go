@@ -70,13 +70,13 @@ func (h *Handler) userLocation(user service.User) *time.Location {
 	return loc
 }
 
-func (h *Handler) showOverview(ctx context.Context, b *telegram.Bot, uid, chatID int64, filter service.ServiceFilter, after int64) {
+func (h *Handler) showOverview(ctx context.Context, b *telegram.Bot, uid int64, resp *responder, filter service.ServiceFilter, after int64) {
 	text, overview, err := h.overviewPage(ctx, uid, filter, after)
 	if err != nil {
-		h.send(ctx, b, chatID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendMarkup(ctx, b, chatID, text, h.overviewKeyboard(ctx, uid, filter, overview, after))
+	h.sendMarkup(ctx, b, resp, text, h.overviewKeyboard(ctx, uid, filter, overview, after))
 }
 
 func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.ServiceFilter, after int64) (string, service.ServiceOverview, error) {
@@ -158,10 +158,10 @@ func (h *Handler) overviewKeyboard(ctx context.Context, uid int64, filter servic
 	return markup(rows...)
 }
 
-func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid, chatID int64, code string) {
+func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid int64, resp *responder, code string) {
 	status, ok := serviceFilterFromCode(code)
 	if !ok {
-		h.send(ctx, b, chatID, "该按钮已失效，请发送 /services 重新打开。")
+		h.send(ctx, b, resp, "该按钮已失效，请发送 /services 重新打开。")
 		return
 	}
 	categories := mustCategories(ctx, h, uid)
@@ -180,21 +180,21 @@ func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid, chat
 		rows = append(rows, row)
 	}
 	rows = append(rows, pair(button("返回服务列表", cb("service", "list", code, "0", "0"))))
-	h.sendMarkup(ctx, b, chatID, "按类别筛选（当前状态："+statusLabel(status)+"）", markup(rows...))
+	h.sendMarkup(ctx, b, resp, "按类别筛选（当前状态："+statusLabel(status)+"）", markup(rows...))
 }
 
-func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user service.User, chatID, serviceID, after int64) {
+func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, serviceID, after int64) {
 	item, err := h.svc.GetService(ctx, user.ID, serviceID)
 	if err != nil {
-		h.send(ctx, b, chatID, objectStateMessage(err))
+		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
 	text, page, err := h.serviceDetailPage(ctx, user, item, after)
 	if err != nil {
-		h.send(ctx, b, chatID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendMarkup(ctx, b, chatID, text, h.serviceKeyboard(item, &page))
+	h.sendMarkup(ctx, b, resp, text, h.serviceKeyboard(item, &page))
 }
 
 func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item service.ServiceItem, after int64) (string, service.Page[service.Period], error) {
@@ -262,18 +262,18 @@ func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[s
 	return markup(rows...)
 }
 
-func (h *Handler) showPeriodDetail(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID int64) {
+func (h *Handler) showPeriodDetail(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, periodID int64) {
 	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
 	if err != nil {
-		h.send(ctx, b, chatID, objectStateMessage(err))
+		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
 	rules, err := h.svc.ListRules(ctx, user.ID, p.ID, 0, 100)
 	if err != nil {
-		h.send(ctx, b, chatID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendMarkup(ctx, b, chatID, periodDetail(p, len(rules.Data)), h.periodKeyboard(p))
+	h.sendMarkup(ctx, b, resp, periodDetail(p, len(rules.Data)), h.periodKeyboard(p))
 }
 
 func (h *Handler) periodKeyboard(p service.Period) *models.InlineKeyboardMarkup {
@@ -288,15 +288,15 @@ func (h *Handler) periodKeyboard(p service.Period) *models.InlineKeyboardMarkup 
 	return markup(rows...)
 }
 
-func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID, after int64) {
+func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, periodID, after int64) {
 	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
 	if err != nil {
-		h.send(ctx, b, chatID, objectStateMessage(err))
+		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
 	page, err := h.svc.ListRules(ctx, user.ID, periodID, after, pageSize)
 	if err != nil {
-		h.send(ctx, b, chatID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
 	var text strings.Builder
@@ -326,13 +326,13 @@ func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.U
 		pair(button("添加规则", cb("rule", "add", id(p.ID)))),
 		pair(button("返回有效期", cb("period", "view", id(p.ID)))),
 	)
-	h.sendMarkup(ctx, b, chatID, strings.TrimRight(text.String(), "\n"), markup(rows...))
+	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
-func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user service.User, chatID, ruleID int64) {
+func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, ruleID int64) {
 	r, err := h.svc.GetRule(ctx, user.ID, ruleID)
 	if err != nil {
-		h.send(ctx, b, chatID, objectStateMessage(err))
+		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
 	state := "已启用"
@@ -350,18 +350,18 @@ func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user serv
 		rows = append(rows, pair(button("启用规则", cb("rule", "enable_ask", id(r.ID)))))
 	}
 	rows = append(rows, pair(button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0"))))
-	h.sendMarkup(ctx, b, chatID, text, markup(rows...))
+	h.sendMarkup(ctx, b, resp, text, markup(rows...))
 }
 
-func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID, after int64) {
+func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, periodID, after int64) {
 	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
 	if err != nil {
-		h.send(ctx, b, chatID, objectStateMessage(err))
+		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
 	page, err := h.svc.ListRenewals(ctx, user.ID, periodID, after, pageSize)
 	if err != nil {
-		h.send(ctx, b, chatID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
 	var text strings.Builder
@@ -384,13 +384,13 @@ func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user servic
 		rows = append(rows, pair(button("下一页", cb("period", "renewals", id(p.ID), id(*page.NextCursor)))))
 	}
 	rows = append(rows, pair(button("返回有效期", cb("period", "view", id(p.ID)))))
-	h.sendMarkup(ctx, b, chatID, strings.TrimRight(text.String(), "\n"), markup(rows...))
+	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
-func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.User, chatID int64, filter string, after int64) {
+func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, filter string, after int64) {
 	page, err := h.svc.ListJobs(ctx, user.ID, filter, after, pageSize)
 	if err != nil {
-		h.send(ctx, b, chatID, serviceMessage(err))
+		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
 	var text strings.Builder
@@ -451,11 +451,11 @@ func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.Us
 		rows = append(rows, pair(button("下一页", cb("job", "list", code, id(*page.NextCursor)))))
 	}
 	rows = append(rows, pair(button("返回设置", cb("settings", "view"))))
-	h.sendMarkup(ctx, b, chatID, strings.TrimRight(text.String(), "\n"), markup(rows...))
+	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
-func (h *Handler) showSettings(ctx context.Context, b *telegram.Bot, user service.User, chatID int64) {
-	h.sendMarkup(ctx, b, chatID, h.settingsText(user), markup(
+func (h *Handler) showSettings(ctx context.Context, b *telegram.Bot, user service.User, resp *responder) {
+	h.sendMarkup(ctx, b, resp, h.settingsText(user), markup(
 		pair(button("修改时区", cb("settings", "timezone")), button("提醒任务", cb("job", "list", "1", "0"))),
 		pair(button("我的服务", cb("service", "list", "1", "0", "0")), button("帮助", cb("settings", "help"))),
 	))

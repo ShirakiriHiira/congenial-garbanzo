@@ -74,15 +74,65 @@ func pair(buttons ...models.InlineKeyboardButton) []models.InlineKeyboardButton 
 	return buttons
 }
 
+// responder routes one response sequence for an update. The first emission
+// replaces the callback message when editID is set; later emissions always send
+// new messages so a single update can never rewrite more than one message.
+type responder struct {
+	chatID int64
+	editID int
+	used   bool
+}
+
+// next reserves the target for the current emission.
+func (r *responder) next() (chatID int64, editID int) {
+	if r.used {
+		return r.chatID, 0
+	}
+	r.used = true
+	return r.chatID, r.editID
+}
+
+// editNotModified reports the one Telegram 400 that means the message already
+// shows the requested content.
+func editNotModified(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "message is not modified")
+}
+
+// noKeyboard removes the buttons of an edited message. Telegram treats an
+// omitted reply_markup as "keep the current keyboard", so clearing is explicit.
+var noKeyboard = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}
+
+// editMarkup leaves an edited message with exactly the buttons it should have,
+// including none when the new body has no buttons of its own.
+func editMarkup(keyboard *models.InlineKeyboardMarkup) models.ReplyMarkup {
+	if keyboard == nil {
+		return noKeyboard
+	}
+	return keyboard
+}
+
 // sendMarkup sends the text (splitting oversized bodies) with the keyboard
-// attached to the final chunk so Telegram always renders it with the body.
-func (h *Handler) sendMarkup(ctx context.Context, b *telegram.Bot, chatID int64, text string, keyboard *models.InlineKeyboardMarkup) {
+// attached to the final chunk so Telegram always renders it with the body. When
+// the responder still owes the callback message and the text fits in one chunk,
+// the message is rewritten instead of adding another bubble.
+func (h *Handler) sendMarkup(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup) {
 	if text == "" && keyboard == nil {
 		return
 	}
 	parts := chunks(text, 3800)
 	if len(parts) == 0 {
 		parts = []string{""}
+	}
+	chatID, editID := resp.next()
+	if editID > 0 && len(parts) == 1 {
+		body := parts[0]
+		if body == "" {
+			body = "请选择："
+		}
+		if _, err := b.EditMessageText(ctx, &telegram.EditMessageTextParams{ChatID: chatID, MessageID: editID, Text: body, ReplyMarkup: editMarkup(keyboard)}); err == nil || editNotModified(err) {
+			return
+		}
+		h.logger.Warn("telegram edit failed", "code", "telegram_error")
 	}
 	for i, chunk := range parts {
 		params := &telegram.SendMessageParams{ChatID: chatID, Text: chunk}

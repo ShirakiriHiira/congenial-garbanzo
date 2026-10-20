@@ -50,16 +50,16 @@ func (d draft) has(key string) bool   { _, ok := d.Values[key]; return ok }
 
 // wizard is one rendering/dispatch cycle for the caller's live dialog.
 type wizard struct {
-	h      *Handler
-	b      *telegram.Bot
-	user   service.User
-	chatID int64
-	d      service.Dialog
-	dr     draft
+	h    *Handler
+	b    *telegram.Bot
+	user service.User
+	resp *responder
+	d    service.Dialog
+	dr   draft
 }
 
-func (h *Handler) wizard(ctx context.Context, b *telegram.Bot, user service.User, d service.Dialog) wizard {
-	return wizard{h: h, b: b, user: user, chatID: d.ChatID, d: d, dr: parseDraft(d.Draft)}
+func (h *Handler) wizard(ctx context.Context, b *telegram.Bot, user service.User, d service.Dialog, resp *responder) wizard {
+	return wizard{h: h, b: b, user: user, resp: resp, d: d, dr: parseDraft(d.Draft)}
 }
 
 // persist writes the draft (and optionally a new step) without extending the
@@ -70,7 +70,7 @@ func (w *wizard) persist(ctx context.Context, step string) bool {
 	}
 	d, err := w.h.svc.UpdateDialogDraft(ctx, w.user.ID, w.d.Step, w.dr.encode())
 	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "保存对话进度失败："+serviceMessage(err)+"\n发送 /cancel 可取消当前流程。")
+		w.h.send(ctx, w.b, w.resp, "保存对话进度失败："+serviceMessage(err)+"\n发送 /cancel 可取消当前流程。")
 		return false
 	}
 	w.d = d
@@ -78,7 +78,7 @@ func (w *wizard) persist(ctx context.Context, step string) bool {
 }
 
 func (w *wizard) reply(ctx context.Context, text string, kbRows ...[]models.InlineKeyboardButton) {
-	w.h.sendMarkup(ctx, w.b, w.chatID, text, markup(kbRows...))
+	w.h.sendMarkup(ctx, w.b, w.resp, text, markup(kbRows...))
 }
 
 func (w *wizard) failure(ctx context.Context, text string, canBack, canSkip bool) {
@@ -87,10 +87,10 @@ func (w *wizard) failure(ctx context.Context, text string, canBack, canSkip bool
 
 func (w *wizard) cancel(ctx context.Context) {
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
-		w.h.send(ctx, w.b, w.chatID, serviceMessage(err))
+		w.h.send(ctx, w.b, w.resp, serviceMessage(err))
 		return
 	}
-	w.h.send(ctx, w.b, w.chatID, "已取消当前流程，未写入任何修改。\n\n"+shortHelp)
+	w.h.send(ctx, w.b, w.resp, "已取消当前流程，未写入任何修改。\n\n"+shortHelp)
 }
 
 func (w *wizard) skip(ctx context.Context) {
@@ -185,16 +185,16 @@ func (w *wizard) keep(ctx context.Context) {
 func (w *wizard) replace(ctx context.Context) {
 	command := w.dr.Pending
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
-		w.h.send(ctx, w.b, w.chatID, serviceMessage(err))
+		w.h.send(ctx, w.b, w.resp, serviceMessage(err))
 		return
 	}
 	switch {
 	case command == "":
-		w.h.send(ctx, w.b, w.chatID, "已取消当前流程。\n\n"+shortHelp)
+		w.h.send(ctx, w.b, w.resp, "已取消当前流程。\n\n"+shortHelp)
 	case strings.HasPrefix(command, "@start:"):
-		w.h.startIntent(ctx, w.b, w.user, w.chatID, strings.TrimPrefix(command, "@start:"))
+		w.h.startIntent(ctx, w.b, w.user, w.resp, strings.TrimPrefix(command, "@start:"))
 	default:
-		w.h.dispatchCommand(ctx, w.b, w.user, w.chatID, command, true)
+		w.h.dispatchCommand(ctx, w.b, w.user, w.resp, command, true)
 	}
 }
 
@@ -223,7 +223,7 @@ func (w *wizard) render(ctx context.Context) {
 
 func (w *wizard) abort(ctx context.Context, reason string) {
 	_, _ = w.h.svc.CancelDialog(ctx, w.user.ID)
-	w.h.send(ctx, w.b, w.chatID, reason+"，请重新打开对应详情后再操作。")
+	w.h.send(ctx, w.b, w.resp, reason+"，请重新打开对应详情后再操作。")
 }
 
 func (w *wizard) text(ctx context.Context, text string) {
@@ -295,7 +295,7 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 			w.failure(ctx, "未知操作，请重新打开流程。", false, false)
 			return
 		}
-		w.h.startServiceAdd(ctx, w.b, w.user, w.chatID)
+		w.h.startServiceAdd(ctx, w.b, w.user, w.resp)
 	case "new_category":
 		if w.d.Action != service.DialogServiceAdd || w.d.Step != "add_category" {
 			w.failure(ctx, "未知操作，请重新打开流程。", false, false)

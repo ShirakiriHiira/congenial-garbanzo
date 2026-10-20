@@ -34,7 +34,8 @@ func NewSender(b *telegram.Bot, logger *slog.Logger) *Sender {
 }
 
 // SendReminder sends one reminder with the two phase-one buttons and returns the
-// Telegram message ID. The error is always a *reminder.DeliveryError.
+// Telegram message ID. The buttons use the notify scope so a tap never rewrites
+// the delivered reminder body. The error is always a *reminder.DeliveryError.
 func (s *Sender) SendReminder(ctx context.Context, chatID int64, text string, jobID, periodID int64) (int64, error) {
 	if s.bot == nil {
 		return 0, &reminder.DeliveryError{Code: "unknown"}
@@ -44,8 +45,8 @@ func (s *Sender) SendReminder(ctx context.Context, chatID int64, text string, jo
 		ChatID: chatID,
 		Text:   text,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
-			{Text: "续期", CallbackData: cb("period", "renew", period)},
-			{Text: "查看详情", CallbackData: cb("period", "view", period)},
+			{Text: "续期", CallbackData: cb("notify", "renew", period)},
+			{Text: "查看详情", CallbackData: cb("notify", "view", period)},
 		}}},
 	})
 	if err != nil {

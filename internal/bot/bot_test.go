@@ -104,20 +104,25 @@ func (s *telegramStub) callsOf(method string) []call {
 	return out
 }
 
-func (s *telegramStub) lastText() string {
-	calls := s.callsOf("sendMessage")
-	if len(calls) == 0 {
-		return ""
+// lastMessageForm returns the most recent message-emitting call, whether it
+// created a message or rewrote an existing one.
+func (s *telegramStub) lastMessageForm() url.Values {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := len(s.calls) - 1; i >= 0; i-- {
+		if c := s.calls[i]; c.method == "sendMessage" || c.method == "editMessageText" {
+			return c.form
+		}
 	}
-	return calls[len(calls)-1].form.Get("text")
+	return nil
+}
+
+func (s *telegramStub) lastText() string {
+	return s.lastMessageForm().Get("text")
 }
 
 func (s *telegramStub) lastMarkup() string {
-	calls := s.callsOf("sendMessage")
-	if len(calls) == 0 {
-		return ""
-	}
-	return calls[len(calls)-1].form.Get("reply_markup")
+	return s.lastMessageForm().Get("reply_markup")
 }
 
 type clock struct{ t time.Time }
@@ -478,7 +483,7 @@ func TestSenderSuccessAndClassification(t *testing.T) {
 		t.Fatalf("form %+v", sent[0].form)
 	}
 	markup := sent[0].form.Get("reply_markup")
-	if !strings.Contains(markup, "v3:period:renew:9") || !strings.Contains(markup, "v3:period:view:9") {
+	if !strings.Contains(markup, "v3:notify:renew:9") || !strings.Contains(markup, "v3:notify:view:9") {
 		t.Fatalf("markup %q", markup)
 	}
 
@@ -538,7 +543,6 @@ func TestStoppedHandlerAcknowledgesCallbacksOnly(t *testing.T) {
 		t.Fatalf("stopped callback was not acknowledged: %+v", answers)
 	}
 }
-
 func TestStartInstallsMenuButtonOnce(t *testing.T) {
 	f := newFixture(t)
 	f.setMenuURL("https://example.test/app/")
@@ -610,5 +614,136 @@ func TestMenuButtonFailureIsLoggedAndRetried(t *testing.T) {
 	}
 	if n := f.count("SELECT count(*) FROM users WHERE menu_button_url IS NULL"); n != 0 {
 		t.Fatalf("menu button URL not stored: %d", n)
+	}
+}
+
+func TestCallbackEditsSourceMessage(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	f.createSIM("卡")
+	sends := len(f.stub.callsOf("sendMessage"))
+	f.callback(userA, cb("service", "list", "1", "0", "0"), nil)
+
+	edits := f.stub.callsOf("editMessageText")
+	if len(edits) != 1 {
+		t.Fatalf("edits = %d", len(edits))
+	}
+	if got := edits[0].form.Get("message_id"); got != "50" {
+		t.Fatalf("edited message %q", got)
+	}
+	if got := edits[0].form.Get("chat_id"); got != strconv.FormatInt(userA, 10) {
+		t.Fatalf("edited chat %q", got)
+	}
+	if text := edits[0].form.Get("text"); !strings.Contains(text, "我的服务") {
+		t.Fatalf("edited text %q", text)
+	}
+	if markup := edits[0].form.Get("reply_markup"); !strings.Contains(markup, "v3:service:view") {
+		t.Fatalf("edited markup %q", markup)
+	}
+	if n := len(f.stub.callsOf("sendMessage")); n != sends {
+		t.Fatalf("callback added %d messages", n-sends)
+	}
+}
+
+func TestResponderSendsOnceThenEdits(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	resp := &responder{chatID: userA, editID: 7}
+	f.h.sendMarkup(ctx, f.bot, resp, "第一次", nil)
+	edits := f.stub.callsOf("editMessageText")
+	if len(edits) != 1 || edits[0].form.Get("message_id") != "7" || edits[0].form.Get("text") != "第一次" {
+		t.Fatalf("first emission %+v", edits)
+	}
+	f.h.sendMarkup(ctx, f.bot, resp, "第二次", nil)
+	if n := len(f.stub.callsOf("editMessageText")); n != 1 {
+		t.Fatalf("second emission edited again: %d", n)
+	}
+	sends := f.stub.callsOf("sendMessage")
+	if len(sends) != 1 || sends[0].form.Get("text") != "第二次" {
+		t.Fatalf("second emission %+v", sends)
+	}
+}
+func TestEditsReplaceButtonsInsteadOfStrandingThem(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// A body without buttons must clear the callback message's keyboard,
+	// otherwise the old buttons survive a replaced body.
+	resp := &responder{chatID: userA, editID: 8}
+	f.h.send(ctx, f.bot, resp, "已取消当前流程")
+	edit := f.stub.callsOf("editMessageText")[0].form.Get("reply_markup")
+	if !strings.Contains(edit, `"inline_keyboard":[]`) {
+		t.Fatalf("text edit kept a keyboard: %q", edit)
+	}
+
+	// A body with buttons replaces them with exactly its own.
+	resp = &responder{chatID: userA, editID: 9}
+	f.h.sendMarkup(ctx, f.bot, resp, "我的服务", markup(pair(button("返回", cb("service", "list", "1", "0", "0")))))
+	edit = f.stub.callsOf("editMessageText")[1].form.Get("reply_markup")
+	if !strings.Contains(edit, "v3:service:list") || strings.Contains(edit, `"inline_keyboard":[]`) {
+		t.Fatalf("markup edit sent %q", edit)
+	}
+}
+
+func TestEditFallsBackWhenTargetGone(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	f.createSIM("卡")
+	f.stub.override("editMessageText", func(url.Values) string {
+		return `{"ok":false,"error_code":400,"description":"Bad Request: message to edit not found"}`
+	})
+	sends := len(f.stub.callsOf("sendMessage"))
+	f.callback(userA, cb("service", "list", "1", "0", "0"), nil)
+	if n := len(f.stub.callsOf("editMessageText")); n != 1 {
+		t.Fatalf("edits attempted = %d", n)
+	}
+	if n := len(f.stub.callsOf("sendMessage")); n != sends+1 {
+		t.Fatalf("fallback sends = %d", n-sends)
+	}
+	if text := f.stub.lastText(); !strings.Contains(text, "我的服务") {
+		t.Fatalf("fallback text %q", text)
+	}
+}
+
+func TestEditNotModifiedIsSilent(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	f.createSIM("卡")
+	f.stub.override("editMessageText", func(url.Values) string {
+		return `{"ok":false,"error_code":400,"description":"Bad Request: message is not modified"}`
+	})
+	sends := len(f.stub.callsOf("sendMessage"))
+	answers := len(f.stub.callsOf("answerCallbackQuery"))
+	f.callback(userA, cb("service", "list", "1", "0", "0"), nil)
+	if n := len(f.stub.callsOf("sendMessage")); n != sends {
+		t.Fatalf("unchanged content sent %d messages", n-sends)
+	}
+	if n := len(f.stub.callsOf("answerCallbackQuery")); n != answers+1 {
+		t.Fatalf("answer count %d", n-answers)
+	}
+}
+
+func TestReminderCardCallbacksDoNotEdit(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	f.createSIM("卡")
+	p := f.createPeriod(1, "项目", "date", "2027-01-31")
+
+	f.callback(userA, cb("notify", "view", id(p.ID)), nil)
+	if n := len(f.stub.callsOf("editMessageText")); n != 0 {
+		t.Fatalf("reminder view edited %d messages", n)
+	}
+	if text := f.stub.lastText(); !strings.Contains(text, "截止") {
+		t.Fatalf("reminder view text %q", text)
+	}
+
+	f.callback(userA, cb("notify", "renew", id(p.ID)), nil)
+	if n := len(f.stub.callsOf("editMessageText")); n != 0 {
+		t.Fatalf("reminder renew edited %d messages", n)
+	}
+	if got := serviceLookupString(t, f, "SELECT action FROM bot_dialogs"); got != service.DialogRenew {
+		t.Fatalf("renew dialog action %q", got)
+	}
+	if text := f.stub.lastText(); !strings.Contains(text, "截止") {
+		t.Fatalf("renew prompt %q", text)
 	}
 }

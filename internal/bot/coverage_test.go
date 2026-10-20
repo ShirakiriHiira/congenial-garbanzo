@@ -592,11 +592,13 @@ func TestCallbacksNeverCarrySensitiveDraftValues(t *testing.T) {
 	f.callback(userA, choiceCallback("field", "notes"), nil)
 	f.send(userA, "secret note text")
 	f.callback(userA, cb("dialog", "cancel"), nil)
-	for _, call := range f.stub.callsOf("sendMessage") {
-		markup := call.form.Get("reply_markup")
-		for _, secret := range []string{"+886900011122", "89860099998888777766", "secret note text"} {
-			if strings.Contains(markup, secret) {
-				t.Fatalf("callback leaked %q: %q", secret, markup)
+	for _, method := range []string{"sendMessage", "editMessageText"} {
+		for _, call := range f.stub.callsOf(method) {
+			markup := call.form.Get("reply_markup")
+			for _, secret := range []string{"+886900011122", "89860099998888777766", "secret note text"} {
+				if strings.Contains(markup, secret) {
+					t.Fatalf("%s leaked %q: %q", method, secret, markup)
+				}
 			}
 		}
 	}

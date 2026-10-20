@@ -16,17 +16,17 @@ import (
 
 // ---- service add -----------------------------------------------------------
 
-func (h *Handler) startServiceAdd(ctx context.Context, b *telegram.Bot, user service.User, chatID int64) {
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogServiceAdd, 0, service.DialogServiceAdd) {
+func (h *Handler) startServiceAdd(ctx context.Context, b *telegram.Bot, user service.User, resp *responder) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogServiceAdd, 0, service.DialogServiceAdd) {
 		return
 	}
 	d := service.Dialog{Step: "add_category", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogServiceAdd, d.Step, d)
+	start, err := h.svc.StartDialog(ctx, user.ID, resp.chatID, service.DialogServiceAdd, d.Step, d)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始添加服务："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始添加服务："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, start)
+	w := h.wizard(ctx, b, user, start, resp)
 	w.renderServiceAdd(ctx)
 }
 
@@ -176,13 +176,13 @@ func (w *wizard) confirmServiceAdd(ctx context.Context) {
 	}
 	item, err := w.h.svc.CreateService(ctx, w.user.ID, in)
 	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "创建失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "创建失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.showServiceDetail(ctx, w.b, w.user, w.chatID, item.ID, 0)
+	w.h.showServiceDetail(ctx, w.b, w.user, w.resp, item.ID, 0)
 }
 
 func opt(d draft, key string) *string {
@@ -250,22 +250,22 @@ func mustCategoriesOrErr(ctx context.Context, h *Handler, uid int64) ([]service.
 
 // ---- service edit ---------------------------------------------------------
 
-func (h *Handler) startServiceEdit(ctx context.Context, b *telegram.Bot, user service.User, chatID, serviceID int64) {
+func (h *Handler) startServiceEdit(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, serviceID int64) {
 	item, err := h.svc.GetService(ctx, user.ID, serviceID)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法编辑："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法编辑："+serviceMessage(err))
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogServiceEdit, serviceID, service.DialogServiceEdit+":"+id(serviceID)) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogServiceEdit, serviceID, service.DialogServiceEdit+":"+id(serviceID)) {
 		return
 	}
 	d := service.Dialog{ServiceID: &serviceID, Step: "edit_field", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogServiceEdit, d.Step, d)
+	start, err := h.svc.StartDialog(ctx, user.ID, resp.chatID, service.DialogServiceEdit, d.Step, d)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始编辑："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始编辑："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, start)
+	w := h.wizard(ctx, b, user, start, resp)
 	w.dr.set("kind", kindOf(item))
 	if !w.persist(ctx, "edit_field") {
 		return
@@ -477,37 +477,37 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	}
 	item, err := w.h.svc.UpdateService(ctx, w.user.ID, *w.d.ServiceID, patch)
 	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "修改失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "修改失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.showServiceDetail(ctx, w.b, w.user, w.chatID, item.ID, 0)
+	w.h.showServiceDetail(ctx, w.b, w.user, w.resp, item.ID, 0)
 }
 
 // ---- period add -----------------------------------------------------------
 
-func (h *Handler) startPeriodAdd(ctx context.Context, b *telegram.Bot, user service.User, chatID, serviceID int64) {
+func (h *Handler) startPeriodAdd(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, serviceID int64) {
 	item, err := h.svc.GetService(ctx, user.ID, serviceID)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法添加有效期："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法添加有效期："+serviceMessage(err))
 		return
 	}
 	if item.Status != "active" {
-		h.send(ctx, b, chatID, "服务已归档，请先恢复服务再添加有效期。")
+		h.send(ctx, b, resp, "服务已归档，请先恢复服务再添加有效期。")
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogPeriodAdd, serviceID, service.DialogPeriodAdd+":"+id(serviceID)) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogPeriodAdd, serviceID, service.DialogPeriodAdd+":"+id(serviceID)) {
 		return
 	}
 	d := service.Dialog{ServiceID: &serviceID, Step: "period_name", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogPeriodAdd, d.Step, d)
+	start, err := h.svc.StartDialog(ctx, user.ID, resp.chatID, service.DialogPeriodAdd, d.Step, d)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始添加有效期："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始添加有效期："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, start)
+	w := h.wizard(ctx, b, user, start, resp)
 	w.renderPeriodAdd(ctx)
 }
 
@@ -698,14 +698,14 @@ func (w *wizard) confirmPeriodAdd(ctx context.Context) {
 	in.Terms = termsFromDraft(w.dr)
 	p, err := w.h.svc.CreatePeriod(ctx, w.user.ID, *w.d.ServiceID, in)
 	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "创建有效期失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "创建有效期失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
 	rules, _ := w.h.svc.ListRules(ctx, w.user.ID, p.ID, 0, 1)
-	w.h.sendMarkup(ctx, w.b, w.chatID, periodDetail(p, len(rules.Data)), markup(
+	w.h.sendMarkup(ctx, w.b, w.resp, periodDetail(p, len(rules.Data)), markup(
 		pair(button("设置提醒", cb("rule", "add", id(p.ID))), button("立即续期", cb("period", "renew", id(p.ID)))),
 		pair(button("查看有效期", cb("period", "view", id(p.ID))), button("返回服务", cb("service", "view", id(p.ServiceID), "0"))),
 	))
@@ -713,29 +713,29 @@ func (w *wizard) confirmPeriodAdd(ctx context.Context) {
 
 // ---- period edit ----------------------------------------------------------
 
-func (h *Handler) startPeriodEdit(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID int64) {
+func (h *Handler) startPeriodEdit(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, periodID int64) {
 	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法编辑有效期："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法编辑有效期："+serviceMessage(err))
 		return
 	}
 	parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID)
 	if err != nil || parent.Status != "active" {
-		h.send(ctx, b, chatID, "服务已归档，请恢复服务后再编辑有效期。")
+		h.send(ctx, b, resp, "服务已归档，请恢复服务后再编辑有效期。")
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogPeriodEdit, periodID, service.DialogPeriodEdit+":"+id(periodID)) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogPeriodEdit, periodID, service.DialogPeriodEdit+":"+id(periodID)) {
 		return
 	}
 	cycle, revision := p.Cycle, p.Terms.Revision
 	serviceID := p.ServiceID
 	d := service.Dialog{ServiceID: &serviceID, PeriodID: &periodID, ExpectedCycle: &cycle, ExpectedTermsRevision: &revision, Step: "edit_field", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogPeriodEdit, d.Step, d)
+	start, err := h.svc.StartDialog(ctx, user.ID, resp.chatID, service.DialogPeriodEdit, d.Step, d)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始编辑有效期："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始编辑有效期："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, start)
+	w := h.wizard(ctx, b, user, start, resp)
 	w.renderPeriodEdit(ctx)
 }
 
@@ -923,7 +923,7 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		return
 	}
 	if w.d.ExpectedCycle == nil || p.Cycle != *w.d.ExpectedCycle {
-		w.h.send(ctx, w.b, w.chatID, "有效期已被其他操作更新，本次未写入；草稿仍保留。请取消后重新打开有效期查看最新状态。")
+		w.h.send(ctx, w.b, w.resp, "有效期已被其他操作更新，本次未写入；草稿仍保留。请取消后重新打开有效期查看最新状态。")
 		return
 	}
 	field := w.dr.Values["field"]
@@ -958,40 +958,40 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		if service.Code(err) == "conflict" {
 			hint = "保存失败：有效期已被其他操作更新，本次未写入。\n草稿仍保留；可取消后重新打开有效期查看最新状态。"
 		}
-		w.h.send(ctx, w.b, w.chatID, hint)
+		w.h.send(ctx, w.b, w.resp, hint)
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
 	rules, _ := w.h.svc.ListRules(ctx, w.user.ID, updated.ID, 0, 1)
-	w.h.sendMarkup(ctx, w.b, w.chatID, periodDetail(updated, len(rules.Data)), w.h.periodKeyboard(updated))
+	w.h.sendMarkup(ctx, w.b, w.resp, periodDetail(updated, len(rules.Data)), w.h.periodKeyboard(updated))
 }
 
 // ---- reminder rules -------------------------------------------------------
 
-func (h *Handler) startRuleAdd(ctx context.Context, b *telegram.Bot, user service.User, chatID, periodID int64) {
+func (h *Handler) startRuleAdd(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, periodID int64) {
 	p, err := h.svc.GetPeriod(ctx, user.ID, periodID)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法添加提醒规则："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法添加提醒规则："+serviceMessage(err))
 		return
 	}
 	parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID)
 	if err != nil || parent.Status != "active" {
-		h.send(ctx, b, chatID, "服务已归档，请恢复服务后再添加提醒规则。")
+		h.send(ctx, b, resp, "服务已归档，请恢复服务后再添加提醒规则。")
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogRuleAdd, periodID, service.DialogRuleAdd+":"+id(periodID)) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogRuleAdd, periodID, service.DialogRuleAdd+":"+id(periodID)) {
 		return
 	}
 	serviceID := p.ServiceID
 	d := service.Dialog{ServiceID: &serviceID, PeriodID: &periodID, Step: "rule_days", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogRuleAdd, d.Step, d)
+	start, err := h.svc.StartDialog(ctx, user.ID, resp.chatID, service.DialogRuleAdd, d.Step, d)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始提醒规则流程："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始提醒规则流程："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, start)
+	w := h.wizard(ctx, b, user, start, resp)
 	w.dr.set("enabled", "true")
 	if !w.persist(ctx, "rule_days") {
 		return
@@ -999,33 +999,33 @@ func (h *Handler) startRuleAdd(ctx context.Context, b *telegram.Bot, user servic
 	w.renderRule(ctx)
 }
 
-func (h *Handler) startRuleEdit(ctx context.Context, b *telegram.Bot, user service.User, chatID, ruleID int64) {
+func (h *Handler) startRuleEdit(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, ruleID int64) {
 	r, err := h.svc.GetRule(ctx, user.ID, ruleID)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法编辑规则："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法编辑规则："+serviceMessage(err))
 		return
 	}
 	p, err := h.svc.GetPeriod(ctx, user.ID, r.PeriodID)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法编辑规则："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法编辑规则："+serviceMessage(err))
 		return
 	}
 	parent, err := h.svc.GetService(ctx, user.ID, p.ServiceID)
 	if err != nil || parent.Status != "active" {
-		h.send(ctx, b, chatID, "服务已归档，请恢复服务后再编辑规则。")
+		h.send(ctx, b, resp, "服务已归档，请恢复服务后再编辑规则。")
 		return
 	}
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogRuleEdit, ruleID, service.DialogRuleEdit+":"+id(ruleID)) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogRuleEdit, ruleID, service.DialogRuleEdit+":"+id(ruleID)) {
 		return
 	}
 	revision := r.Revision
 	d := service.Dialog{ServiceID: &p.ServiceID, PeriodID: &r.PeriodID, RuleID: &ruleID, ExpectedRevision: &revision, Step: "rule_days", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogRuleEdit, d.Step, d)
+	start, err := h.svc.StartDialog(ctx, user.ID, resp.chatID, service.DialogRuleEdit, d.Step, d)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始规则编辑："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始规则编辑："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, start)
+	w := h.wizard(ctx, b, user, start, resp)
 	w.dr.set("days_before", strconv.Itoa(r.DaysBefore))
 	w.dr.set("reminder_time", r.ReminderTime)
 	w.dr.set("enabled", strconv.FormatBool(r.Enabled))
@@ -1117,7 +1117,7 @@ func (w *wizard) confirmRule(ctx context.Context) {
 	if w.d.Action == service.DialogRuleAdd {
 		rule, err := w.h.svc.CreateRule(ctx, w.user.ID, p.ID, service.RuleInput{DaysBefore: days, ReminderTime: w.dr.Values["reminder_time"], Enabled: &enabled})
 		if err != nil {
-			w.h.send(ctx, w.b, w.chatID, "创建规则失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+			w.h.send(ctx, w.b, w.resp, "创建规则失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
 			return
 		}
 		w.finishRule(ctx, rule, "提醒规则已创建。")
@@ -1134,7 +1134,7 @@ func (w *wizard) confirmRule(ctx context.Context) {
 		if service.Code(err) == "conflict" {
 			hint = "保存失败：规则已被修改，请取消后重新打开规则列表。\n草稿仍保留。"
 		}
-		w.h.send(ctx, w.b, w.chatID, hint)
+		w.h.send(ctx, w.b, w.resp, hint)
 		return
 	}
 	w.finishRule(ctx, rule, "提醒规则已更新。")
@@ -1149,20 +1149,20 @@ func (w *wizard) finishRule(ctx context.Context, rule service.Rule, label string
 		pair(button("查看规则", cb("rule", "view", id(rule.ID))), button("编辑规则", cb("rule", "edit", id(rule.ID)))),
 		pair(button("返回规则列表", cb("period", "rules", id(rule.PeriodID), "0"))),
 	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, text, markup(rows...))
+	w.h.sendMarkup(ctx, w.b, w.resp, text, markup(rows...))
 }
 
-func (h *Handler) startTimezone(ctx context.Context, b *telegram.Bot, user service.User, chatID int64) {
-	if h.conflictTarget(ctx, b, user, chatID, service.DialogTimezone, 0, service.DialogTimezone) {
+func (h *Handler) startTimezone(ctx context.Context, b *telegram.Bot, user service.User, resp *responder) {
+	if h.conflictTarget(ctx, b, user, resp, service.DialogTimezone, 0, service.DialogTimezone) {
 		return
 	}
 	d := service.Dialog{Step: "tz_value", Draft: "{}"}
-	start, err := h.svc.StartDialog(ctx, user.ID, chatID, service.DialogTimezone, d.Step, d)
+	start, err := h.svc.StartDialog(ctx, user.ID, resp.chatID, service.DialogTimezone, d.Step, d)
 	if err != nil {
-		h.send(ctx, b, chatID, "无法开始修改时区："+serviceMessage(err))
+		h.send(ctx, b, resp, "无法开始修改时区："+serviceMessage(err))
 		return
 	}
-	w := h.wizard(ctx, b, user, start)
+	w := h.wizard(ctx, b, user, start, resp)
 	w.renderTimezone(ctx)
 }
 
@@ -1218,12 +1218,12 @@ func (w *wizard) confirmTimezone(ctx context.Context) {
 	zone := w.dr.Values["tz"]
 	user, err := w.h.svc.SetTimezone(ctx, w.user.ID, zone)
 	if err != nil {
-		w.h.send(ctx, w.b, w.chatID, "修改时区失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "修改时区失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.sendMarkup(ctx, w.b, w.chatID, "时区已更新为 "+user.Timezone+"。\n仅日期截止已按新时区重算，精确时间的绝对时刻不变。",
+	w.h.sendMarkup(ctx, w.b, w.resp, "时区已更新为 "+user.Timezone+"。\n仅日期截止已按新时区重算，精确时间的绝对时刻不变。",
 		markup(pair(button("返回设置", cb("settings", "view")))))
 }

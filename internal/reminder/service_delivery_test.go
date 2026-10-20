@@ -166,8 +166,8 @@ func TestGenericServiceDeliveryRetainsCallbacksAndSentAcrossRestart(t *testing.T
 			t.Fatalf("callback keyboard: %+v", keyboard)
 		}
 		buttons := keyboard.InlineKeyboard[0]
-		id, err := strconv.ParseInt(strings.TrimPrefix(buttons[0].CallbackData, "v3:period:renew:"), 10, 64)
-		if err != nil || id != f.period.ID && id != second.ID || buttons[0].CallbackData != fmt.Sprintf("v3:period:renew:%d", id) || buttons[1].CallbackData != fmt.Sprintf("v3:period:view:%d", id) || seen[id] {
+		id, err := strconv.ParseInt(strings.TrimPrefix(buttons[0].CallbackData, "v3:notify:renew:"), 10, 64)
+		if err != nil || id != f.period.ID && id != second.ID || buttons[0].CallbackData != fmt.Sprintf("v3:notify:renew:%d", id) || buttons[1].CallbackData != fmt.Sprintf("v3:notify:view:%d", id) || seen[id] {
 			t.Fatalf("retained callback IDs: %+v", buttons)
 		}
 		seen[id] = true
