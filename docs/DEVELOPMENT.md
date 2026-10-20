@@ -113,6 +113,9 @@ cd web && npm run check && npm test && npm run build
 ```
 
 `scripts/dev-miniapp.sh` 会启动真实 Bot 轮询、调度器并设置菜单按钮；默认 `data/miniapp-test.db`，检测到生产库或已有业务数据时拒绝启动，除非 `MINIAPP_ALLOW_EXISTING_DB=1`。
+`MINIAPP_PUBLIC_URL` 有值时，`/start` 为用户私聊安装 `web_app` 菜单按钮（`setChatMenuButton`），并把已安装的 URL 记入 `users.menu_button_url`；同名 URL 不重复调用，失败只记录日志且下次 `/start` 重试。回形针附件菜单（`/setattach`）仅对广告平台大客户或测试服务器开放，因此不使用。
+
+按钮回调就地改写原消息（`editMessageText`），单条更新最多改写一条消息，后续输出仍发新消息；正文超过 3800 字时分段改发新消息。编辑时显式清空 `reply_markup`，否则 Telegram 会保留旧键盘，留下失效按钮。`message is not modified` 视为成功；其他编辑失败降级为新消息。提醒卡片的按钮走 `notify` 作用域，不携带编辑目标，因此提醒正文不被改写。
 
 ## 9. Git Commit Convention
 

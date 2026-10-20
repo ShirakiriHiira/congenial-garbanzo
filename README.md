@@ -86,6 +86,7 @@ Mini App 设置页可选 1 小时、6 小时、24 小时或 7 天；选择保存
 规则向导固定为“提前天数 → 提醒时间 → 确认保存”，新规则默认启用；预览页可一键“改为禁用/改为启用”，不需要额外选择步骤。
 向导动作固定为 `service_add`、`service_edit`、`period_add`、`period_edit`、`rule_add`、`rule_edit`、`renew`、`timezone`。每用户最多一个 15 分钟草稿；读取命令不清除草稿；发起另一个写流程前会要求“继续当前 / 取消并开始”。删除/归档/恢复均需二次确认并说明级联范围。
 配置 `MINIAPP_PUBLIC_URL` 时，`/start` 会为该用户私聊安装 Mini App 菜单按钮（输入框左侧，文本「打开」），成功一次后不再重复调用；Telegram 拒绝（例如 URL 未通过校验）只记录日志，`/start` 回复不受影响，此时可改用 BotFather `/setmenubutton` 手工设置。
+按钮回调就地改写原消息正文与键盘，不再堆叠新气泡；内容未变化时 Telegram 返回 `message is not modified`，视为成功。提醒卡片上的按钮使用独立 `notify` 作用域，点击后仍发新消息，提醒正文不会被改写。
 
 示例：
 
@@ -187,6 +188,7 @@ npm run build
 `./scripts/test-miniapp.sh`：需要 Go 1.27.1、Node 24、npm、curl。先检查 8088/5180 端口；使用 `cmd/miniapp-test`、临时 SQLite、真实 service/storage、假签名，不启动 Bot 轮询或 Telegram 投递，不读取 `.env` 或生产数据库。打开 `http://127.0.0.1:5180/app/`；Ctrl-C 删除临时数据库。仅该隔离进程提供 `GET /__test/init-data`；不得通过隧道公开测试端口。
 
 `./scripts/dev-miniapp.sh`：真实联调脚本，副作用明确：读取真实 Bot Token、启动 Bot 轮询与提醒调度器、通过 Telegram API 设置菜单按钮、启动 Go API（8080）与 Vite（5173），默认使用 `data/miniapp-test.db`。若目标路径是 `data/remind.db`，或已有数据库含任意 `service_items`/旧 `sims` 行，则拒绝启动；只有显式设置 `MINIAPP_ALLOW_EXISTING_DB=1` 才继续。该脚本不是纯前端测试，禁止指向生产库。
+三个子进程的日志实时带 `[api]`/`[vite]`/`[tunnel]` 前缀打到控制台，同时保留在脚本的日志目录。
 
 ## 文档索引
 
