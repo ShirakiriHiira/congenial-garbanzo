@@ -106,7 +106,7 @@ func runWith(ctx context.Context, cfg config.Config, now func() time.Time, optio
 		}
 		return errors.New("telegram identity unavailable: empty bot username")
 	}
-	handler := appbot.New(svc, me.Username, slog.Default())
+	handler := appbot.New(svc, me.Username, slog.Default(), cfg.MiniAppURL)
 	handler.Register(b)
 	scheduler := reminder.New(store, appbot.NewSender(b, slog.Default()), cfg.Allowed, cfg.ScanInterval, cfg.CatchupWindow, now)
 

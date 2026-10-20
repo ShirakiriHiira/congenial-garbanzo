@@ -75,7 +75,10 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 		}
 	}
 	switch name {
-	case "start", "help":
+	case "start":
+		h.ensureMenuButton(ctx, b, user, chatID)
+		h.helpMessage(ctx, b, user, chatID)
+	case "help":
 		h.helpMessage(ctx, b, user, chatID)
 	case "add":
 		if strings.TrimSpace(rest) != "" {

@@ -126,14 +126,15 @@ func (c *clock) now() time.Time          { return c.t }
 func (c *clock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
 type fixture struct {
-	t     *testing.T
-	stub  *telegramStub
-	store *storage.Store
-	svc   *service.Service
-	bot   *telegram.Bot
-	h     *Handler
-	clock *clock
-	path  string
+	t       *testing.T
+	stub    *telegramStub
+	store   *storage.Store
+	svc     *service.Service
+	bot     *telegram.Bot
+	h       *Handler
+	clock   *clock
+	path    string
+	menuURL string
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -162,7 +163,7 @@ func (f *fixture) open() {
 	allowed := func(id int64) bool { return id == userA || id == userB }
 	f.store = store
 	f.svc = service.New(store, "Asia/Taipei", allowed, f.clock.now)
-	f.h = New(f.svc, testBotName, slog.New(slog.DiscardHandler))
+	f.h = New(f.svc, testBotName, slog.New(slog.DiscardHandler), f.menuURL)
 	b, err := telegram.New(testToken,
 		telegram.WithServerURL(f.stub.server.URL),
 		telegram.WithSkipGetMe(),
@@ -181,6 +182,17 @@ func (f *fixture) restart() {
 	if err := f.store.Close(); err != nil {
 		f.t.Fatal(err)
 	}
+	f.open()
+}
+
+// setMenuURL reopens the handler with a different Mini App URL, which is how a
+// deployment change reaches an already-running bot.
+func (f *fixture) setMenuURL(url string) {
+	f.t.Helper()
+	if err := f.store.Close(); err != nil {
+		f.t.Fatal(err)
+	}
+	f.menuURL = url
 	f.open()
 }
 
@@ -524,5 +536,79 @@ func TestStoppedHandlerAcknowledgesCallbacksOnly(t *testing.T) {
 	answers := f.stub.callsOf("answerCallbackQuery")
 	if len(answers) != before+1 || !strings.Contains(answers[len(answers)-1].form.Get("text"), "重启") {
 		t.Fatalf("stopped callback was not acknowledged: %+v", answers)
+	}
+}
+
+func TestStartInstallsMenuButtonOnce(t *testing.T) {
+	f := newFixture(t)
+	f.setMenuURL("https://example.test/app/")
+	f.start(userA)
+
+	installs := f.stub.callsOf("setChatMenuButton")
+	if len(installs) != 1 {
+		t.Fatalf("menu button calls = %d", len(installs))
+	}
+	if got := installs[0].form.Get("chat_id"); got != strconv.FormatInt(userA, 10) {
+		t.Fatalf("menu button chat %q", got)
+	}
+	button := installs[0].form.Get("menu_button")
+	for _, want := range []string{`"type":"web_app"`, `"text":"打开"`, `"url":"https://example.test/app/"`} {
+		if !strings.Contains(button, want) {
+			t.Fatalf("menu button %q missing %q", button, want)
+		}
+	}
+	if got := f.serviceUser(userA).MenuButtonURL; got == nil || *got != "https://example.test/app/" {
+		t.Fatalf("stored menu button %v", got)
+	}
+
+	// A second /start must not repeat the API call.
+	f.start(userA)
+	if n := len(f.stub.callsOf("setChatMenuButton")); n != 1 {
+		t.Fatalf("repeat start installed again: %d", n)
+	}
+
+	// A different configured URL reinstalls exactly once.
+	f.setMenuURL("https://other.test/app/")
+	f.start(userA)
+	installs = f.stub.callsOf("setChatMenuButton")
+	if len(installs) != 2 {
+		t.Fatalf("changed URL installs = %d", len(installs))
+	}
+	if button := installs[1].form.Get("menu_button"); !strings.Contains(button, `"url":"https://other.test/app/"`) {
+		t.Fatalf("changed URL button %q", button)
+	}
+}
+
+func TestStartWithoutMiniAppURLSkipsMenuButton(t *testing.T) {
+	f := newFixture(t)
+	f.start(userA)
+	if calls := f.stub.callsOf("setChatMenuButton"); len(calls) != 0 {
+		t.Fatalf("menu button installed without MINIAPP_PUBLIC_URL: %d", len(calls))
+	}
+}
+
+func TestMenuButtonFailureIsLoggedAndRetried(t *testing.T) {
+	f := newFixture(t)
+	f.setMenuURL("https://example.test/app/")
+	f.stub.override("setChatMenuButton", func(url.Values) string {
+		return `{"ok":false,"error_code":400,"description":"Bad Request: BUTTON_URL_INVALID"}`
+	})
+	f.start(userA)
+	if n := f.count("SELECT count(*) FROM users WHERE menu_button_url IS NULL"); n != 1 {
+		t.Fatalf("failed install stored a URL: %d", n)
+	}
+	f.start(userA)
+	if n := len(f.stub.callsOf("setChatMenuButton")); n != 2 {
+		t.Fatalf("failed install was not retried: %d", n)
+	}
+
+	// Once Telegram accepts it the state is recorded.
+	f.stub.override("setChatMenuButton", func(url.Values) string { return `{"ok":true,"result":true}` })
+	f.start(userA)
+	if got := f.serviceUser(userA).MenuButtonURL; got == nil || *got != "https://example.test/app/" {
+		t.Fatalf("stored menu button %v", got)
+	}
+	if n := f.count("SELECT count(*) FROM users WHERE menu_button_url IS NULL"); n != 0 {
+		t.Fatalf("menu button URL not stored: %d", n)
 	}
 }

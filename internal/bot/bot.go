@@ -24,18 +24,20 @@ import (
 type Handler struct {
 	svc        *service.Service
 	logger     *slog.Logger
+	miniAppURL string
 	username   atomic.Value // string; the bot's @name without the leading @
 	stopped    atomic.Bool
 	registered atomic.Bool
 }
 
 // New builds the handler. username may be empty; Register discovers it via getMe
-// when available. A nil logger falls back to slog.Default.
-func New(svc *service.Service, username string, logger *slog.Logger) *Handler {
+// when available. A nil logger falls back to slog.Default. An empty miniAppURL
+// disables the Mini App menu button.
+func New(svc *service.Service, username string, logger *slog.Logger, miniAppURL string) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	h := &Handler{svc: svc, logger: logger}
+	h := &Handler{svc: svc, logger: logger, miniAppURL: miniAppURL}
 	h.SetUsername(username)
 	return h
 }
@@ -75,6 +77,33 @@ func (h *Handler) Register(b *telegram.Bot) {
 	}
 	if h.registered.CompareAndSwap(false, true) {
 		b.RegisterHandlerMatchFunc(func(*models.Update) bool { return true }, h.Handle)
+	}
+}
+
+// ensureMenuButton installs the Mini App menu button for this private chat once
+// per user and configured URL. Failures are logged with a fixed code and never
+// block the /start reply.
+func (h *Handler) ensureMenuButton(ctx context.Context, b *telegram.Bot, user service.User, chatID int64) {
+	if h.miniAppURL == "" {
+		return
+	}
+	if user.MenuButtonURL != nil && *user.MenuButtonURL == h.miniAppURL {
+		return
+	}
+	ok, err := b.SetChatMenuButton(ctx, &telegram.SetChatMenuButtonParams{
+		ChatID: chatID,
+		MenuButton: models.MenuButtonWebApp{
+			Type:   models.MenuButtonTypeWebApp,
+			Text:   "打开",
+			WebApp: models.WebAppInfo{URL: h.miniAppURL},
+		},
+	})
+	if err != nil || !ok {
+		h.logger.Warn("telegram menu button failed", "code", "telegram_error")
+		return
+	}
+	if err := h.svc.SetMenuButtonURL(ctx, user.ID, h.miniAppURL); err != nil {
+		h.logger.Warn("menu button state failed", "code", "dialog_error")
 	}
 }
 

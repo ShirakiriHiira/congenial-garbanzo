@@ -85,6 +85,7 @@ Mini App 设置页可选 1 小时、6 小时、24 小时或 7 天；选择保存
 
 规则向导固定为“提前天数 → 提醒时间 → 确认保存”，新规则默认启用；预览页可一键“改为禁用/改为启用”，不需要额外选择步骤。
 向导动作固定为 `service_add`、`service_edit`、`period_add`、`period_edit`、`rule_add`、`rule_edit`、`renew`、`timezone`。每用户最多一个 15 分钟草稿；读取命令不清除草稿；发起另一个写流程前会要求“继续当前 / 取消并开始”。删除/归档/恢复均需二次确认并说明级联范围。
+配置 `MINIAPP_PUBLIC_URL` 时，`/start` 会为该用户私聊安装 Mini App 菜单按钮（输入框左侧，文本「打开」），成功一次后不再重复调用；Telegram 拒绝（例如 URL 未通过校验）只记录日志，`/start` 回复不受影响，此时可改用 BotFather `/setmenubutton` 手工设置。
 
 示例：
 
