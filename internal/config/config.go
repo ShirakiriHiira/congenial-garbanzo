@@ -23,7 +23,10 @@ type Config struct {
 	AuthMaxAge    time.Duration
 	// Proxy overrides the Telegram API transport proxy. Nil keeps the standard
 	// library behavior of honoring HTTP_PROXY/HTTPS_PROXY/NO_PROXY.
-	Proxy      *url.URL
+	Proxy *url.URL
+	// MiniAppURL is the public https origin installed as the Telegram menu
+	// button; an empty value disables the Mini App entry point in the bot.
+	MiniAppURL string
 	AllowedIDs map[int64]bool
 	HTTPAddr   string
 	LogLevel   slog.Level
@@ -83,6 +86,10 @@ func Load(token string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	c.MiniAppURL, err = miniAppURL(setting("MINIAPP_PUBLIC_URL", ""))
+	if err != nil {
+		return Config{}, err
+	}
 	c.HTTPAddr = setting("HTTP_ADDR", "127.0.0.1:8080")
 
 	switch setting("LOG_LEVEL", "info") {
@@ -131,6 +138,27 @@ func proxyURL(raw string) (*url.URL, error) {
 		return nil, errors.New("TELEGRAM_API_PROXY must not contain a path, query, or fragment")
 	}
 	return parsed, nil
+}
+
+// miniAppURL validates the public Mini App URL installed as the Telegram menu
+// button. Every accepted spelling normalizes to one https .../app/ origin so the
+// stored form is comparable and never repeats the install call.
+func miniAppURL(raw string) (string, error) {
+	const invalid = "MINIAPP_PUBLIC_URL must be https://<host> or https://<host>/app"
+	if raw == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New(invalid)
+	}
+	switch parsed.Path {
+	case "", "/", "/app", "/app/":
+	default:
+		return "", errors.New(invalid)
+	}
+	return "https://" + parsed.Host + "/app/", nil
 }
 
 func duration(key, fallback string, minimum time.Duration) (time.Duration, error) {

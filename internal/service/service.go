@@ -64,8 +64,11 @@ type User struct {
 	Timezone          string
 	PrivateChatID     *int64
 	SessionTTLSeconds *int64
-	CreatedAt         int64
-	UpdatedAt         int64
+	// MenuButtonURL is the Mini App menu button URL already installed for this
+	// user's private chat; nil means no install has succeeded yet.
+	MenuButtonURL *string
+	CreatedAt     int64
+	UpdatedAt     int64
 }
 type SIMDetails struct {
 	CardType        string
@@ -329,7 +332,7 @@ func (s *Service) Authenticate(ctx context.Context, tid int64, privateChatID *in
 	if e != nil {
 		return u, ErrUnavailable
 	}
-	e = s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,created_at,updated_at FROM users WHERE telegram_user_id=?", tid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.CreatedAt, &u.UpdatedAt)
+	e = s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,menu_button_url,created_at,updated_at FROM users WHERE telegram_user_id=?", tid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.MenuButtonURL, &u.CreatedAt, &u.UpdatedAt)
 	return u, dbError(e)
 }
 func (s *Service) Me(ctx context.Context, uid int64) (User, error) {
@@ -337,15 +340,24 @@ func (s *Service) Me(ctx context.Context, uid int64) (User, error) {
 	if e := s.authorize(ctx, s.store.DB, uid); e != nil {
 		return u, e
 	}
-	e := s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,created_at,updated_at FROM users WHERE id=?", uid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.CreatedAt, &u.UpdatedAt)
+	e := s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,menu_button_url,created_at,updated_at FROM users WHERE id=?", uid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.MenuButtonURL, &u.CreatedAt, &u.UpdatedAt)
 	return u, dbError(e)
+}
+
+// SetMenuButtonURL records the menu button URL installed for this chat so /start
+// does not repeat the API call on every message.
+func (s *Service) SetMenuButtonURL(ctx context.Context, uid int64, url string) error {
+	return s.transaction(ctx, uid, func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(ctx, "UPDATE users SET menu_button_url=?,updated_at=? WHERE id=?", url, s.now().Unix(), uid)
+		return e
+	})
 }
 
 // UserByTelegramID looks up an existing account without creating one. The API
 // uses it to read the per-user session window before checking initData age.
 func (s *Service) UserByTelegramID(ctx context.Context, tid int64) (User, bool, error) {
 	var u User
-	e := s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,created_at,updated_at FROM users WHERE telegram_user_id=?", tid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.CreatedAt, &u.UpdatedAt)
+	e := s.store.DB.QueryRowContext(ctx, "SELECT id,telegram_user_id,timezone,private_chat_id,session_ttl_seconds,menu_button_url,created_at,updated_at FROM users WHERE telegram_user_id=?", tid).Scan(&u.ID, &u.TelegramUserID, &u.Timezone, &u.PrivateChatID, &u.SessionTTLSeconds, &u.MenuButtonURL, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(e, sql.ErrNoRows) {
 		return u, false, nil
 	}

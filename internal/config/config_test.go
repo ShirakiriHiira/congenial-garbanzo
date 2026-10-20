@@ -11,7 +11,7 @@ import (
 var configurationKeys = []string{
 	"DATABASE_PATH", "APP_TIMEZONE", "REMINDER_SCAN_INTERVAL",
 	"REMINDER_CATCHUP_WINDOW", "WEBAPP_AUTH_MAX_AGE",
-	"ALLOWED_TELEGRAM_USER_IDS", "HTTP_ADDR", "LOG_LEVEL", "TELEGRAM_API_PROXY",
+	"ALLOWED_TELEGRAM_USER_IDS", "HTTP_ADDR", "LOG_LEVEL", "TELEGRAM_API_PROXY", "MINIAPP_PUBLIC_URL",
 }
 
 func cleanEnvironment(t *testing.T) {
@@ -50,6 +50,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.Proxy != nil {
 		t.Fatal("proxy is set without TELEGRAM_API_PROXY")
+	}
+	if c.MiniAppURL != "" {
+		t.Fatalf("mini app URL = %q without MINIAPP_PUBLIC_URL", c.MiniAppURL)
 	}
 	if !c.Allowed(10001) || c.Allowed(10002) || c.Allowed(0) || c.Allowed(-1) {
 		t.Fatal("authorization does not enforce the configured allowlist")
@@ -130,6 +133,13 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"TELEGRAM_API_PROXY", "ftp://127.0.0.1:21"},
 		{"TELEGRAM_API_PROXY", "http://127.0.0.1:7890/path"},
 		{"TELEGRAM_API_PROXY", "http://127.0.0.1:7890?x=1"},
+		{"MINIAPP_PUBLIC_URL", "http://h"},
+		{"MINIAPP_PUBLIC_URL", "https://"},
+		{"MINIAPP_PUBLIC_URL", "https://h/other"},
+		{"MINIAPP_PUBLIC_URL", "https://h/app?x=1"},
+		{"MINIAPP_PUBLIC_URL", "https://h/app#f"},
+		{"MINIAPP_PUBLIC_URL", "https://u:p@h"},
+		{"MINIAPP_PUBLIC_URL", "not-a-url"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.key+"/"+tc.value, func(t *testing.T) {
@@ -161,6 +171,30 @@ func TestLoadProxy(t *testing.T) {
 			}
 			if c.Proxy == nil || c.Proxy.String() != want {
 				t.Fatalf("proxy = %v, want %s", c.Proxy, want)
+			}
+		})
+	}
+}
+
+func TestLoadMiniAppURL(t *testing.T) {
+	tests := map[string]string{
+		"https://remind.example.com":      "https://remind.example.com/app/",
+		"https://remind.example.com/":     "https://remind.example.com/app/",
+		"https://remind.example.com/app":  "https://remind.example.com/app/",
+		"https://remind.example.com/app/": "https://remind.example.com/app/",
+		"https://h:8443":                  "https://h:8443/app/",
+		"https://h:8443/app":              "https://h:8443/app/",
+	}
+	for raw, want := range tests {
+		t.Run(raw, func(t *testing.T) {
+			cleanEnvironment(t)
+			t.Setenv("MINIAPP_PUBLIC_URL", raw)
+			c, err := Load("test-token")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.MiniAppURL != want {
+				t.Fatalf("mini app URL = %q, want %q", c.MiniAppURL, want)
 			}
 		})
 	}

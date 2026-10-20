@@ -244,3 +244,22 @@ func TestSessionTTLPreference(t *testing.T) {
 		t.Fatalf("unknown user: %v %v", found, err)
 	}
 }
+func TestMenuButtonURLRoundTrip(t *testing.T) {
+	s, _, a, _ := setup(t)
+	ctx := context.Background()
+	if a.MenuButtonURL != nil {
+		t.Fatalf("fresh user has menu button URL %q", *a.MenuButtonURL)
+	}
+	const want = "https://remind.example.com/app/"
+	if err := s.SetMenuButtonURL(ctx, a.ID, want); err != nil {
+		t.Fatal(err)
+	}
+	me, err := s.Me(ctx, a.ID)
+	if err != nil || me.MenuButtonURL == nil || *me.MenuButtonURL != want {
+		t.Fatalf("me menu button: %+v %v", me, err)
+	}
+	existing, found, err := s.UserByTelegramID(ctx, a.TelegramUserID)
+	if err != nil || !found || existing.MenuButtonURL == nil || *existing.MenuButtonURL != want {
+		t.Fatalf("lookup menu button: %+v %v %v", existing, found, err)
+	}
+}

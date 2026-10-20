@@ -61,6 +61,7 @@ CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o ./bin/remind .
 | `HTTP_ADDR` | `127.0.0.1:8080` | HTTP 监听地址 |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `TELEGRAM_API_PROXY` | 空 | Telegram API 代理；空值沿用 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` |
+| `MINIAPP_PUBLIC_URL` | 空 | 设置后 `/start` 为用户私聊安装 Mini App 菜单按钮；只接受 `https://<host>` 或 `https://<host>/app` |
 | `MINIAPP_HTTP_PORT` | `8081` | Compose 中 web 容器的本机回环端口 |
 | `REMIND_DATA_VOLUME` | `sim-reminder-data` | Compose 命名卷 |
 
