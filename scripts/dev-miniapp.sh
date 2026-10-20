@@ -18,11 +18,17 @@ tunnel_log="$log_dir/tunnel.log"
 api_pid=""
 vite_pid=""
 tunnel_pid=""
+stream_pids=()
 
 cleanup() {
   trap - EXIT INT TERM
   for pid in "$tunnel_pid" "$vite_pid" "$api_pid"; do
     [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+  done
+  for pid in "${stream_pids[@]}"; do
+    # Each streamer starts its own process group; killing the group also stops
+    # the tail it spawned, which a plain kill of the subshell would orphan.
+    kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
   done
   wait 2>/dev/null || true
   echo "stopped; logs: $log_dir"
@@ -35,6 +41,17 @@ fail() {
     [[ -s "$log" ]] && { echo "--- $(basename "$log")" >&2; tail -n 20 "$log" >&2; }
   done
   exit 1
+}
+
+# stream_log mirrors one service log to the console with a fixed prefix while the
+# file keeps growing. Job control puts the pipeline in its own process group so
+# cleanup can stop the tail along with the reader.
+stream_log() {
+  local file="$1" prefix="$2"
+  set -m
+  ( tail -n +1 -F "$file" 2>/dev/null | while IFS= read -r line; do printf '%s %s\n' "$prefix" "$line"; done ) &
+  set +m
+  stream_pids+=("$!")
 }
 
 # main.go gives a non-empty .env token precedence over the environment; mirror it
@@ -157,6 +174,7 @@ for _ in $(seq 1 80); do
   sleep 0.25
 done
 [[ -n "$ready" ]] || fail "Go API did not become ready"
+stream_log "$api_log" '[api]'
 (cd web && exec ./node_modules/.bin/vite --host 127.0.0.1 --port 5173 --strictPort >"$vite_log" 2>&1) &
 vite_pid=$!
 ready=""
@@ -166,12 +184,14 @@ for _ in $(seq 1 80); do
   sleep 0.25
 done
 [[ -n "$ready" ]] || fail "Vite did not become ready"
+stream_log "$vite_log" '[vite]'
 
 if [[ -n "$public_url" ]]; then
   app_url="$public_base/app/"
 else
   cloudflared tunnel --url http://127.0.0.1:5173 --no-autoupdate >"$tunnel_log" 2>&1 &
   tunnel_pid=$!
+  stream_log "$tunnel_log" '[tunnel]'
   tunnel_url=""
   for _ in $(seq 1 120); do
     tunnel_url="$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$tunnel_log" | head -1 || true)"
@@ -236,6 +256,7 @@ Menu button: $menu_result (chat $chat_id)
 Open the private chat with your bot and tap the menu button.
 If it is not updated, run /setmenubutton in @BotFather and use the HTTPS URL above.
 The default initData lifetime is 5 minutes; close and reopen the Mini App to refresh it.
+Service logs stream with [api]/[vite]/[tunnel] prefixes and stay in the log directory.
 Press Ctrl-C to stop everything.
 EOF
 
