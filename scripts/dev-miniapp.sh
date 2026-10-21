@@ -163,7 +163,7 @@ echo "installing frontend dependencies…"
 (cd web && npm ci --silent) || fail "npm ci failed"
 
 echo "building Go API…"
-GOTOOLCHAIN=local go build -trimpath -o ./bin/remind . || fail "go build failed"
+GOTOOLCHAIN=go1.27.3+auto go build -trimpath -o ./bin/remind . || fail "go build failed"
 
 ./bin/remind >"$api_log" 2>&1 &
 api_pid=$!

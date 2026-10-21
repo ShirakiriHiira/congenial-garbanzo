@@ -73,7 +73,7 @@ echo "Installing frontend dependencies…"
 (cd web && npm ci --silent) || fail "npm ci failed"
 
 echo "Building isolated test API…"
-GOTOOLCHAIN=local go build -trimpath -o "$run_dir/miniapp-test" ./cmd/miniapp-test || fail "Go build failed"
+GOTOOLCHAIN=go1.27.3+auto go build -trimpath -o "$run_dir/miniapp-test" ./cmd/miniapp-test || fail "Go build failed"
 "$run_dir/miniapp-test" >"$run_dir/api.log" 2>&1 &
 api_pid=$!
 ready=""

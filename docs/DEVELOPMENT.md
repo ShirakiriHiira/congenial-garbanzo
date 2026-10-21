@@ -35,7 +35,7 @@ User 1─0..1 BotDialog
 
 ## 3. 技术栈与架构
 
-- Go 1.27.1、`net/http`、`database/sql`、`modernc.org/sqlite`。
+- Go 1.27.3、`net/http`、`database/sql`、`modernc.org/sqlite`。
 - Svelte 5 + Vite + TypeScript；原生 CSS、Telegram 主题与 BackButton。
 - 版本化 SQL migration；IANA 时区数据嵌入二进制。
 - 单实例、单写者：SQLite 连接池限制为一个连接；不引入分布式锁。
@@ -106,8 +106,8 @@ scripts/            本地测试/联调脚本
 常用命令：
 
 ```sh
-GOTOOLCHAIN=local go test ./...
-GOTOOLCHAIN=local go test -race ./...
+GOTOOLCHAIN=go1.27.3+auto go test ./...
+GOTOOLCHAIN=go1.27.3+auto go test -race ./...
 cd web && npm run check && npm test && npm run build
 ./scripts/test-miniapp.sh
 ```

@@ -30,7 +30,7 @@
 
 ## 技术栈
 
-Go 1.27.1、`net/http`、`database/sql`、`modernc.org/sqlite`（CGO 关闭可构建）、Telegram Bot SDK；Svelte 5 + Vite + TypeScript；版本化 SQL migration；测试使用 `go test`、`vitest` 与 `svelte-check`。
+Go 1.27.3、`net/http`、`database/sql`、`modernc.org/sqlite`（CGO 关闭可构建）、Telegram Bot SDK；Svelte 5 + Vite + TypeScript；版本化 SQL migration；测试使用 `go test`、`vitest` 与 `svelte-check`。
 
 ## 快速开始
 
@@ -39,7 +39,7 @@ cp .env.example .env
 chmod 600 .env
 # 在 .env 中设置 TELEGRAM_BOT_TOKEN，并导出白名单：
 export ALLOWED_TELEGRAM_USER_IDS='10001,10002'
-CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o ./bin/remind .
+CGO_ENABLED=0 GOTOOLCHAIN=go1.27.3+auto go build -trimpath -o ./bin/remind .
 ./bin/remind
 ```
 
@@ -174,9 +174,9 @@ curl -fsS http://127.0.0.1:8081/app/
 ## 开发与测试
 
 ```sh
-GOTOOLCHAIN=local go test ./...
-GOTOOLCHAIN=local go test -race ./...
-CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o /tmp/remind-clean .
+GOTOOLCHAIN=go1.27.3+auto go test ./...
+GOTOOLCHAIN=go1.27.3+auto go test -race ./...
+CGO_ENABLED=0 GOTOOLCHAIN=go1.27.3+auto go build -trimpath -o /tmp/remind-clean .
 
 cd web
 npm ci
@@ -185,7 +185,7 @@ npm test
 npm run build
 ```
 
-`./scripts/test-miniapp.sh`：需要 Go 1.27.1、Node 24、npm、curl。先检查 8088/5180 端口；使用 `cmd/miniapp-test`、临时 SQLite、真实 service/storage、假签名，不启动 Bot 轮询或 Telegram 投递，不读取 `.env` 或生产数据库。打开 `http://127.0.0.1:5180/app/`；Ctrl-C 删除临时数据库。仅该隔离进程提供 `GET /__test/init-data`；不得通过隧道公开测试端口。
+`./scripts/test-miniapp.sh`：需要 Go 1.27.3、Node 24、npm、curl。先检查 8088/5180 端口；使用 `cmd/miniapp-test`、临时 SQLite、真实 service/storage、假签名，不启动 Bot 轮询或 Telegram 投递，不读取 `.env` 或生产数据库。打开 `http://127.0.0.1:5180/app/`；Ctrl-C 删除临时数据库。仅该隔离进程提供 `GET /__test/init-data`；不得通过隧道公开测试端口。
 
 `./scripts/dev-miniapp.sh`：真实联调脚本，副作用明确：读取真实 Bot Token、启动 Bot 轮询与提醒调度器、通过 Telegram API 设置菜单按钮、启动 Go API（8080）与 Vite（5173），默认使用 `data/miniapp-test.db`。若目标路径是 `data/remind.db`，或已有数据库含任意 `service_items`/旧 `sims` 行，则拒绝启动；只有显式设置 `MINIAPP_ALLOW_EXISTING_DB=1` 才继续。该脚本不是纯前端测试，禁止指向生产库。
 三个子进程的日志实时带 `[api]`/`[vite]`/`[tunnel]` 前缀打到控制台，同时保留在脚本的日志目录。
