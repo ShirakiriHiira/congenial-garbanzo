@@ -72,20 +72,20 @@ func TestGenericServicesMixedCategoriesAndFilters(t *testing.T) {
 		{"expired", []int64{sub.ID}},
 		{"no_period", []int64{vps.ID}},
 	} {
-		page, err := s.ListServices(ctx, a.ID, 0, 100, ServiceFilter{Status: tc.status})
+		page, err := s.ServiceOverview(ctx, a.ID, 0, 100, ServiceFilter{Status: tc.status})
 		var ids []int64
-		for _, item := range page.Data {
-			ids = append(ids, item.ID)
+		for _, item := range page.Items.Data {
+			ids = append(ids, item.Service.ID)
 		}
 		if err != nil || !reflect.DeepEqual(ids, tc.want) {
 			t.Fatalf("status %q ids=%v want=%v err=%v", tc.status, ids, tc.want, err)
 		}
 	}
-	combined, err := s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{CategoryID: &domainID, Status: "due_soon"})
-	if err != nil || len(combined.Data) != 1 || combined.Data[0].ID != dom.ID || combined.Data[0].SIMDetails != nil {
+	combined, err := s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{CategoryID: &domainID, Status: "due_soon"})
+	if err != nil || len(combined.Items.Data) != 1 || combined.Items.Data[0].Service.ID != dom.ID || combined.Items.Data[0].Service.SIMDetails != nil {
 		t.Fatalf("combined %+v %v", combined, err)
 	}
-	if _, err = s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{CategoryID: &private.ID}); err != ErrNotFound {
+	if _, err = s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{CategoryID: &private.ID}); err != ErrNotFound {
 		t.Fatalf("foreign category: %v", err)
 	}
 	missing := int64(999999)
@@ -111,22 +111,22 @@ func TestGenericServicesMixedCategoriesAndFilters(t *testing.T) {
 	if _, err = s.UpdateService(ctx, a.ID, dom.ID, ServicePatch{Status: &status}); err != nil {
 		t.Fatal(err)
 	}
-	if page, err := s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{Status: "due_soon"}); err != nil || len(page.Data) != 0 {
+	if page, err := s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{Status: "due_soon"}); err != nil || len(page.Items.Data) != 0 {
 		t.Fatalf("archived due soon %+v %v", page, err)
 	}
 	archived, err := s.ServiceOverview(ctx, a.ID, 0, 1, ServiceFilter{Status: "archived"})
 	if err != nil || archived.Counts != (OverviewCounts{Total: 1, DueSoon: 1}) || len(archived.Items.Data) != 1 || archived.Items.Data[0].Service.ID != dom.ID {
 		t.Fatalf("archived matched set %+v %v", archived, err)
 	}
-	all, err := s.ListServices(ctx, a.ID, 0, 100, ServiceFilter{Status: "all"})
-	if err != nil || len(all.Data) != 5 {
+	all, err := s.ServiceOverview(ctx, a.ID, 0, 100, ServiceFilter{Status: "all"})
+	if err != nil || len(all.Items.Data) != 5 || all.Counts.Total != 5 {
 		t.Fatalf("all %+v %v", all, err)
 	}
 	active := "active"
 	if _, err = s.UpdateService(ctx, a.ID, dom.ID, ServicePatch{Status: &active}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{Status: "unknown"}); err != ErrInvalid {
+	if _, err = s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{Status: "unknown"}); err != ErrInvalid {
 		t.Fatalf("invalid status: %v", err)
 	}
 }
@@ -145,33 +145,33 @@ func TestServiceSearchEscapingAndFilterPagination(t *testing.T) {
 	}
 	stageTwoService(t, s, a.ID, category, "cloud 100x hostXab")
 	for _, query := range []string{"needle", "  needle  ", "100%", "_", `\`, `host_a\b`, "' OR 1=1 --"} {
-		page, err := s.ListServices(ctx, a.ID, 0, 1, ServiceFilter{Query: query, CategoryID: &category})
+		page, err := s.ServiceOverview(ctx, a.ID, 0, 1, ServiceFilter{Query: query, CategoryID: &category})
 		want := 1
 		if query == "' OR 1=1 --" {
 			want = 0
 		}
-		if err != nil || len(page.Data) != want || page.NextCursor != nil || (want == 1 && page.Data[0].ID != needle.ID) {
+		if err != nil || len(page.Items.Data) != want || page.Items.NextCursor != nil || (want == 1 && page.Items.Data[0].Service.ID != needle.ID) {
 			t.Fatalf("query %q page=%+v err=%v", query, page, err)
 		}
 	}
-	first, err := s.ListServices(ctx, a.ID, 0, 3, ServiceFilter{Query: "filler", CategoryID: &category})
-	if err != nil || len(first.Data) != 3 || first.NextCursor == nil {
+	first, err := s.ServiceOverview(ctx, a.ID, 0, 3, ServiceFilter{Query: "filler", CategoryID: &category})
+	if err != nil || len(first.Items.Data) != 3 || first.Items.NextCursor == nil {
 		t.Fatalf("first %+v %v", first, err)
 	}
-	second, err := s.ListServices(ctx, a.ID, *first.NextCursor, 3, ServiceFilter{Query: "filler", CategoryID: &category})
-	if err != nil || len(second.Data) != 3 || second.Data[0].ID <= *first.NextCursor {
+	second, err := s.ServiceOverview(ctx, a.ID, *first.Items.NextCursor, 3, ServiceFilter{Query: "filler", CategoryID: &category})
+	if err != nil || len(second.Items.Data) != 3 || second.Items.Data[0].Service.ID <= *first.Items.NextCursor {
 		t.Fatalf("second %+v %v", second, err)
 	}
-	for _, after := range []int64{0, *first.NextCursor, needle.ID} {
+	for _, after := range []int64{0, *first.Items.NextCursor, needle.ID} {
 		overview, err := s.ServiceOverview(ctx, a.ID, after, 1, ServiceFilter{Query: "filler", CategoryID: &category})
 		if err != nil || overview.Counts != (OverviewCounts{Total: 12, NoPeriod: 12}) {
 			t.Fatalf("full filtered counts after=%d %+v %v", after, overview, err)
 		}
 	}
-	if _, err = s.ListServices(ctx, a.ID, 0, 1, ServiceFilter{Query: strings.Repeat("界", 201)}); err != ErrInvalid {
+	if _, err = s.ServiceOverview(ctx, a.ID, 0, 1, ServiceFilter{Query: strings.Repeat("界", 201)}); err != ErrInvalid {
 		t.Fatalf("long query: %v", err)
 	}
-	if _, err = s.ListServices(ctx, a.ID, -1, 10, ServiceFilter{}); err != ErrInvalid {
+	if _, err = s.ServiceOverview(ctx, a.ID, -1, 10, ServiceFilter{}); err != ErrInvalid {
 		t.Fatalf("invalid cursor: %v", err)
 	}
 }
@@ -217,8 +217,8 @@ func TestServiceOverviewPrimaryAndCalendarFiltering(t *testing.T) {
 	stageTwoPeriod(t, s, a.ID, due.ID, "2027-03-14", nil)
 	notDue := stageTwoService(t, s, a.ID, category, "day eight")
 	stageTwoPeriod(t, s, a.ID, notDue.ID, "2027-03-15", nil)
-	page, err := s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{Status: "due_soon"})
-	if err != nil || len(page.Data) != 1 || page.Data[0].ID != due.ID {
+	page, err := s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{Status: "due_soon"})
+	if err != nil || len(page.Items.Data) != 1 || page.Items.Data[0].Service.ID != due.ID {
 		t.Fatalf("calendar filter %+v %v", page, err)
 	}
 }

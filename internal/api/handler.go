@@ -89,8 +89,11 @@ func (h *Handler) apiMux() *http.ServeMux {
 	m.HandleFunc("POST /services/overview", methodNotAllowed)
 	m.HandleFunc("PATCH /services/overview", methodNotAllowed)
 	m.HandleFunc("DELETE /services/overview", methodNotAllowed)
-	add("GET /services", h.listServices)
 	add("POST /services", h.createService)
+	// The service list endpoint was removed in favour of /services/overview.
+	// Register the removed method explicitly so it answers 404 instead of the
+	// generic 405 fallback the POST-only path would otherwise produce.
+	m.HandleFunc("GET /services", notFound)
 	add("GET /services/{id}", h.getService)
 	add("PATCH /services/{id}", h.patchService)
 	add("DELETE /services/{id}", h.deleteService)

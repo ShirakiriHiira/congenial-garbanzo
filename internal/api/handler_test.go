@@ -187,40 +187,61 @@ func TestAuthenticationOwnershipAndErrors(t *testing.T) {
 	request(t, h, "GET", "/api/v1/not-a-route", "", 101, 404)
 	request(t, h, "GET", "/api/v1/services/1.5", "", 101, 400)
 	for _, q := range []string{"limit=0", "limit=101", "limit=1&limit=2", "after_id=-1", "after_id=1.2", "after_id=%zz", "unknown=1", "limit=", "limit"} {
-		request(t, h, "GET", "/api/v1/services?"+q, "", 101, 400)
+		request(t, h, "GET", "/api/v1/services/overview?"+q, "", 101, 400)
 	}
 }
 func TestPaginationAndReadiness(t *testing.T) {
 	h, _, _ := setupAPI(t)
 	categories := resourceTestCategories(t, h, 101)
-	w := request(t, h, "GET", "/api/v1/services", "", 101, 200)
-	if !strings.Contains(w.Body.String(), `"data":[]`) || !strings.Contains(w.Body.String(), `"next_cursor":null`) {
+	// The service list endpoint was removed; the overview endpoint covers the
+	// same filtering and cursor pagination.
+	request(t, h, "GET", "/api/v1/services", "", 101, 404)
+	w := request(t, h, "GET", "/api/v1/services/overview", "", 101, 200)
+	if !strings.Contains(w.Body.String(), `"items":[]`) || !strings.Contains(w.Body.String(), `"next_cursor":null`) {
 		t.Fatalf("empty page=%s", w.Body.String())
 	}
 	for i := range 21 {
 		request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"card %d","category_id":"%s"}`, i, categories["vps"]), 101, 201)
 	}
-	w = request(t, h, "GET", "/api/v1/services", "", 101, 200)
+	w = request(t, h, "GET", "/api/v1/services/overview", "", 101, 200)
 	var first struct {
-		Data []map[string]any `json:"data"`
-		Next *string          `json:"next_cursor"`
+		Data struct {
+			Items []struct {
+				Service map[string]any `json:"service"`
+			} `json:"items"`
+		} `json:"data"`
+		Next *string `json:"next_cursor"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &first); err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Data) != 20 || first.Next == nil {
+	if len(first.Data.Items) != 20 || first.Next == nil {
 		t.Fatalf("first=%+v", first)
 	}
-	w = request(t, h, "GET", "/api/v1/services?after_id="+*first.Next, "", 101, 200)
+	w = request(t, h, "GET", "/api/v1/services/overview?after_id="+*first.Next, "", 101, 200)
 	var second struct {
-		Data []map[string]any `json:"data"`
-		Next *string          `json:"next_cursor"`
+		Data struct {
+			Items []struct {
+				Service map[string]any `json:"service"`
+			} `json:"items"`
+		} `json:"data"`
+		Next *string `json:"next_cursor"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &second); err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Data) != 1 || second.Next != nil {
+	if len(second.Data.Items) != 1 || second.Next != nil {
 		t.Fatalf("second=%+v", second)
+	}
+	// The second page must not repeat a service from the first page.
+	seen := map[string]bool{}
+	for _, item := range first.Data.Items {
+		seen[item.Service["id"].(string)] = true
+	}
+	for _, item := range second.Data.Items {
+		if seen[item.Service["id"].(string)] {
+			t.Fatalf("service repeated across pages: %v", item.Service["id"])
+		}
 	}
 	request(t, h, "GET", "/healthz", "", 0, 200)
 	request(t, h, "GET", "/readyz", "", 0, 200)

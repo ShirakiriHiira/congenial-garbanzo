@@ -110,7 +110,7 @@ Mini App 设置页可选 1 小时、6 小时、24 小时或 7 天；选择保存
 | GET, PATCH | `/me` | 当前用户；PATCH 时区或 `session_ttl_seconds` |
 | GET, POST | `/categories` | 列出/创建本人自定义类别 |
 | PATCH | `/categories/{id}` | 改本人自定义类别名 |
-| GET, POST | `/services` | 列表/创建 |
+| POST | `/services` | 创建 |
 | GET | `/services/overview` | counts + 服务/主有效期与全部有效期摘要分页 |
 | GET, PATCH | `/services/{id}` | 读取/更新；PATCH `status=archived` 归档，`status=active` 恢复 |
 | DELETE | `/services/{id}` | 永久级联删除 |

@@ -279,14 +279,6 @@ func (h *Handler) patchCategory(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.UpdateCategory(r.Context(), currentUser(r).ID, id, in.Name)
 	object(w, 200, categoryView(v), err)
 }
-func (h *Handler) listServices(w http.ResponseWriter, r *http.Request) {
-	limit, after, filter, ok := servicePagination(w, r)
-	if !ok {
-		return
-	}
-	v, err := h.service.ListServices(r.Context(), currentUser(r).ID, after, limit, filter)
-	page(w, v, err, serviceView)
-}
 func (h *Handler) serviceOverview(w http.ResponseWriter, r *http.Request) {
 	limit, after, filter, ok := servicePagination(w, r)
 	if !ok {

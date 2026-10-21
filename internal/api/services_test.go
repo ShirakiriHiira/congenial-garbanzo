@@ -156,6 +156,19 @@ func resourceTestIDs(t *testing.T, rows []map[string]any, want ...string) {
 	}
 }
 
+// resourceTestOverviewRows returns the service objects of an overview page so
+// a listing assertion keeps the meaning it had against the removed service
+// list endpoint.
+func resourceTestOverviewRows(t *testing.T, h http.Handler, query string, user int64) []map[string]any {
+	t.Helper()
+	summary := resourceTestSummary(t, h, query, user)
+	rows := make([]map[string]any, 0, len(summary.Data.Items))
+	for _, item := range summary.Data.Items {
+		rows = append(rows, item.Service)
+	}
+	return rows
+}
+
 func resourceTestCounts(t *testing.T, got map[string]int, total, due, expired, bare int) {
 	t.Helper()
 	want := map[string]int{"total": total, "due_soon": due, "expired": expired, "no_period": bare}
@@ -248,7 +261,7 @@ func TestServicesSIMAndGenericShareOneResource(t *testing.T) {
 			t.Fatalf("create/get mismatch: got=%v want=%v", got, item)
 		}
 	}
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services", 101).Data, allIDs...)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "", 101), allIDs...)
 	summary := resourceTestSummary(t, h, "", 101)
 	resourceTestCounts(t, summary.Data.Counts, 6, 0, 0, 6)
 	if len(summary.Data.Items) != 6 || summary.Next != nil {
@@ -290,7 +303,7 @@ func TestServicesCategoryOwnershipAndKinds(t *testing.T) {
 	foreignID := resourceTestID(t, other)
 	resourceTestError(t, h, "PATCH", "/api/v1/categories/"+foreignID, `{"name":"stolen"}`, 101, 404, "not_found")
 	resourceTestError(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"foreign category","category_id":%q}`, foreignID), 101, 404, "not_found")
-	for _, endpoint := range []string{"/api/v1/services", "/api/v1/services/overview"} {
+	for _, endpoint := range []string{"/api/v1/services/overview"} {
 		for _, categoryID := range []string{foreignID, "999999999"} {
 			resourceTestError(t, h, "GET", endpoint+"?category_id="+categoryID, "", 101, 404, "not_found")
 		}
@@ -388,8 +401,8 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 	resourceTestIDs(t, resourceTestList(t, h, path+"/periods", 101).Data, p1, p2)
 	archived := resourceTestObject(t, request(t, h, "PATCH", path, `{"status":"archived"}`, 101, 200))
 	resourceTestFields(t, archived, map[string]any{"id": id, "status": "archived", "name": "renamed server"})
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services", 101).Data)
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services?status=archived", 101).Data, id)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "", 101))
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?status=archived", 101), id)
 	restored := resourceTestObject(t, request(t, h, "PATCH", path, `{"status":"active"}`, 101, 200))
 	resourceTestFields(t, restored, map[string]any{"id": id, "status": "active", "identifier": "host-01"})
 	for _, period := range []struct {
@@ -399,13 +412,13 @@ func TestServicesLifecycleWithIndependentPeriods(t *testing.T) {
 		got := resourceTestObject(t, request(t, h, "GET", "/api/v1/periods/"+period.id, "", 101, 200))
 		resourceTestFields(t, got, map[string]any{"cycle": period.cycle, "service_id": id})
 	}
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services", 101).Data, id)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "", 101), id)
 	request(t, h, "DELETE", path, "", 101, 204)
 	for _, endpoint := range []string{path, path + "/periods", "/api/v1/periods/" + p1, "/api/v1/periods/" + p2, "/api/v1/periods/" + p1 + "/renewals", "/api/v1/rules/" + r1id, "/api/v1/rules/" + r2id} {
 		resourceTestError(t, h, "GET", endpoint, "", 101, 404, "not_found")
 	}
 	resourceTestError(t, h, "POST", path+"/delete", "", 101, 404, "not_found")
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services?status=all", 101).Data)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?status=all", 101))
 	resourceTestCounts(t, resourceTestSummary(t, h, "?status=all", 101).Data.Counts, 0, 0, 0, 0)
 }
 
@@ -422,7 +435,6 @@ func TestServicesAuthenticationAndOwnership(t *testing.T) {
 		{"GET", "/api/v1/categories", ""},
 		{"POST", "/api/v1/categories", `{"name":"new category"}`},
 		{"PATCH", "/api/v1/categories/" + cid, `{"name":"changed"}`},
-		{"GET", "/api/v1/services", ""},
 		{"GET", "/api/v1/services/overview", ""},
 		{"POST", "/api/v1/services", fmt.Sprintf(`{"name":"new service","category_id":%q}`, categories["domain"])},
 		{"GET", "/api/v1/services/" + id, ""},
@@ -438,7 +450,7 @@ func TestServicesAuthenticationAndOwnership(t *testing.T) {
 		}
 	}
 	resourceTestError(t, h, "GET", "/api/v1/periods/"+pid, "", 202, 404, "not_found")
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services?status=all", 202).Data)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?status=all", 202))
 	resourceTestCounts(t, resourceTestSummary(t, h, "?status=all", 202).Data.Counts, 0, 0, 0, 0)
 	got := resourceTestObject(t, request(t, h, "GET", "/api/v1/services/"+id, "", 101, 200))
 	if !reflect.DeepEqual(got, item) {
@@ -501,11 +513,6 @@ func TestServicesFilteringBeforePaginationAndOverviewCounts(t *testing.T) {
 	} {
 		t.Run(tc.status, func(t *testing.T) {
 			query := "?category_id=" + categories["vps"] + "&status=" + tc.status
-			page := resourceTestList(t, h, "/api/v1/services"+query, 101)
-			resourceTestIDs(t, page.Data, tc.ids...)
-			if page.Next != nil {
-				t.Fatalf("unexpected list cursor=%v", page.Next)
-			}
 			full := resourceTestSummary(t, h, query, 101)
 			resourceTestCounts(t, full.Data.Counts, len(tc.ids), tc.due, tc.expired, tc.bare)
 			var rows []map[string]any
@@ -537,8 +544,7 @@ func TestServicesFilteringBeforePaginationAndOverviewCounts(t *testing.T) {
 			}
 		})
 	}
-	defaultPage := resourceTestList(t, h, "/api/v1/services?category_id="+categories["vps"], 101)
-	resourceTestIDs(t, defaultPage.Data, dueID, expiredID, bareID, futureID)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?category_id="+categories["vps"], 101), dueID, expiredID, bareID, futureID)
 }
 
 func TestServicesSearchFindsLaterRowsAndTreatsWildcardsLiterally(t *testing.T) {
@@ -549,17 +555,17 @@ func TestServicesSearchFindsLaterRowsAndTreatsWildcardsLiterally(t *testing.T) {
 	}
 	target := resourceTestCreate(t, h, categories["domain"], "needle after the first page", 101)
 	id := resourceTestID(t, target)
-	initial := resourceTestList(t, h, "/api/v1/services", 101)
-	if len(initial.Data) != 20 || initial.Next == nil {
+	initial := resourceTestSummary(t, h, "", 101)
+	if len(initial.Data.Items) != 20 || initial.Next == nil {
 		t.Fatalf("initial page=%+v", initial)
 	}
-	for _, row := range initial.Data {
-		if row["id"] == id {
+	for _, item := range initial.Data.Items {
+		if item.Service["id"] == id {
 			t.Fatal("search fixture must be beyond initial page")
 		}
 	}
-	filtered := resourceTestList(t, h, "/api/v1/services?q=needle&limit=1", 101)
-	resourceTestIDs(t, filtered.Data, id)
+	filtered := resourceTestSummary(t, h, "?q=needle&limit=1", 101)
+	resourceTestIDs(t, []map[string]any{filtered.Data.Items[0].Service}, id)
 	if filtered.Next != nil {
 		t.Fatalf("filtered terminal cursor=%v", filtered.Next)
 	}
@@ -580,24 +586,19 @@ func TestServicesSearchFindsLaterRowsAndTreatsWildcardsLiterally(t *testing.T) {
 	} {
 		item := resourceTestCreate(t, h, categories["domain"], tc.name, 101)
 		query := "?q=" + url.QueryEscape(tc.query)
-		page := resourceTestList(t, h, "/api/v1/services"+query, 101)
-		resourceTestIDs(t, page.Data, resourceTestID(t, item))
-		if page.Next != nil {
-			t.Fatalf("literal search cursor=%v", page.Next)
-		}
 		overview := resourceTestSummary(t, h, query, 101)
 		resourceTestCounts(t, overview.Data.Counts, 1, 0, 0, 1)
 		if len(overview.Data.Items) != 1 || overview.Data.Items[0].Service["id"] != item["id"] {
 			t.Fatalf("literal search overview=%+v", overview)
 		}
 	}
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services?q=does-not-exist", 101).Data)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?q=does-not-exist", 101))
 	resourceTestCounts(t, resourceTestSummary(t, h, "?q=does-not-exist", 101).Data.Counts, 0, 0, 0, 0)
 }
 
 func TestServicesRejectUnknownRepeatedAndInvalidQueries(t *testing.T) {
 	h, _, _ := setupAPI(t)
-	for _, path := range []string{"/api/v1/services", "/api/v1/services/overview"} {
+	for _, path := range []string{"/api/v1/services/overview"} {
 		for _, query := range []string{
 			"unknown=1", "q=x&q=y", "category_id=1&category_id=2", "status=active&status=all", "limit=1&limit=2", "after_id=0&after_id=1",
 			"limit=0", "limit=101", "limit=-1", "limit=1.5", "limit=", "limit", "after_id=-1", "after_id=1.2", "after_id=", "after_id=9223372036854775808",
@@ -624,13 +625,12 @@ func TestServicesFieldValidationAndSearchableFields(t *testing.T) {
 	item := resourceTestObject(t, request(t, h, "POST", "/api/v1/services", fmt.Sprintf(`{"name":"cloud node","category_id":%q,"provider":"Nebula Cloud","identifier":"host-alpha","management_url":"https://console.example.com/host-alpha","notes":"ordinary notes"}`, categories["vps"]), 101, 201))
 	resourceTestFields(t, item, valid)
 	for _, query := range []string{"Nebula", "host-alpha"} {
-		page := resourceTestList(t, h, "/api/v1/services?q="+url.QueryEscape(query), 101)
-		resourceTestIDs(t, page.Data, resourceTestID(t, item))
+		resourceTestIDs(t, resourceTestOverviewRows(t, h, "?q="+url.QueryEscape(query), 101), resourceTestID(t, item))
 	}
 	titleOnly := resourceTestCreate(t, h, categories["vps"], "secret-bearing service", 101)
 	resourceTestObject(t, request(t, h, "PATCH", "/api/v1/services/"+resourceTestID(t, titleOnly), `{"notes":"needle in notes"}`, 101, 200))
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services?q=needle", 101).Data)
-	resourceTestIDs(t, resourceTestList(t, h, "/api/v1/services?q=console.example.com", 101).Data)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?q=needle", 101))
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?q=console.example.com", 101))
 	long := strings.Repeat("x", 2049)
 	for _, body := range []string{
 		fmt.Sprintf(`{"name":"","category_id":%q}`, categories["vps"]),

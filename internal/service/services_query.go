@@ -160,61 +160,6 @@ func (p primaryState) matches(filter string) bool {
 const servicePrimaryColumns = serviceColumns + `,p.id,p.expires_at,p.date_precision,p.local_expires_date`
 const servicePrimaryJoins = ` FROM service_items s LEFT JOIN sim_details d ON d.service_id=s.id LEFT JOIN service_periods p ON p.id=` + primaryPeriodSQL
 
-func (s *Service) ListServices(ctx context.Context, uid, after int64, limit int, filter ServiceFilter) (Page[ServiceItem], error) {
-	out := Page[ServiceItem]{Data: []ServiceItem{}}
-	if err := pageArgs(after, limit); err != nil {
-		return out, err
-	}
-	where, args, selectedStatus, err := serviceFilterQuery(uid, filter)
-	if err != nil {
-		return out, err
-	}
-	tx, loc, err := s.serviceRead(ctx, uid, filter)
-	if err != nil {
-		return out, err
-	}
-	defer tx.Rollback()
-	now := s.now()
-	query := "SELECT " + servicePrimaryColumns + servicePrimaryJoins + where + " AND s.id>? ORDER BY s.id"
-	args = append([]any{now.Unix(), now.Unix()}, args...)
-	args = append(args, after)
-	switch selectedStatus {
-	case "due_soon", "expired", "no_period":
-		// The primary period state is computed from calendar data, so SQL
-		// cannot safely apply LIMIT before those rows are classified.
-	default:
-		query += " LIMIT ?"
-		args = append(args, limit+1)
-	}
-	rows, err := tx.QueryContext(ctx, query, args...)
-	if err != nil {
-		return out, dbError(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var sr serviceRow
-		var p primarySummary
-		if err = rows.Scan(append(sr.args(), p.args()...)...); err != nil {
-			return out, dbError(err)
-		}
-		state, err := p.state(now, loc)
-		if err != nil {
-			return out, err
-		}
-		if !state.matches(selectedStatus) {
-			continue
-		}
-		out.Data = append(out.Data, sr.value())
-		if len(out.Data) > limit {
-			break
-		}
-	}
-	if err = rows.Err(); err != nil {
-		return out, dbError(err)
-	}
-	return finishPage(out.Data, limit, func(v ServiceItem) int64 { return v.ID }), nil
-}
-
 func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit int, filter ServiceFilter) (ServiceOverview, error) {
 	out := ServiceOverview{Items: Page[ServiceOverviewItem]{Data: []ServiceOverviewItem{}}}
 	if err := pageArgs(after, limit); err != nil {

@@ -40,14 +40,14 @@ func TestServicePrimaryOrdering(t *testing.T) {
 	if got := expired.Items.Data[0].PrimaryPeriod.ID; got != latest.ID {
 		t.Fatalf("expired primary %d want %d", got, latest.ID)
 	}
-	page, err := s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{Query: "ties"})
-	if err != nil || len(page.Data) != 2 {
+	page, err := s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{Query: "ties"})
+	if err != nil || len(page.Items.Data) != 2 {
 		t.Fatalf("search %+v %v", page, err)
 	}
 	if _, err = s.ServiceOverview(ctx, a.ID, 0, 101, ServiceFilter{}); err != ErrInvalid {
 		t.Fatalf("limit: %v", err)
 	}
-	if _, err = s.ListServices(ctx, a.ID, 0, 10, ServiceFilter{Query: string([]byte{0xff})}); err != ErrInvalid {
+	if _, err = s.ServiceOverview(ctx, a.ID, 0, 10, ServiceFilter{Query: string([]byte{0xff})}); err != ErrInvalid {
 		t.Fatalf("invalid utf8: %v", err)
 	}
 }
