@@ -327,8 +327,65 @@ var choiceCodes = func() map[string]map[string]string {
 	return out
 }()
 
-var serviceEditFields = []string{"name", "category_id", "provider", "identifier", "management_url", "notes", "card_type", "phone", "region", "iccid"}
-var periodEditFields = []string{"name", "expires", "starts", "terms"}
+// serviceEditField describes one editable service field. The order is part
+// of the callback contract: a choice encodes the field's index, so an
+// already-sent button must keep decoding to the same field.
+type serviceEditField struct {
+	key   string
+	label string
+	// button overrides the button text when it differs from the label.
+	button string
+	// simOnly marks a field that only exists for SIM services, genericOnly a
+	// field that only exists for every other category. A field with neither
+	// flag exists for every service.
+	simOnly     bool
+	genericOnly bool
+}
+
+var serviceEditFields = []serviceEditField{
+	{key: "name", label: "名称"},
+	{key: "category_id", label: "类别"},
+	{key: "provider", label: "服务商"},
+	{key: "identifier", label: "公开标识", genericOnly: true},
+	{key: "management_url", label: "管理链接"},
+	{key: "notes", label: "备注"},
+	{key: "card_type", label: "卡类型", button: "SIM 卡类型", simOnly: true},
+	{key: "phone", label: "号码", simOnly: true},
+	{key: "region", label: "国家/地区", simOnly: true},
+	{key: "iccid", label: "ICCID", simOnly: true},
+}
+
+// periodEditField describes one editable period field. The order is part of
+// the callback contract for the same reason as the service fields.
+type periodEditField struct {
+	key   string
+	label string
+}
+
+var periodEditFields = []periodEditField{
+	{key: "name", label: "名称"},
+	{key: "expires", label: "截止"},
+	{key: "starts", label: "开始时间"},
+	{key: "terms", label: "约定条款"},
+}
+
+// serviceEditFieldKeys returns the field keys in callback order.
+func serviceEditFieldKeys() []string {
+	keys := make([]string, 0, len(serviceEditFields))
+	for _, field := range serviceEditFields {
+		keys = append(keys, field.key)
+	}
+	return keys
+}
+
+// periodEditFieldKeys returns the field keys in callback order.
+func periodEditFieldKeys() []string {
+	keys := make([]string, 0, len(periodEditFields))
+	for _, field := range periodEditFields {
+		keys = append(keys, field.key)
+	}
+	return keys
+}
 
 // choiceCallback encodes a wizard option as v3:dialog:set:<key>:<code>.
 func choiceCallback(key, value string) string {
@@ -339,13 +396,13 @@ func choiceCallback(key, value string) string {
 	case "category":
 		return cb("dialog", "set", key, value)
 	case "field":
-		for i, field := range serviceEditFields {
+		for i, field := range serviceEditFieldKeys() {
 			if field == value {
 				return cb("dialog", "set", key, strconv.Itoa(i+1))
 			}
 		}
 	case "pfield":
-		for i, field := range periodEditFields {
+		for i, field := range periodEditFieldKeys() {
 			if field == value {
 				return cb("dialog", "set", key, strconv.Itoa(i+1))
 			}
@@ -368,17 +425,19 @@ func decodeChoice(key, code string) (string, bool) {
 		}
 		return code, true
 	case "field":
+		keys := serviceEditFieldKeys()
 		n, err := strconv.Atoi(code)
-		if err != nil || n < 1 || n > len(serviceEditFields) {
+		if err != nil || n < 1 || n > len(keys) {
 			return "", false
 		}
-		return serviceEditFields[n-1], true
+		return keys[n-1], true
 	case "pfield":
+		keys := periodEditFieldKeys()
 		n, err := strconv.Atoi(code)
-		if err != nil || n < 1 || n > len(periodEditFields) {
+		if err != nil || n < 1 || n > len(keys) {
 			return "", false
 		}
-		return periodEditFields[n-1], true
+		return keys[n-1], true
 	case "tz":
 		n, err := strconv.Atoi(code)
 		if err != nil || n < 1 || n > len(timezoneSamples) {
@@ -485,17 +544,19 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 }
 
 func validEditField(field string) bool {
-	switch field {
-	case "name", "category_id", "provider", "identifier", "management_url", "notes", "card_type", "phone", "region", "iccid":
-		return true
+	for _, candidate := range serviceEditFields {
+		if candidate.key == field {
+			return true
+		}
 	}
 	return false
 }
 
 func validPeriodField(field string) bool {
-	switch field {
-	case "name", "expires", "starts", "terms":
-		return true
+	for _, candidate := range periodEditFields {
+		if candidate.key == field {
+			return true
+		}
 	}
 	return false
 }

@@ -341,11 +341,12 @@ func (w *wizard) renderServiceEdit(ctx context.Context) {
 }
 
 func editLabel(field string) string {
-	return map[string]string{
-		"name": "名称", "provider": "服务商", "identifier": "公开标识", "management_url": "管理链接",
-		"notes": "备注", "card_type": "卡类型", "phone": "号码", "region": "国家/地区", "iccid": "ICCID",
-		"category_id": "类别",
-	}[field]
+	for _, candidate := range serviceEditFields {
+		if candidate.key == field {
+			return candidate.label
+		}
+	}
+	return field
 }
 
 func editValue(item service.ServiceItem, field string) string {
@@ -379,18 +380,22 @@ func editValue(item service.ServiceItem, field string) string {
 }
 
 func editFieldRows(item service.ServiceItem) [][]models.InlineKeyboardButton {
-	fields := [][2]string{{"name", "名称"}, {"category_id", "类别"}, {"provider", "服务商"}}
-	if item.SIMDetails == nil {
-		fields = append(fields, [2]string{"identifier", "公开标识"})
-	}
-	fields = append(fields, [2]string{"management_url", "管理链接"}, [2]string{"notes", "备注"})
-	if item.SIMDetails != nil {
-		fields = append(fields, [2]string{"card_type", "SIM 卡类型"}, [2]string{"phone", "号码"}, [2]string{"region", "国家/地区"}, [2]string{"iccid", "ICCID"})
-	}
 	rows := [][]models.InlineKeyboardButton{}
 	row := []models.InlineKeyboardButton{}
-	for _, f := range fields {
-		row = append(row, button(f[1], choiceCallback("field", f[0])))
+	for _, field := range serviceEditFields {
+		// A SIM service keeps its public facts in the SIM detail block, and a
+		// generic service has no SIM detail block at all.
+		if field.simOnly && item.SIMDetails == nil {
+			continue
+		}
+		if field.genericOnly && item.SIMDetails != nil {
+			continue
+		}
+		text := field.button
+		if text == "" {
+			text = field.label
+		}
+		row = append(row, button(text, choiceCallback("field", field.key)))
 		if len(row) == 2 {
 			rows = append(rows, row)
 			row = []models.InlineKeyboardButton{}
@@ -766,11 +771,19 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 	}
 	switch w.d.Step {
 	case "edit_field":
-		rows := [][]models.InlineKeyboardButton{
-			[]models.InlineKeyboardButton{button("名称", choiceCallback("pfield", "name")), button("截止", choiceCallback("pfield", "expires"))},
-			[]models.InlineKeyboardButton{button("开始时间", choiceCallback("pfield", "starts")), button("约定条款", choiceCallback("pfield", "terms"))},
-			[]models.InlineKeyboardButton{button("返回有效期", cb("period", "view", id(p.ID))), button("取消", cb("dialog", "cancel"))},
+		rows := [][]models.InlineKeyboardButton{}
+		row := []models.InlineKeyboardButton{}
+		for _, field := range periodEditFields {
+			row = append(row, button(field.label, choiceCallback("pfield", field.key)))
+			if len(row) == 2 {
+				rows = append(rows, row)
+				row = []models.InlineKeyboardButton{}
+			}
 		}
+		if len(row) > 0 {
+			rows = append(rows, row)
+		}
+		rows = append(rows, []models.InlineKeyboardButton{button("返回有效期", cb("period", "view", id(p.ID))), button("取消", cb("dialog", "cancel"))})
 		w.reply(ctx, "编辑有效期「"+periodName(p)+"」\n请选择要修改的字段；确认前不会写入。", rows...)
 	case "edit_value":
 		field := w.dr.Values["field"]
@@ -839,15 +852,10 @@ func periodEditPreviewText(p service.Period, d draft) string {
 }
 
 func periodFieldLabel(field string) string {
-	switch field {
-	case "name":
-		return "名称"
-	case "expires":
-		return "截止"
-	case "starts":
-		return "开始时间"
-	case "terms":
-		return "约定条款"
+	for _, candidate := range periodEditFields {
+		if candidate.key == field {
+			return candidate.label
+		}
 	}
 	return field
 }
