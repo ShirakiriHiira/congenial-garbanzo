@@ -19,7 +19,7 @@ func (h *Handler) conflictTarget(ctx context.Context, b *telegram.Bot, user serv
 		return false
 	}
 	if d.ChatID != resp.chatID {
-		h.send(ctx, b, resp, "当前流程已在其他会话中开始；请先发送 /cancel 取消。")
+		h.send(ctx, b, resp, otherChatMessage)
 		return true
 	}
 	same := d.Action == action
@@ -103,16 +103,7 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 			h.send(ctx, b, resp, "用法：/cancel（取消当前未完成流程）")
 			return
 		}
-		removed, err := h.svc.CancelDialog(ctx, user.ID)
-		if err != nil {
-			h.send(ctx, b, resp, serviceMessage(err))
-			return
-		}
-		if removed {
-			h.send(ctx, b, resp, "已取消当前流程，未写入任何修改。\n\n"+shortHelp)
-		} else {
-			h.send(ctx, b, resp, "当前没有进行中的对话。")
-		}
+		h.cancelDialog(ctx, b, user, resp, "当前没有进行中的对话。")
 	default:
 		// Unknown commands, including the removed ID-based forms, are
 		// read-only help responses.

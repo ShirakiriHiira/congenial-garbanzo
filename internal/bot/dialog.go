@@ -85,11 +85,9 @@ func (w *wizard) failure(ctx context.Context, text string, canBack, canSkip bool
 }
 
 func (w *wizard) cancel(ctx context.Context) {
-	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
-		w.h.send(ctx, w.b, w.resp, serviceMessage(err))
-		return
-	}
-	w.h.send(ctx, w.b, w.resp, "已取消当前流程，未写入任何修改。\n\n"+shortHelp)
+	// A cancel button only exists while a flow is running, so an absent flow
+	// is still reported as cancelled.
+	w.h.cancelDialog(ctx, w.b, w.user, w.resp, "")
 }
 
 func (w *wizard) skip(ctx context.Context) {

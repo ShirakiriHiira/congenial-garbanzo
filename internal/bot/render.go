@@ -206,13 +206,7 @@ func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item
 	}
 	fmt.Fprintf(&b, "管理链接：%s\n", textOrDash(item.ManagementURL))
 	if d := item.SIMDetails; d != nil {
-		kind := d.CardType
-		if kind == "physical_sim" {
-			kind = "实体 SIM"
-		} else if kind == "esim" {
-			kind = "eSIM"
-		}
-		fmt.Fprintf(&b, "卡类型：%s\n号码：%s\n国家/地区：%s\nICCID：%s\n", kind, textOrDash(d.PhoneNumber), textOrDash(d.CountryOrRegion), textOrDash(d.ICCID))
+		fmt.Fprintf(&b, "卡类型：%s\n号码：%s\n国家/地区：%s\nICCID：%s\n", cardTypeLabel(d.CardType), textOrDash(d.PhoneNumber), textOrDash(d.CountryOrRegion), textOrDash(d.ICCID))
 	}
 	if item.Notes != nil {
 		fmt.Fprintf(&b, "备注：%s\n", *item.Notes)

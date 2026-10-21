@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -141,12 +140,9 @@ func (w *wizard) textServiceAdd(ctx context.Context, text string) {
 		key := map[string]string{"add_provider": "provider", "add_identifier": "identifier", "add_notes": "notes", "add_phone": "phone", "add_region": "region", "add_iccid": "iccid"}[w.d.Step]
 		w.dr.set(key, value)
 	case "add_management_url":
-		if value != "" {
-			u, err := url.Parse(value)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-				w.stepError(ctx, "管理链接必须是无内嵌凭据的绝对 http(s) 地址。", true, true)
-				return
-			}
+		if err := validateManagementURL(value); err != nil {
+			w.stepError(ctx, err.Error(), true, true)
+			return
 		}
 		w.dr.set("management_url", value)
 	default:
@@ -425,12 +421,9 @@ func (w *wizard) textServiceEdit(ctx context.Context, text string) {
 			return
 		}
 	case "management_url":
-		if value != "" {
-			u, err := url.Parse(value)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-				w.stepError(ctx, "管理链接必须是无内嵌凭据的绝对 http(s) 地址。", true, false)
-				return
-			}
+		if err := validateManagementURL(value); err != nil {
+			w.stepError(ctx, err.Error(), true, false)
+			return
 		}
 	}
 	w.dr.set("value", value)

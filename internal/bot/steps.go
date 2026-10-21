@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -218,6 +219,19 @@ func normalizeDateTime(value, zone string) (string, error) {
 		return "", fail(dateTimeHelp)
 	}
 	return value, nil
+}
+
+// validateManagementURL accepts an absolute http(s) URL without embedded
+// credentials. An empty value clears the field and is always accepted.
+func validateManagementURL(value string) error {
+	if value == "" {
+		return nil
+	}
+	u, err := url.Parse(value)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return fail("管理链接必须是无内嵌凭据的绝对 http(s) 地址。")
+	}
+	return nil
 }
 
 // normalizePrecisionValue validates the shared date/datetime contract locally

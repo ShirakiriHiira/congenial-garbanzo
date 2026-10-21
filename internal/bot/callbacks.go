@@ -89,15 +89,7 @@ func (h *Handler) handleCallbackV3(ctx context.Context, b *telegram.Bot, cq *mod
 func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, v3 callbackV3) string {
 	switch v3.action {
 	case "cancel":
-		if removed, err := h.svc.CancelDialog(ctx, user.ID); err != nil {
-			h.send(ctx, b, resp, serviceMessage(err))
-			return serviceMessage(err)
-		} else if !removed {
-			h.send(ctx, b, resp, "当前没有进行中的流程")
-			return "当前没有进行中的流程"
-		}
-		h.send(ctx, b, resp, "已取消当前流程，未写入任何修改。\n\n"+shortHelp)
-		return "已取消"
+		return h.cancelDialog(ctx, b, user, resp, "当前没有进行中的流程")
 	case "new_service":
 		h.startServiceAdd(ctx, b, user, resp)
 		return "请选择类别"
@@ -117,7 +109,7 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 		return message
 	}
 	if d.ChatID != resp.chatID {
-		h.send(ctx, b, resp, "当前流程已在其他会话中开始；请先发送 /cancel 取消。")
+		h.send(ctx, b, resp, otherChatMessage)
 		return "当前流程已在其他会话中开始；请先发送 /cancel 取消"
 	}
 	w := h.wizard(ctx, b, user, d, resp)

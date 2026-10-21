@@ -107,6 +107,12 @@ func renewalText(ctx context.Context, svc *service.Service, user service.User, r
 // shortHelp is the terse pointer shown after a dialog ends.
 const shortHelp = "常用入口：/services、/add、/reminders、/settings、/help。"
 
+// cancelDialogText is the shared reply for a cancelled wizard.
+const cancelDialogText = "已取消当前流程，未写入任何修改。\n\n" + shortHelp
+
+// otherChatMessage is the shared reply for a dialog that another session owns.
+const otherChatMessage = "当前流程已在其他会话中开始；请先发送 /cancel 取消。"
+
 func helpText(zone string) string {
 	return `服务与订阅有效期提醒机器人
 
