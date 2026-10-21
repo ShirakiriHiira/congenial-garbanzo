@@ -17,6 +17,21 @@ import (
 type stepSpec struct {
 	key      string
 	optional bool
+	// next and prev override the registry order for steps whose successor or
+	// predecessor depends on the user's earlier choice.
+	next string
+	prev string
+	// fieldNext and fieldPrev map the user's selected field to the successor
+	// or predecessor step of a branching flow.
+	fieldNext map[string]string
+	fieldPrev map[string]string
+}
+
+// ruleWizardSteps is the shared step sequence of both rule flows.
+var ruleWizardSteps = []stepSpec{
+	{key: "rule_days"},
+	{key: "rule_time"},
+	{key: "rule_preview"},
 }
 
 var wizardSequences = map[string][]stepSpec{
@@ -56,189 +71,94 @@ var wizardSequences = map[string][]stepSpec{
 		{key: "period_preview"},
 	},
 	service.DialogPeriodEdit: {
-		{key: "edit_field"},
-		{key: "edit_value"},
-		{key: "period_precision"},
-		{key: "period_expires"},
-		{key: "terms_mode"},
-		{key: "terms_interval"},
-		{key: "terms_amount", optional: true},
-		{key: "edit_preview"},
+		{key: "edit_field",
+			fieldNext: map[string]string{
+				"name":    "edit_value",
+				"starts":  "edit_value",
+				"expires": "period_precision",
+				"terms":   "terms_mode",
+			},
+		},
+		{key: "edit_value", next: "edit_preview", prev: "edit_field"},
+		{key: "period_precision", prev: "edit_field"},
+		{key: "period_expires", next: "edit_preview", prev: "period_precision"},
+		{key: "terms_mode", prev: "edit_field"},
+		{key: "terms_interval", prev: "terms_mode"},
+		{key: "terms_amount", optional: true, prev: "terms_interval"},
+		{key: "edit_preview",
+			fieldPrev: map[string]string{
+				"name":    "edit_value",
+				"starts":  "edit_value",
+				"expires": "period_expires",
+				"terms":   "terms_mode",
+			},
+		},
 	},
-	service.DialogRuleAdd: {
-		{key: "rule_days"},
-		{key: "rule_time"},
-		{key: "rule_preview"},
-	},
-	service.DialogRuleEdit: {
-		{key: "rule_days"},
-		{key: "rule_time"},
-		{key: "rule_preview"},
-	},
+	service.DialogRuleAdd:  ruleWizardSteps,
+	service.DialogRuleEdit: ruleWizardSteps,
 	service.DialogTimezone: {
 		{key: "tz_value"},
 		{key: "tz_preview"},
 	},
 }
 
-// nextStep follows the fixed sequence and the code-defined branches for
-// SIM-only fields, period-edit fields, and recurring terms. It never derives a
-// step name from user input.
+// nextStep returns the step that follows the given one in the action's
+// registry. A step that is not applicable to the current draft is skipped, so
+// the registry order alone defines the flow. It never derives a step name
+// from user input.
 func nextStep(action string, d draft, step string) string {
-	switch action {
-	case service.DialogPeriodAdd:
-		switch step {
-		case "period_name":
-			return "period_precision"
-		case "period_precision":
-			return "period_expires"
-		case "period_expires":
-			return "period_starts"
-		case "period_starts":
-			return "terms_mode"
-		case "terms_mode":
-			if d.Values["mode"] == "recurring" {
-				return "terms_interval"
-			}
-			return "period_preview"
-		case "terms_interval":
-			return "terms_amount"
-		case "terms_amount":
-			return "period_preview"
-		}
-		return ""
-	case service.DialogPeriodEdit:
-		switch step {
-		case "edit_field":
-			switch d.Values["field"] {
-			case "name", "starts":
-				return "edit_value"
-			case "expires":
-				return "period_precision"
-			case "terms":
-				return "terms_mode"
-			}
-			return ""
-		case "edit_value", "period_expires":
-			return "edit_preview"
-		case "period_precision":
-			return "period_expires"
-		case "terms_mode":
-			if d.Values["mode"] == "recurring" {
-				return "terms_interval"
-			}
-			return "edit_preview"
-		case "terms_interval":
-			return "terms_amount"
-		case "terms_amount":
-			return "edit_preview"
-		}
-		return ""
-	case service.DialogServiceAdd:
-		switch step {
-		case "add_category":
-			return "add_name"
-		case "add_name":
-			if d.Values["kind"] == "sim" {
-				return "add_card_type"
-			}
-			return "add_provider"
-		case "add_card_type":
-			return "add_provider"
-		case "add_provider":
-			if d.Values["kind"] == "sim" {
-				return "add_management_url"
-			}
-			return "add_identifier"
-		case "add_identifier":
-			return "add_management_url"
-		case "add_management_url":
-			if d.Values["kind"] == "sim" {
-				return "add_phone"
-			}
-			return "add_notes"
-		case "add_phone":
-			return "add_region"
-		case "add_region":
-			return "add_iccid"
-		case "add_iccid":
-			return "add_notes"
-		case "add_notes":
-			return "add_preview"
-		}
-		return ""
-	case service.DialogServiceEdit:
-		if step == "edit_field" {
-			return "edit_value"
-		}
-		if step == "edit_value" {
-			return "edit_preview"
-		}
-		return ""
-	}
 	specs := wizardSequences[action]
 	for i, spec := range specs {
 		if spec.key != step {
 			continue
+		}
+		if len(spec.fieldNext) > 0 {
+			target, ok := spec.fieldNext[d.Values["field"]]
+			if !ok {
+				return ""
+			}
+			return target
+		}
+		if spec.next != "" {
+			return spec.next
 		}
 		for _, next := range specs[i+1:] {
 			if applies(d, next.key) {
 				return next.key
 			}
 		}
+		return ""
 	}
 	return ""
 }
 
+// previousStep returns the step that precedes the given one in the action's
+// registry, skipping steps that do not apply to the current draft.
 func previousStep(action string, d draft, step string) string {
-	switch action {
-	case service.DialogPeriodAdd:
-		prev := map[string]string{
-			"period_precision": "period_name", "period_expires": "period_precision",
-			"period_starts": "period_expires", "terms_mode": "period_starts",
-			"terms_interval": "terms_mode", "terms_amount": "terms_interval",
-			"period_preview": "terms_amount",
+	specs := wizardSequences[action]
+	for i, spec := range specs {
+		if spec.key != step {
+			continue
 		}
-		if step == "period_preview" && d.Values["mode"] != "recurring" {
-			return "terms_mode"
+		if len(spec.fieldPrev) > 0 {
+			target, ok := spec.fieldPrev[d.Values["field"]]
+			if !ok {
+				return ""
+			}
+			if d.Values["field"] == "terms" && d.Values["mode"] == "recurring" {
+				return "terms_amount"
+			}
+			return target
 		}
-		return prev[step]
-	case service.DialogPeriodEdit:
-		switch step {
-		case "edit_value", "period_precision", "terms_mode":
-			return "edit_field"
-		case "period_expires":
-			return "period_precision"
-		case "terms_interval":
-			return "terms_mode"
-		case "terms_amount":
-			return "terms_interval"
-		case "edit_preview":
-			switch d.Values["field"] {
-			case "name", "starts":
-				return "edit_value"
-			case "expires":
-				return "period_expires"
-			case "terms":
-				if d.Values["mode"] == "recurring" {
-					return "terms_amount"
-				}
-				return "terms_mode"
+		if spec.prev != "" {
+			return spec.prev
+		}
+		for j := i - 1; j >= 0; j-- {
+			if applies(d, specs[j].key) {
+				return specs[j].key
 			}
 		}
 		return ""
-	case service.DialogServiceAdd, service.DialogServiceEdit, service.DialogRuleAdd, service.DialogRuleEdit, service.DialogRenew, service.DialogTimezone:
-		specs := wizardSequences[action]
-		for i, spec := range specs {
-			if spec.key == step {
-				for j := i - 1; j >= 0; j-- {
-					if applies(d, specs[j].key) {
-						return specs[j].key
-					}
-				}
-				return ""
-			}
-		}
 	}
 	return ""
 }
