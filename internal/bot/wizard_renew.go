@@ -53,26 +53,26 @@ func (w *wizard) renderRenew(ctx context.Context) {
 		item.Name, periodName(p), periodExpiry(p), termsText(p.Terms))
 	switch w.d.Step {
 	case "renew_precision":
-		w.reply(ctx, head+"\n\n新截止使用哪种方式？", pair(
+		w.reply(ctx, head+"\n\n新截止使用哪种方式？", []models.InlineKeyboardButton{
 			button("仅日期", choiceCallback("precision", "date")),
 			button("精确时间", choiceCallback("precision", "datetime")),
-		), pair(button("取消", cb("dialog", "cancel"))))
+		}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	case "renew_expiration":
 		w.reply(ctx, "输入新截止（必须晚于当前截止和今天；"+precisionLabel(w.dr.Values["precision"])+"，时区 "+p.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
 	case "renew_amount":
 		rows := [][]models.InlineKeyboardButton{}
 		if p.Terms.Amount != nil && p.Terms.Currency != nil {
-			rows = append(rows, pair(button("使用约定金额", cb("dialog", "use_convention"))))
+			rows = append(rows, []models.InlineKeyboardButton{button("使用约定金额", cb("dialog", "use_convention"))})
 		}
 		rows = append(rows, navRows(true, true)...)
 		w.reply(ctx, "本次实际续期金额（可选）：发送“金额 币种”，例如 1000 TWD。\n金额为最小货币单位整数；不会自动采用约定金额。", rows...)
 	case "renew_notes":
 		w.reply(ctx, "续期备注（普通说明，不要填写密码或 Token）。可跳过。", navRows(true, true)...)
 	case "renew_preview":
-		w.reply(ctx, renewPreviewText(p, item, w.dr), pair(
+		w.reply(ctx, renewPreviewText(p, item, w.dr), []models.InlineKeyboardButton{
 			button("确认续期", cb("dialog", "confirm")),
 			button("返回修改", cb("dialog", "back")),
-		), pair(button("取消", cb("dialog", "cancel"))))
+		}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
 		w.abort(ctx, "续期流程状态无效")
 	}
@@ -201,7 +201,7 @@ func (w *wizard) confirmRenew(ctx context.Context) {
 		return
 	}
 	w.h.sendMarkup(ctx, w.b, w.resp, renewalText(ctx, w.h.svc, w.user, renewal, "续期完成"), markup(
-		pair(button("查看续期历史", cb("period", "renewals", id(renewal.PeriodID), "0")), button("再次续期", cb("period", "renew", id(renewal.PeriodID)))),
-		pair(button("返回服务", cb("service", "view", id(renewal.PeriodID), "0"))),
+		[]models.InlineKeyboardButton{button("查看续期历史", cb("period", "renewals", id(renewal.PeriodID), "0")), button("再次续期", cb("period", "renew", id(renewal.PeriodID)))},
+		[]models.InlineKeyboardButton{button("返回服务", cb("service", "view", id(renewal.PeriodID), "0"))},
 	))
 }

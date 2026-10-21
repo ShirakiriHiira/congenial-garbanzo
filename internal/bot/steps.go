@@ -81,10 +81,6 @@ var wizardSequences = map[string][]stepSpec{
 	},
 }
 
-func sequence(action string) []stepSpec {
-	return wizardSequences[action]
-}
-
 // nextStep follows the fixed sequence and the code-defined branches for
 // SIM-only fields, period-edit fields, and recurring terms. It never derives a
 // step name from user input.
@@ -180,13 +176,13 @@ func nextStep(action string, d draft, step string) string {
 		}
 		return ""
 	}
-	specs := sequence(action)
+	specs := wizardSequences[action]
 	for i, spec := range specs {
 		if spec.key != step {
 			continue
 		}
 		for _, next := range specs[i+1:] {
-			if applies(action, d, next.key) {
+			if applies(d, next.key) {
 				return next.key
 			}
 		}
@@ -232,11 +228,11 @@ func previousStep(action string, d draft, step string) string {
 		}
 		return ""
 	case service.DialogServiceAdd, service.DialogServiceEdit, service.DialogRuleAdd, service.DialogRuleEdit, service.DialogRenew, service.DialogTimezone:
-		specs := sequence(action)
+		specs := wizardSequences[action]
 		for i, spec := range specs {
 			if spec.key == step {
 				for j := i - 1; j >= 0; j-- {
-					if applies(action, d, specs[j].key) {
+					if applies(d, specs[j].key) {
 						return specs[j].key
 					}
 				}
@@ -250,7 +246,7 @@ func previousStep(action string, d draft, step string) string {
 // applies hides the SIM-only questions for generic categories, the generic
 // identifier for SIM, and the recurring-details questions for non-recurring
 // terms.
-func applies(action string, d draft, step string) bool {
+func applies(d draft, step string) bool {
 	switch step {
 	case "add_card_type", "add_phone", "add_region", "add_iccid":
 		return d.Values["kind"] == "sim"

@@ -200,7 +200,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 			return "服务已归档"
 		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("归档服务「%s」？\n归档会保留有效期、续期历史与已发送记录，停止未完成的提醒任务；之后可恢复。", item.Name),
-			markup(pair(button("确认归档", cb("service", "archive", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0")))))
+			markup([]models.InlineKeyboardButton{button("确认归档", cb("service", "archive", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
 		return "请确认归档"
 	case "archive":
 		if item.Status != "archived" {
@@ -216,7 +216,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 			return "服务已是可用状态"
 		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("恢复服务「%s」？\n恢复后有效期会推进版本，旧的按钮与草稿失效；历史与已发送记录保留。", item.Name),
-			markup(pair(button("确认恢复", cb("service", "restore", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0")))))
+			markup([]models.InlineKeyboardButton{button("确认恢复", cb("service", "restore", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
 		return "请确认恢复"
 	case "restore":
 		if item.Status != "active" {
@@ -229,13 +229,13 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		return "服务已恢复"
 	case "delete_ask":
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除服务「%s」？\n将同时永久删除它的全部有效期、提醒规则、提醒任务与续期历史，无法恢复。", item.Name),
-			markup(pair(button("确认永久删除", cb("service", "delete", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0")))))
+			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("service", "delete", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
 		return "请确认删除"
 	case "delete":
 		if err := h.svc.DeleteService(ctx, user.ID, serviceID); err != nil {
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("服务「%s」已永久删除。", item.Name), markup(pair(button("返回服务列表", cb("service", "list", "1", "0", "0")))))
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("服务「%s」已永久删除。", item.Name), markup([]models.InlineKeyboardButton{button("返回服务列表", cb("service", "list", "1", "0", "0"))}))
 		return "服务已删除"
 	default:
 		return "未知操作"
@@ -285,13 +285,13 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 		return "请选择要修改的字段"
 	case "delete_ask":
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除有效期「%s」？\n将同时永久删除它的提醒规则、提醒任务与续期历史，无法恢复。", periodName(p)),
-			markup(pair(button("确认永久删除", cb("period", "delete", id(p.ID))), button("取消", cb("period", "view", id(p.ID))))))
+			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("period", "delete", id(p.ID))), button("取消", cb("period", "view", id(p.ID)))}))
 		return "请确认删除"
 	case "delete":
 		if err := h.svc.DeletePeriod(ctx, user.ID, p.ID, p.Cycle); err != nil {
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("有效期「%s」已永久删除。", periodName(p)), markup(pair(button("返回服务", cb("service", "view", id(p.ServiceID), "0")))))
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("有效期「%s」已永久删除。", periodName(p)), markup([]models.InlineKeyboardButton{button("返回服务", cb("service", "view", id(p.ServiceID), "0"))}))
 		return "有效期已删除"
 	default:
 		return "未知操作"
@@ -329,7 +329,7 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 			verb = "启用"
 		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("%s这条规则？\n提前 %d 天 · %s\n%s后，未完成的相关任务会取消并重新排程。", verb, r.DaysBefore, r.ReminderTime, verb),
-			markup(pair(button("确认"+verb, cb("rule", v3.action[:len(v3.action)-4], id(r.ID))), button("取消", cb("rule", "view", id(r.ID))))))
+			markup([]models.InlineKeyboardButton{button("确认"+verb, cb("rule", v3.action[:len(v3.action)-4], id(r.ID))), button("取消", cb("rule", "view", id(r.ID)))}))
 		return "请确认"
 	case "enable", "disable":
 		enabled := v3.action == "enable"
@@ -345,13 +345,13 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 		return "规则状态已更新"
 	case "delete_ask":
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除规则（提前 %d 天 %s）？\n会同时删除该规则的任务记录，无法恢复。", r.DaysBefore, r.ReminderTime),
-			markup(pair(button("确认永久删除", cb("rule", "delete", id(r.ID))), button("取消", cb("rule", "view", id(r.ID))))))
+			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("rule", "delete", id(r.ID))), button("取消", cb("rule", "view", id(r.ID)))}))
 		return "请确认删除"
 	case "delete":
 		if err := h.svc.DeleteRule(ctx, user.ID, r.ID, r.Revision); err != nil {
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, "提醒规则已永久删除。", markup(pair(button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0")))))
+		h.sendMarkup(ctx, b, resp, "提醒规则已永久删除。", markup([]models.InlineKeyboardButton{button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0"))}))
 		return "规则已删除"
 	default:
 		return "未知操作"
@@ -393,7 +393,7 @@ func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service
 			return "任务已取消"
 		}
 		h.sendMarkup(ctx, b, resp, "取消该提醒任务？\n已发送的消息无法撤回；正在发送中的任务可能仍会完成一次投递。",
-			markup(pair(button("确认取消", cb("job", "cancel", id(job.ID))), button("返回提醒列表", cb("job", "list", "1", "0")))))
+			markup([]models.InlineKeyboardButton{button("确认取消", cb("job", "cancel", id(job.ID))), button("返回提醒列表", cb("job", "list", "1", "0"))}))
 		return "请确认取消"
 	case "cancel":
 		if err := h.svc.CancelJob(ctx, user.ID, job.ID); err != nil {
@@ -402,7 +402,7 @@ func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service
 			}
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, "任务已取消。\n注意：正在发送中的提醒无法撤回已经发出的消息。", markup(pair(button("返回提醒列表", cb("job", "list", "1", "0")))))
+		h.sendMarkup(ctx, b, resp, "任务已取消。\n注意：正在发送中的提醒无法撤回已经发出的消息。", markup([]models.InlineKeyboardButton{button("返回提醒列表", cb("job", "list", "1", "0"))}))
 		return "任务已取消"
 	default:
 		return "未知操作"
@@ -468,4 +468,3 @@ func objectStateMessage(err error) string {
 	}
 	return serviceMessage(err)
 }
-

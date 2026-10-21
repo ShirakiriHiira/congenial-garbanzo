@@ -11,13 +11,6 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// startsWrite reports whether a command opens a flow that writes. Read-only
-// views never disturb an unfinished wizard; a write flow must be confirmed
-// explicitly before the draft is replaced.
-func startsWrite(name string) bool {
-	return name == "add"
-}
-
 // conflictTarget resumes only when both action and target match; a different
 // object of the same action still requires the explicit replacement choice.
 func (h *Handler) conflictTarget(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, action string, target int64, intent string) bool {
@@ -63,7 +56,7 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 			return
 		}
 	}
-	if !fromReplace && startsWrite(name) {
+	if !fromReplace && name == "add" {
 		if existing, err := h.svc.GetDialog(ctx, user.ID); err == nil {
 			if existing.ChatID != resp.chatID {
 				h.send(ctx, b, resp, "当前流程已在其他会话中开始；请先发送 /cancel 取消。")
@@ -129,11 +122,11 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 
 func (h *Handler) helpMessage(ctx context.Context, b *telegram.Bot, user service.User, resp *responder) {
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("我的服务", cb("service", "list", "1", "0", "0")), button("添加服务", cb("dialog", "new_service"))),
-		pair(button("提醒任务", cb("job", "list", "1", "0")), button("设置", cb("settings", "view"))),
+		[]models.InlineKeyboardButton{button("我的服务", cb("service", "list", "1", "0", "0")), button("添加服务", cb("dialog", "new_service"))},
+		[]models.InlineKeyboardButton{button("提醒任务", cb("job", "list", "1", "0")), button("设置", cb("settings", "view"))},
 	}
 	if d, err := h.svc.GetDialog(ctx, user.ID); err == nil && d.ChatID == resp.chatID {
-		rows = append(rows, pair(button("继续当前流程", cb("dialog", "resume"))))
+		rows = append(rows, []models.InlineKeyboardButton{button("继续当前流程", cb("dialog", "resume"))})
 	}
 	h.sendMarkup(ctx, b, resp, helpText(user.Timezone), markup(rows...))
 }

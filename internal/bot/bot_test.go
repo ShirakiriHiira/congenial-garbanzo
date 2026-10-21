@@ -677,7 +677,7 @@ func TestEditsReplaceButtonsInsteadOfStrandingThem(t *testing.T) {
 
 	// A body with buttons replaces them with exactly its own.
 	resp = &responder{chatID: userA, editID: 9}
-	f.h.sendMarkup(ctx, f.bot, resp, "我的服务", markup(pair(button("返回", cb("service", "list", "1", "0", "0")))))
+	f.h.sendMarkup(ctx, f.bot, resp, "我的服务", markup([]models.InlineKeyboardButton{button("返回", cb("service", "list", "1", "0", "0"))}))
 	edit = f.stub.callsOf("editMessageText")[1].form.Get("reply_markup")
 	if !strings.Contains(edit, "v3:service:list") || strings.Contains(edit, `"inline_keyboard":[]`) {
 		t.Fatalf("markup edit sent %q", edit)

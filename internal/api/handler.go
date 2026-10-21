@@ -319,15 +319,6 @@ func decimal(text string, allowZero bool) (int64, bool) {
 	return value, true
 }
 
-func require[T any](w http.ResponseWriter, value *T) (T, bool) {
-	var zero T
-	if value == nil {
-		fail(w, http.StatusBadRequest, "invalid_input")
-		return zero, false
-	}
-	return *value, true
-}
-
 func parseStrictQuery(raw string) (url.Values, bool) {
 	values := url.Values{}
 	if raw == "" {

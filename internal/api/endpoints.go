@@ -35,11 +35,7 @@ func (h *Handler) patchMe(w http.ResponseWriter, r *http.Request) {
 	}
 	user := currentUser(r)
 	if in.Timezone != nil {
-		zone, ok := require(w, in.Timezone)
-		if !ok {
-			return
-		}
-		v, err := h.service.SetTimezone(r.Context(), user.ID, zone)
+		v, err := h.service.SetTimezone(r.Context(), user.ID, *in.Timezone)
 		if err != nil {
 			serviceError(w, err)
 			return
@@ -132,11 +128,11 @@ func (h *Handler) createRule(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	days, ok := require(w, in.DaysBefore)
-	if !ok {
+	if in.DaysBefore == nil {
+		fail(w, 400, "invalid_input")
 		return
 	}
-	v, err := h.service.CreateRule(r.Context(), currentUser(r).ID, id, service.RuleInput{DaysBefore: days, ReminderTime: in.ReminderTime, Enabled: in.Enabled})
+	v, err := h.service.CreateRule(r.Context(), currentUser(r).ID, id, service.RuleInput{DaysBefore: *in.DaysBefore, ReminderTime: in.ReminderTime, Enabled: in.Enabled})
 	object(w, 201, ruleView(v), err)
 }
 func (h *Handler) getRule(w http.ResponseWriter, r *http.Request) {

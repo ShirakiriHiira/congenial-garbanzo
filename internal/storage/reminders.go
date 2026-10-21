@@ -12,11 +12,11 @@ import (
 // ReminderDelivery is the immutable payload captured when a job is leased.
 // The attempt token fences every result write, including cancelled in-flight jobs.
 type ReminderDelivery struct {
-	ID, PeriodID, Attempts int64
-	ChatID                 *int64
+	ID, PeriodID, Attempts  int64
+	ChatID                  *int64
 	ServiceName, PeriodName string
-	Expiration             domain.Expiration
-	Token                  string
+	Expiration              domain.Expiration
+	Token                   string
 }
 
 // errReminderStore hides SQL details from scheduler logs and API responses.

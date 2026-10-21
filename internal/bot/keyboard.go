@@ -70,10 +70,6 @@ func markup(rows ...[]models.InlineKeyboardButton) *models.InlineKeyboardMarkup 
 	return &models.InlineKeyboardMarkup{InlineKeyboard: filtered}
 }
 
-func pair(buttons ...models.InlineKeyboardButton) []models.InlineKeyboardButton {
-	return buttons
-}
-
 // responder routes one response sequence for an update. The first emission
 // replaces the callback message when editID is set; later emissions always send
 // new messages so a single update can never rewrite more than one message.
@@ -102,15 +98,6 @@ func editNotModified(err error) bool {
 // omitted reply_markup as "keep the current keyboard", so clearing is explicit.
 var noKeyboard = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}
 
-// editMarkup leaves an edited message with exactly the buttons it should have,
-// including none when the new body has no buttons of its own.
-func editMarkup(keyboard *models.InlineKeyboardMarkup) models.ReplyMarkup {
-	if keyboard == nil {
-		return noKeyboard
-	}
-	return keyboard
-}
-
 // sendMarkup sends the text (splitting oversized bodies) with the keyboard
 // attached to the final chunk so Telegram always renders it with the body. When
 // the responder still owes the callback message and the text fits in one chunk,
@@ -129,7 +116,11 @@ func (h *Handler) sendMarkup(ctx context.Context, b *telegram.Bot, resp *respond
 		if body == "" {
 			body = "请选择："
 		}
-		if _, err := b.EditMessageText(ctx, &telegram.EditMessageTextParams{ChatID: chatID, MessageID: editID, Text: body, ReplyMarkup: editMarkup(keyboard)}); err == nil || editNotModified(err) {
+		replyMarkup := models.ReplyMarkup(noKeyboard)
+		if keyboard != nil {
+			replyMarkup = keyboard
+		}
+		if _, err := b.EditMessageText(ctx, &telegram.EditMessageTextParams{ChatID: chatID, MessageID: editID, Text: body, ReplyMarkup: replyMarkup}); err == nil || editNotModified(err) {
 			return
 		}
 		h.logger.Warn("telegram edit failed", "code", "telegram_error")

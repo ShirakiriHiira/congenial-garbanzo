@@ -157,7 +157,7 @@ func (w *wizard) promptReplace(ctx context.Context, command string) {
 		}
 	}
 	w.reply(ctx, "当前有未完成的流程："+describeTarget(ctx, w.h, w.user, w.d)+"\n\n继续当前流程不会丢失草稿；取消并开始会丢弃该草稿。\n发送 /cancel 也可取消当前流程。",
-		pair(button("继续当前", cb("dialog", "keep")), button("取消并开始", cb("dialog", "replace"))))
+		[]models.InlineKeyboardButton{button("继续当前", cb("dialog", "keep")), button("取消并开始", cb("dialog", "replace"))})
 }
 
 // promptReplaceStart records a code-generated start intent for the explicit
@@ -353,7 +353,7 @@ func navRows(canBack, canSkip bool) [][]models.InlineKeyboardButton {
 
 func optionalNav(canBack bool) [][]models.InlineKeyboardButton {
 	return [][]models.InlineKeyboardButton{
-		pair(button("上一步", cb("dialog", "back")), button("跳过", cb("dialog", "skip")), button("跳过剩余可选资料", cb("dialog", "skip_rest")), button("取消", cb("dialog", "cancel"))),
+		[]models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("跳过", cb("dialog", "skip")), button("跳过剩余可选资料", cb("dialog", "skip_rest")), button("取消", cb("dialog", "cancel"))},
 	}
 }
 

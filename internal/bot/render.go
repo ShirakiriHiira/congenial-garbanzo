@@ -136,8 +136,8 @@ func (h *Handler) overviewKeyboard(ctx context.Context, uid int64, filter servic
 		category = *filter.CategoryID
 	}
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("当前服务", cb("service", "list", "1", id(category), "0")), button("即将到期", cb("service", "list", "2", id(category), "0")), button("已过期", cb("service", "list", "3", id(category), "0"))),
-		pair(button("未设置有效期", cb("service", "list", "4", id(category), "0")), button("已归档", cb("service", "list", "5", id(category), "0")), button("全部（含归档）", cb("service", "list", "6", id(category), "0"))),
+		[]models.InlineKeyboardButton{button("当前服务", cb("service", "list", "1", id(category), "0")), button("即将到期", cb("service", "list", "2", id(category), "0")), button("已过期", cb("service", "list", "3", id(category), "0"))},
+		[]models.InlineKeyboardButton{button("未设置有效期", cb("service", "list", "4", id(category), "0")), button("已归档", cb("service", "list", "5", id(category), "0")), button("全部（含归档）", cb("service", "list", "6", id(category), "0"))},
 	}
 	for _, item := range overview.Items.Data {
 		label := item.Service.Name
@@ -146,14 +146,14 @@ func (h *Handler) overviewKeyboard(ctx context.Context, uid int64, filter servic
 				label += " · " + periodExpiry(*item.PrimaryPeriod)
 			}
 		}
-		rows = append(rows, pair(button(label, cb("service", "view", id(item.Service.ID), "0"))))
+		rows = append(rows, []models.InlineKeyboardButton{button(label, cb("service", "view", id(item.Service.ID), "0"))})
 	}
 	if overview.Items.NextCursor != nil {
-		rows = append(rows, pair(button("下一页", cb("service", "list", code, id(category), id(*overview.Items.NextCursor)))))
+		rows = append(rows, []models.InlineKeyboardButton{button("下一页", cb("service", "list", code, id(category), id(*overview.Items.NextCursor)))})
 	}
 	rows = append(rows,
-		pair(button("按类别", cb("service", "cats", code, id(category))), button("添加服务", cb("dialog", "new_service"))),
-		pair(button("设置", cb("settings", "view"))),
+		[]models.InlineKeyboardButton{button("按类别", cb("service", "cats", code, id(category))), button("添加服务", cb("dialog", "new_service"))},
+		[]models.InlineKeyboardButton{button("设置", cb("settings", "view"))},
 	)
 	return markup(rows...)
 }
@@ -166,7 +166,7 @@ func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid int64
 	}
 	categories := mustCategories(ctx, h, uid)
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("全部类别", cb("service", "list", code, "0", "0"))),
+		[]models.InlineKeyboardButton{button("全部类别", cb("service", "list", code, "0", "0"))},
 	}
 	row := []models.InlineKeyboardButton{}
 	for _, c := range categories {
@@ -179,7 +179,7 @@ func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid int64
 	if len(row) > 0 {
 		rows = append(rows, row)
 	}
-	rows = append(rows, pair(button("返回服务列表", cb("service", "list", code, "0", "0"))))
+	rows = append(rows, []models.InlineKeyboardButton{button("返回服务列表", cb("service", "list", code, "0", "0"))})
 	h.sendMarkup(ctx, b, resp, "按类别筛选（当前状态："+statusLabel(status)+"）", markup(rows...))
 }
 
@@ -240,28 +240,28 @@ func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[s
 	rows := [][]models.InlineKeyboardButton{}
 	if page != nil {
 		for _, p := range page.Data {
-			rows = append(rows, pair(button(periodName(p)+" · "+periodExpiry(p), cb("period", "view", id(p.ID)))))
+			rows = append(rows, []models.InlineKeyboardButton{button(periodName(p)+" · "+periodExpiry(p), cb("period", "view", id(p.ID)))})
 		}
 		if page.NextCursor != nil {
-			rows = append(rows, pair(button("下一页有效期", cb("service", "view", id(item.ID), id(*page.NextCursor)))))
+			rows = append(rows, []models.InlineKeyboardButton{button("下一页有效期", cb("service", "view", id(item.ID), id(*page.NextCursor)))})
 		}
 	}
 	if item.Status == "active" {
-		rows = append(rows, pair(
+		rows = append(rows, []models.InlineKeyboardButton{
 			button("添加有效期", cb("period", "add", id(item.ID))),
 			button("编辑服务", cb("service", "edit", id(item.ID))),
-		))
-		rows = append(rows, pair(
+		})
+		rows = append(rows, []models.InlineKeyboardButton{
 			button("归档服务", cb("service", "archive_ask", id(item.ID))),
 			button("删除服务", cb("service", "delete_ask", id(item.ID))),
-		))
+		})
 	} else {
-		rows = append(rows, pair(
+		rows = append(rows, []models.InlineKeyboardButton{
 			button("恢复服务", cb("service", "restore_ask", id(item.ID))),
 			button("删除服务", cb("service", "delete_ask", id(item.ID))),
-		))
+		})
 	}
-	rows = append(rows, pair(button("返回服务列表", cb("service", "list", "1", "0", "0"))))
+	rows = append(rows, []models.InlineKeyboardButton{button("返回服务列表", cb("service", "list", "1", "0", "0"))})
 	return markup(rows...)
 }
 
@@ -281,12 +281,12 @@ func (h *Handler) showPeriodDetail(ctx context.Context, b *telegram.Bot, user se
 
 func (h *Handler) periodKeyboard(p service.Period) *models.InlineKeyboardMarkup {
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("续期", cb("period", "renew", id(p.ID))), button("提醒规则", cb("period", "rules", id(p.ID), "0"))),
-		pair(button("续期历史", cb("period", "renewals", id(p.ID), "0")), button("编辑有效期", cb("period", "edit", id(p.ID)))),
+		[]models.InlineKeyboardButton{button("续期", cb("period", "renew", id(p.ID))), button("提醒规则", cb("period", "rules", id(p.ID), "0"))},
+		[]models.InlineKeyboardButton{button("续期历史", cb("period", "renewals", id(p.ID), "0")), button("编辑有效期", cb("period", "edit", id(p.ID)))},
 	}
 	rows = append(rows,
-		pair(button("删除有效期", cb("period", "delete_ask", id(p.ID)))),
-		pair(button("返回服务", cb("service", "view", id(p.ServiceID), "0"))),
+		[]models.InlineKeyboardButton{button("删除有效期", cb("period", "delete_ask", id(p.ID)))},
+		[]models.InlineKeyboardButton{button("返回服务", cb("service", "view", id(p.ServiceID), "0"))},
 	)
 	return markup(rows...)
 }
@@ -320,14 +320,14 @@ func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.U
 		if !r.Enabled {
 			state = "（已禁用）"
 		}
-		rows = append(rows, pair(button(fmt.Sprintf("提前 %d 天 %s%s", r.DaysBefore, r.ReminderTime, state), cb("rule", "view", id(r.ID)))))
+		rows = append(rows, []models.InlineKeyboardButton{button(fmt.Sprintf("提前 %d 天 %s%s", r.DaysBefore, r.ReminderTime, state), cb("rule", "view", id(r.ID)))})
 	}
 	if page.NextCursor != nil {
-		rows = append(rows, pair(button("下一页", cb("period", "rules", id(p.ID), id(*page.NextCursor)))))
+		rows = append(rows, []models.InlineKeyboardButton{button("下一页", cb("period", "rules", id(p.ID), id(*page.NextCursor)))})
 	}
 	rows = append(rows,
-		pair(button("添加规则", cb("rule", "add", id(p.ID)))),
-		pair(button("返回有效期", cb("period", "view", id(p.ID)))),
+		[]models.InlineKeyboardButton{button("添加规则", cb("rule", "add", id(p.ID)))},
+		[]models.InlineKeyboardButton{button("返回有效期", cb("period", "view", id(p.ID)))},
 	)
 	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
@@ -345,14 +345,14 @@ func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user serv
 	text := fmt.Sprintf("提醒规则\n提前 %d 天 · %s · %s\n\n启用/禁用或删除只影响这一条规则；删除会同时移除该规则未发送与已发送的任务记录。",
 		r.DaysBefore, r.ReminderTime, state)
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("编辑规则", cb("rule", "edit", id(r.ID))), button("删除规则", cb("rule", "delete_ask", id(r.ID)))),
+		[]models.InlineKeyboardButton{button("编辑规则", cb("rule", "edit", id(r.ID))), button("删除规则", cb("rule", "delete_ask", id(r.ID)))},
 	}
 	if r.Enabled {
-		rows = append(rows, pair(button("禁用规则", cb("rule", "disable_ask", id(r.ID)))))
+		rows = append(rows, []models.InlineKeyboardButton{button("禁用规则", cb("rule", "disable_ask", id(r.ID)))})
 	} else {
-		rows = append(rows, pair(button("启用规则", cb("rule", "enable_ask", id(r.ID)))))
+		rows = append(rows, []models.InlineKeyboardButton{button("启用规则", cb("rule", "enable_ask", id(r.ID)))})
 	}
-	rows = append(rows, pair(button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0"))))
+	rows = append(rows, []models.InlineKeyboardButton{button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0"))})
 	h.sendMarkup(ctx, b, resp, text, markup(rows...))
 }
 
@@ -384,9 +384,9 @@ func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user servic
 	}
 	rows := [][]models.InlineKeyboardButton{}
 	if page.NextCursor != nil {
-		rows = append(rows, pair(button("下一页", cb("period", "renewals", id(p.ID), id(*page.NextCursor)))))
+		rows = append(rows, []models.InlineKeyboardButton{button("下一页", cb("period", "renewals", id(p.ID), id(*page.NextCursor)))})
 	}
-	rows = append(rows, pair(button("返回有效期", cb("period", "view", id(p.ID)))))
+	rows = append(rows, []models.InlineKeyboardButton{button("返回有效期", cb("period", "view", id(p.ID)))})
 	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
@@ -437,11 +437,11 @@ func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.Us
 		text.WriteString("\n")
 	}
 	rows := [][]models.InlineKeyboardButton{
-		pair(button("待发送", cb("job", "list", "1", "0")), button("失败", cb("job", "list", "2", "0")), button("全部", cb("job", "list", "3", "0"))),
+		[]models.InlineKeyboardButton{button("待发送", cb("job", "list", "1", "0")), button("失败", cb("job", "list", "2", "0")), button("全部", cb("job", "list", "3", "0"))},
 	}
 	for _, line := range lines {
 		if line.job.Status == "pending" || line.job.Status == "sending" || line.job.Status == "failed" {
-			rows = append(rows, pair(button("取消 · "+line.name, cb("job", "cancel_ask", id(line.job.ID)))))
+			rows = append(rows, []models.InlineKeyboardButton{button("取消 · "+line.name, cb("job", "cancel_ask", id(line.job.ID)))})
 		}
 	}
 	if page.NextCursor != nil {
@@ -451,16 +451,16 @@ func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.Us
 				code = k
 			}
 		}
-		rows = append(rows, pair(button("下一页", cb("job", "list", code, id(*page.NextCursor)))))
+		rows = append(rows, []models.InlineKeyboardButton{button("下一页", cb("job", "list", code, id(*page.NextCursor)))})
 	}
-	rows = append(rows, pair(button("返回设置", cb("settings", "view"))))
+	rows = append(rows, []models.InlineKeyboardButton{button("返回设置", cb("settings", "view"))})
 	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
 func (h *Handler) showSettings(ctx context.Context, b *telegram.Bot, user service.User, resp *responder) {
 	h.sendMarkup(ctx, b, resp, h.settingsText(user), markup(
-		pair(button("修改时区", cb("settings", "timezone")), button("提醒任务", cb("job", "list", "1", "0"))),
-		pair(button("我的服务", cb("service", "list", "1", "0", "0")), button("帮助", cb("settings", "help"))),
+		[]models.InlineKeyboardButton{button("修改时区", cb("settings", "timezone")), button("提醒任务", cb("job", "list", "1", "0"))},
+		[]models.InlineKeyboardButton{button("我的服务", cb("service", "list", "1", "0", "0")), button("帮助", cb("settings", "help"))},
 	))
 }
 
