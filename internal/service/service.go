@@ -193,17 +193,19 @@ type Dialog struct {
 	CreatedAt             int64
 }
 
-// Optional distinguishes absent fields from explicit null in partial updates.
-type Optional[T any] struct {
+// OptionalString distinguishes absent fields from explicit null in partial
+// updates. An absent field leaves the stored value untouched; an explicit null
+// clears it.
+type OptionalString struct {
 	Set   bool
-	Value *T
+	Value *string
 }
 
 type SIMDetailsPatch struct {
-	CardType        Optional[string]
-	PhoneNumber     Optional[string]
-	CountryOrRegion Optional[string]
-	ICCID           Optional[string]
+	CardType        OptionalString
+	PhoneNumber     OptionalString
+	CountryOrRegion OptionalString
+	ICCID           OptionalString
 }
 
 type ServiceInput struct {
@@ -218,12 +220,16 @@ type ServiceInput struct {
 type ServicePatch struct {
 	Name          *string
 	CategoryID    *int64
-	Provider      Optional[string]
-	Identifier    Optional[string]
-	ManagementURL Optional[string]
-	Notes         Optional[string]
+	Provider      OptionalString
+	Identifier    OptionalString
+	ManagementURL OptionalString
+	Notes         OptionalString
 	Status        *string
-	SIMDetails    Optional[SIMDetailsPatch]
+	// SIMDetailsSet marks that the SIM detail block was part of the request.
+	// SIMDetails carries the new values; a nil value with SIMDetailsSet means
+	// the block was explicitly null.
+	SIMDetailsSet bool
+	SIMDetails    *SIMDetailsPatch
 }
 
 type TermsInput struct {
@@ -243,11 +249,15 @@ type PeriodInput struct {
 type PeriodPatch struct {
 	ExpectedCycle         int64
 	Name                  *string
-	StartsAt              Optional[string]
+	StartsAt              OptionalString
 	DatePrecision         *string
 	ExpiresAt             *string
 	ExpectedTermsRevision *int64
-	Terms                 Optional[TermsInput]
+	// TermsSet marks that the terms were part of the request. Terms carries
+	// the new values; a nil value with TermsSet means "reset to the default
+	// terms", which is distinct from an absent request.
+	TermsSet bool
+	Terms    *TermsInput
 }
 type RuleInput struct {
 	DaysBefore   int
@@ -288,10 +298,10 @@ type Page[T any] struct {
 	Data       []T
 	NextCursor *int64
 }
-type queryer interface {
+
+// rowQuerier is the single SQL read path shared by *sql.DB and *sql.Tx.
+type rowQuerier interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 type scanner interface{ Scan(...any) error }
 
@@ -309,7 +319,7 @@ func (s *Service) transaction(ctx context.Context, uid int64, fn func(*sql.Tx) e
 	}
 	return dbError(tx.Commit())
 }
-func (s *Service) authorize(ctx context.Context, q queryer, uid int64) error {
+func (s *Service) authorize(ctx context.Context, q rowQuerier, uid int64) error {
 	var tid int64
 	if e := q.QueryRowContext(ctx, "SELECT telegram_user_id FROM users WHERE id=?", uid).Scan(&tid); e != nil {
 		return dbError(e)

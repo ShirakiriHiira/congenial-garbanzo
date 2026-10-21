@@ -232,7 +232,7 @@ func TestGenericTermsOnlyPreservesEveryReminderState(t *testing.T) {
 			terms := service.TermsInput{Mode: "recurring", IntervalCount: &count, IntervalUnit: &unit, Amount: &amount, Currency: &currency}
 			p := f.period
 			for _, value := range []*service.TermsInput{&terms, nil} {
-				updated, err := f.svc.UpdatePeriod(ctx, f.user.ID, p.ID, service.PeriodPatch{ExpectedCycle: p.Cycle, ExpectedTermsRevision: &p.Terms.Revision, Terms: service.Optional[service.TermsInput]{Set: true, Value: value}})
+				updated, err := f.svc.UpdatePeriod(ctx, f.user.ID, p.ID, service.PeriodPatch{ExpectedCycle: p.Cycle, ExpectedTermsRevision: &p.Terms.Revision, TermsSet: true, Terms: value})
 				if err != nil {
 					t.Fatal(err)
 				}

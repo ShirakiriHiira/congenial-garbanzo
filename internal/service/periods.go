@@ -38,7 +38,7 @@ func scanPeriod(row scanner, now int64) (Period, error) {
 	return r.normalized(now), nil
 }
 
-func (s *Service) getPeriod(ctx context.Context, q queryer, uid, id int64) (Period, error) {
+func (s *Service) getPeriod(ctx context.Context, q rowQuerier, uid, id int64) (Period, error) {
 	var r periodRow
 	err := q.QueryRowContext(ctx, "SELECT "+periodColumns+periodJoins+"WHERE s.user_id=? AND p.id=?", uid, id).Scan(r.args()...)
 	if err != nil {
@@ -233,7 +233,7 @@ func (s *Service) UpdatePeriod(ctx context.Context, uid, id int64, in PeriodPatc
 		if v.Cycle != in.ExpectedCycle {
 			return ErrConflict
 		}
-		if in.Terms.Set != (in.ExpectedTermsRevision != nil) ||
+		if in.TermsSet != (in.ExpectedTermsRevision != nil) ||
 			(in.ExpectedTermsRevision != nil && *in.ExpectedTermsRevision < 1) {
 			return ErrInvalid
 		}
@@ -241,11 +241,11 @@ func (s *Service) UpdatePeriod(ctx context.Context, uid, id int64, in PeriodPatc
 			return ErrConflict
 		}
 		nextTerms := v.Terms
-		if in.Terms.Set {
-			if in.Terms.Value == nil {
+		if in.TermsSet {
+			if in.Terms == nil {
 				nextTerms = defaultTerms()
 			} else {
-				nextTerms = termsInputValue(*in.Terms.Value)
+				nextTerms = termsInputValue(*in.Terms)
 				if !validPeriodTerms(nextTerms) {
 					return ErrInvalid
 				}
@@ -296,7 +296,7 @@ func (s *Service) UpdatePeriod(ctx context.Context, uid, id int64, in PeriodPatc
 				return err
 			}
 		}
-		if in.Terms.Set && !sameTerms(v.Terms, nextTerms) {
+		if in.TermsSet && !sameTerms(v.Terms, nextTerms) {
 			nextTerms.Revision = v.Terms.Revision + 1
 			if err = savePeriodTerms(ctx, tx, id, nextTerms); err != nil {
 				return err

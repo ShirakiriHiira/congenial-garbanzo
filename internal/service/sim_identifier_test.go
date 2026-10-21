@@ -24,12 +24,12 @@ func TestSIMServiceRejectsIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.UpdateService(ctx, a.ID, item.ID, ServicePatch{Identifier: Optional[string]{Set: true, Value: &identifier}}); err != ErrInvalid {
+	if _, err = s.UpdateService(ctx, a.ID, item.ID, ServicePatch{Identifier: OptionalString{Set: true, Value: &identifier}}); err != ErrInvalid {
 		t.Fatalf("patch identifier: %v", err)
 	}
 	// Clearing an absent identifier stays a no-op instead of an error, so an
 	// outdated client can still save the rest of the form.
-	updated, err := s.UpdateService(ctx, a.ID, item.ID, ServicePatch{Identifier: Optional[string]{Set: true}})
+	updated, err := s.UpdateService(ctx, a.ID, item.ID, ServicePatch{Identifier: OptionalString{Set: true}})
 	if err != nil || updated.Identifier != nil {
 		t.Fatalf("clear identifier: item=%+v err=%v", updated, err)
 	}

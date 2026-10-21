@@ -68,7 +68,7 @@ func scanDialog(row scanner) (Dialog, error) {
 // getDialog reads the current row and enforces both ownership and expiry.
 // Referenced objects are joined so a row cannot outlive a transfer of a
 // service, period, or rule to another user.
-func (s *Service) getDialog(ctx context.Context, q queryer, uid int64) (Dialog, error) {
+func (s *Service) getDialog(ctx context.Context, q rowQuerier, uid int64) (Dialog, error) {
 	d, e := scanDialog(q.QueryRowContext(ctx, `SELECT `+dialogColumns+`
         FROM bot_dialogs d
         LEFT JOIN service_items s1 ON s1.id=d.service_id
@@ -96,7 +96,7 @@ func (s *Service) GetDialog(ctx context.Context, uid int64) (Dialog, error) {
 
 // validateDialogTargets proves every referenced object still belongs to the
 // user and that parent/child references agree.
-func (s *Service) validateDialogTargets(ctx context.Context, q queryer, uid int64, d Dialog) error {
+func (s *Service) validateDialogTargets(ctx context.Context, q rowQuerier, uid int64, d Dialog) error {
 	if d.RuleID != nil {
 		r, e := getRule(ctx, q, uid, *d.RuleID)
 		if e != nil {

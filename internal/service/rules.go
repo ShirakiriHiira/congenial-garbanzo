@@ -13,7 +13,7 @@ func scanRule(row scanner) (Rule, error) {
 	e := row.Scan(&v.ID, &v.PeriodID, &v.DaysBefore, &v.ReminderTime, &v.Enabled, &v.Revision, &v.CreatedAt, &v.UpdatedAt)
 	return v, e
 }
-func getRule(ctx context.Context, q queryer, uid, id int64) (Rule, error) {
+func getRule(ctx context.Context, q rowQuerier, uid, id int64) (Rule, error) {
 	v, e := scanRule(q.QueryRowContext(ctx, "SELECT "+ruleColumns+" FROM reminder_rules r JOIN service_periods p ON p.id=r.period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND r.id=?", uid, id))
 	return v, dbError(e)
 }

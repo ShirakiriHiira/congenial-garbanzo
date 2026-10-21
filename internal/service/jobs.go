@@ -12,7 +12,7 @@ func scanJob(row scanner) (Job, error) {
 	e := row.Scan(&v.ID, &v.PeriodID, &v.ReminderRuleID, &v.Cycle, &v.RuleRevision, &v.ScheduledAt, &v.ExpiresAtSnapshot, &v.Status, &v.Attempts, &v.NextAttemptAt, &v.LockedUntil, &v.AttemptToken, &v.SentAt, &v.TelegramMessageID, &v.LastErrorCode, &v.CreatedAt, &v.UpdatedAt)
 	return v, e
 }
-func getJob(ctx context.Context, q queryer, uid, id int64) (Job, error) {
+func getJob(ctx context.Context, q rowQuerier, uid, id int64) (Job, error) {
 	v, e := scanJob(q.QueryRowContext(ctx, "SELECT "+jobColumns+" FROM reminder_jobs j JOIN service_periods p ON p.id=j.period_id JOIN service_items s ON s.id=p.service_id WHERE s.user_id=? AND j.id=?", uid, id))
 	return v, dbError(e)
 }

@@ -79,7 +79,8 @@ func (h *Handler) patchPeriod(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_input")
 		return
 	}
-	v, err := h.service.UpdatePeriod(r.Context(), currentUser(r).ID, id, service.PeriodPatch{ExpectedCycle: in.ExpectedCycle, ExpectedTermsRevision: in.ExpectedTermsRevision, Terms: termsPatch(in.Terms), Name: in.Name, StartsAt: in.StartsAt.serviceValue(), DatePrecision: in.DatePrecision, ExpiresAt: in.ExpiresAt})
+	termsSet, termsValue := termsPatch(in.Terms)
+	v, err := h.service.UpdatePeriod(r.Context(), currentUser(r).ID, id, service.PeriodPatch{ExpectedCycle: in.ExpectedCycle, ExpectedTermsRevision: in.ExpectedTermsRevision, TermsSet: termsSet, Terms: termsValue, Name: in.Name, StartsAt: in.StartsAt.serviceValue(), DatePrecision: in.DatePrecision, ExpiresAt: in.ExpiresAt})
 	object(w, 200, periodView(v), err)
 }
 func expectedVersion(w http.ResponseWriter, r *http.Request, key string) (int64, bool) {
@@ -339,7 +340,8 @@ func (h *Handler) patchService(w http.ResponseWriter, r *http.Request) {
 		}
 		category = &value
 	}
-	v, err := h.service.UpdateService(r.Context(), currentUser(r).ID, id, service.ServicePatch{Name: in.Name, CategoryID: category, Provider: in.Provider.serviceValue(), Identifier: in.Identifier.serviceValue(), ManagementURL: in.ManagementURL.serviceValue(), Notes: in.Notes.serviceValue(), Status: in.Status, SIMDetails: simDetailsPatch(in.SIMDetails)})
+	detailsSet, detailsValue := simDetailsPatch(in.SIMDetails)
+	v, err := h.service.UpdateService(r.Context(), currentUser(r).ID, id, service.ServicePatch{Name: in.Name, CategoryID: category, Provider: in.Provider.serviceValue(), Identifier: in.Identifier.serviceValue(), ManagementURL: in.ManagementURL.serviceValue(), Notes: in.Notes.serviceValue(), Status: in.Status, SIMDetailsSet: detailsSet, SIMDetails: detailsValue})
 	object(w, 200, serviceView(v), err)
 }
 func (h *Handler) deleteService(w http.ResponseWriter, r *http.Request) {

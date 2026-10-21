@@ -445,8 +445,8 @@ func draftEditValue(d draft, field string) string {
 func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	field, value := w.dr.Values["field"], w.dr.Values["value"]
 	patch := service.ServicePatch{}
-	set := func(dest *service.Optional[string]) {
-		*dest = service.Optional[string]{Set: true, Value: nullable(value)}
+	set := func(dest *service.OptionalString) {
+		*dest = service.OptionalString{Set: true, Value: nullable(value)}
 	}
 	switch field {
 	case "name":
@@ -476,18 +476,20 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	case "notes":
 		set(&patch.Notes)
 	case "card_type":
-		patch.SIMDetails = service.Optional[service.SIMDetailsPatch]{Set: true, Value: &service.SIMDetailsPatch{CardType: service.Optional[string]{Set: true, Value: &value}}}
+		patch.SIMDetailsSet = true
+		patch.SIMDetails = &service.SIMDetailsPatch{CardType: service.OptionalString{Set: true, Value: &value}}
 	case "phone", "region", "iccid":
 		details := service.SIMDetailsPatch{}
 		switch field {
 		case "phone":
-			details.PhoneNumber = service.Optional[string]{Set: true, Value: nullable(value)}
+			details.PhoneNumber = service.OptionalString{Set: true, Value: nullable(value)}
 		case "region":
-			details.CountryOrRegion = service.Optional[string]{Set: true, Value: nullable(value)}
+			details.CountryOrRegion = service.OptionalString{Set: true, Value: nullable(value)}
 		case "iccid":
-			details.ICCID = service.Optional[string]{Set: true, Value: nullable(value)}
+			details.ICCID = service.OptionalString{Set: true, Value: nullable(value)}
 		}
-		patch.SIMDetails = service.Optional[service.SIMDetailsPatch]{Set: true, Value: &details}
+		patch.SIMDetailsSet = true
+		patch.SIMDetails = &details
 	default:
 		w.stepError(ctx, "未知字段，请重新打开编辑。", false, false)
 		return
@@ -950,7 +952,7 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		value := w.dr.Values["value"]
 		patch.Name = &value
 	case "starts":
-		patch.StartsAt = service.Optional[string]{Set: true, Value: nullable(w.dr.Values["value"])}
+		patch.StartsAt = service.OptionalString{Set: true, Value: nullable(w.dr.Values["value"])}
 	case "expires":
 		precision := w.dr.Values["precision"]
 		expires := w.dr.Values["expires_at"]
@@ -961,9 +963,10 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 			return
 		}
 		patch.ExpectedTermsRevision = w.d.ExpectedTermsRevision
-		patch.Terms = service.Optional[service.TermsInput]{Set: true, Value: termsFromDraft(w.dr)}
-		if patch.Terms.Value == nil {
-			patch.Terms.Value = &service.TermsInput{Mode: "custom"}
+		patch.TermsSet = true
+		patch.Terms = termsFromDraft(w.dr)
+		if patch.Terms == nil {
+			patch.Terms = &service.TermsInput{Mode: "custom"}
 		}
 	default:
 		w.stepError(ctx, "未知字段，请重新打开编辑。", false, false)

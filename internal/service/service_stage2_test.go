@@ -255,7 +255,7 @@ func TestPeriodTermsVersioningAndJobPreservation(t *testing.T) {
 	}
 	amount = 999
 	revision := int64(1)
-	patch := PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &revision, Terms: Optional[TermsInput]{Set: true, Value: &terms}}
+	patch := PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &revision, TermsSet: true, Terms: &terms}
 	got, err := s.UpdatePeriod(ctx, a.ID, p.ID, patch)
 	if err != nil || got.Cycle != 1 || got.Terms.Revision != 2 || *got.Terms.Amount != amount {
 		t.Fatalf("terms-only %+v %v", got, err)
@@ -277,10 +277,10 @@ func TestPeriodTermsVersioningAndJobPreservation(t *testing.T) {
 	if _, err = s.UpdatePeriod(ctx, a.ID, p.ID, PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &revision}); err != ErrInvalid {
 		t.Fatalf("revision without terms: %v", err)
 	}
-	if _, err = s.UpdatePeriod(ctx, a.ID, p.ID, PeriodPatch{ExpectedCycle: 1, Terms: Optional[TermsInput]{Set: true}}); err != ErrInvalid {
+	if _, err = s.UpdatePeriod(ctx, a.ID, p.ID, PeriodPatch{ExpectedCycle: 1, TermsSet: true}); err != ErrInvalid {
 		t.Fatalf("terms without revision: %v", err)
 	}
-	got, err = s.UpdatePeriod(ctx, a.ID, p.ID, PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &revision, Terms: Optional[TermsInput]{Set: true}})
+	got, err = s.UpdatePeriod(ctx, a.ID, p.ID, PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &revision, TermsSet: true})
 	if err != nil || got.Terms.Revision != 3 || !sameTerms(got.Terms, defaultTerms()) {
 		t.Fatalf("reset %+v %v", got, err)
 	}
@@ -296,10 +296,10 @@ func TestPeriodTermsVersioningAndJobPreservation(t *testing.T) {
 		t.Fatalf("default row count=%d err=%v", rows, err)
 	}
 	one := int64(1)
-	if _, err = s.UpdatePeriod(ctx, a.ID, plain.ID, PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &revision, Terms: Optional[TermsInput]{Set: true, Value: &TermsInput{Mode: "custom"}}}); err != ErrConflict {
+	if _, err = s.UpdatePeriod(ctx, a.ID, plain.ID, PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &revision, TermsSet: true, Terms: &TermsInput{Mode: "custom"}}); err != ErrConflict {
 		t.Fatalf("stale implicit default no-op: %v", err)
 	}
-	configured, err := s.UpdatePeriod(ctx, a.ID, plain.ID, PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &one, Terms: Optional[TermsInput]{Set: true, Value: &terms}})
+	configured, err := s.UpdatePeriod(ctx, a.ID, plain.ID, PeriodPatch{ExpectedCycle: 1, ExpectedTermsRevision: &one, TermsSet: true, Terms: &terms})
 	if err != nil || configured.Terms.Revision != 2 || configured.Cycle != 1 {
 		t.Fatalf("first config %+v %v", configured, err)
 	}
@@ -342,7 +342,7 @@ func TestPeriodTermsAtomicityValidationAndLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	newDate, revision := "2027-03-01", int64(1)
-	patch := PeriodPatch{ExpectedCycle: 1, ExpiresAt: &newDate, ExpectedTermsRevision: &revision, Terms: Optional[TermsInput]{Set: true, Value: &TermsInput{Mode: "custom"}}}
+	patch := PeriodPatch{ExpectedCycle: 1, ExpiresAt: &newDate, ExpectedTermsRevision: &revision, TermsSet: true, Terms: &TermsInput{Mode: "custom"}}
 	if _, err = s.UpdatePeriod(ctx, a.ID, p.ID, patch); err != ErrUnavailable {
 		t.Fatalf("terms write failure: %v", err)
 	}

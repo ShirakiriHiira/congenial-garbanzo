@@ -45,7 +45,7 @@ func (r *serviceRow) value() ServiceItem {
 	return r.item
 }
 
-func getServiceItem(ctx context.Context, q queryer, uid, id int64) (ServiceItem, error) {
+func getServiceItem(ctx context.Context, q rowQuerier, uid, id int64) (ServiceItem, error) {
 	var r serviceRow
 	err := q.QueryRowContext(ctx, "SELECT "+serviceColumns+" FROM service_items s LEFT JOIN sim_details d ON d.service_id=s.id WHERE s.user_id=? AND s.id=?", uid, id).Scan(r.args()...)
 	if err != nil {
@@ -77,7 +77,7 @@ func validService(v ServiceItem) bool {
 		(v.SIMDetails == nil || validSIMDetails(v.SIMDetails))
 }
 
-func categoryKind(ctx context.Context, q queryer, uid, id int64) (string, error) {
+func categoryKind(ctx context.Context, q rowQuerier, uid, id int64) (string, error) {
 	var owner sql.NullInt64
 	var kind string
 	err := q.QueryRowContext(ctx, "SELECT user_id,kind FROM service_categories WHERE id=?", id).Scan(&owner, &kind)
@@ -205,16 +205,16 @@ func (s *Service) UpdateService(ctx context.Context, uid, id int64, in ServicePa
 		if in.Status != nil {
 			v.Status = *in.Status
 		}
-		if in.SIMDetails.Set {
+		if in.SIMDetailsSet {
 			if oldKind != "sim" {
-				if in.SIMDetails.Value != nil {
+				if in.SIMDetails != nil {
 					return ErrInvalid
 				}
 			} else {
-				if in.SIMDetails.Value == nil {
+				if in.SIMDetails == nil {
 					return ErrInvalid
 				}
-				if err = applySIMDetailsPatch(v.SIMDetails, *in.SIMDetails.Value); err != nil {
+				if err = applySIMDetailsPatch(v.SIMDetails, *in.SIMDetails); err != nil {
 					return err
 				}
 			}

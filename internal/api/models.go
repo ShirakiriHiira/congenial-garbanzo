@@ -11,27 +11,70 @@ import (
 	"telegram.bot.remind/internal/service"
 )
 
-// optional preserves the distinction between an omitted field and explicit null.
-type optional[T any] struct {
+// optionalString preserves the distinction between an omitted field and an
+// explicit null.
+type optionalString struct {
 	Set   bool
-	Value *T
+	Value *string
 }
 
-func (o *optional[T]) UnmarshalJSON(raw []byte) error {
+func (o *optionalString) UnmarshalJSON(raw []byte) error {
 	o.Set = true
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		o.Value = nil
 		return nil
 	}
-	var value T
+	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return err
 	}
 	o.Value = &value
 	return nil
 }
-func (o optional[T]) serviceValue() service.Optional[T] {
-	return service.Optional[T]{Set: o.Set, Value: o.Value}
+func (o optionalString) serviceValue() service.OptionalString {
+	return service.OptionalString{Set: o.Set, Value: o.Value}
+}
+
+// optionalTerms preserves the distinction between an omitted terms object and
+// an explicit null, which resets the terms to the default set.
+type optionalTerms struct {
+	Set   bool
+	Value *termsRequest
+}
+
+func (o *optionalTerms) UnmarshalJSON(raw []byte) error {
+	o.Set = true
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		o.Value = nil
+		return nil
+	}
+	var value termsRequest
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	o.Value = &value
+	return nil
+}
+
+// optionalSimDetails preserves the distinction between an omitted SIM detail
+// block and an explicit null.
+type optionalSimDetails struct {
+	Set   bool
+	Value *simDetailsPatchRequest
+}
+
+func (o *optionalSimDetails) UnmarshalJSON(raw []byte) error {
+	o.Set = true
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		o.Value = nil
+		return nil
+	}
+	var value simDetailsPatchRequest
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	o.Value = &value
+	return nil
 }
 func identifier(v int64) string { return strconv.FormatInt(v, 10) }
 func timestamp(v int64) string  { return time.Unix(v, 0).UTC().Format(time.RFC3339) }
@@ -88,13 +131,13 @@ type periodCreateRequest struct {
 	Terms         *termsRequest `json:"terms"`
 }
 type periodPatchRequest struct {
-	ExpectedCycle         int64                  `json:"expected_cycle"`
-	Name                  *string                `json:"name"`
-	StartsAt              optional[string]       `json:"starts_at"`
-	DatePrecision         *string                `json:"date_precision"`
-	ExpiresAt             *string                `json:"expires_at"`
-	ExpectedTermsRevision *int64                 `json:"expected_terms_revision"`
-	Terms                 optional[termsRequest] `json:"terms"`
+	ExpectedCycle         int64          `json:"expected_cycle"`
+	Name                  *string        `json:"name"`
+	StartsAt              optionalString `json:"starts_at"`
+	DatePrecision         *string        `json:"date_precision"`
+	ExpiresAt             *string        `json:"expires_at"`
+	ExpectedTermsRevision *int64         `json:"expected_terms_revision"`
+	Terms                 optionalTerms  `json:"terms"`
 }
 type ruleCreateRequest struct {
 	DaysBefore   *int   `json:"days_before"`
@@ -170,8 +213,14 @@ func (t *termsRequest) servicePointer() *service.TermsInput {
 	v := t.serviceValue()
 	return &v
 }
-func termsPatch(t optional[termsRequest]) service.Optional[service.TermsInput] {
-	return service.Optional[service.TermsInput]{Set: t.Set, Value: t.Value.servicePointer()}
+
+// termsPatch converts the request's tri-state terms field into the service's
+// explicit set flag and payload.
+func termsPatch(t optionalTerms) (bool, *service.TermsInput) {
+	if !t.Set {
+		return false, nil
+	}
+	return true, t.Value.servicePointer()
 }
 
 type simDetailsRequest struct {
@@ -193,22 +242,27 @@ func (s *simDetailsRequest) serviceValue() *service.SIMDetails {
 }
 
 type simDetailsPatchRequest struct {
-	CardType        optional[string] `json:"card_type"`
-	PhoneNumber     optional[string] `json:"phone_number"`
-	CountryOrRegion optional[string] `json:"country_or_region"`
-	ICCID           optional[string] `json:"iccid"`
+	CardType        optionalString `json:"card_type"`
+	PhoneNumber     optionalString `json:"phone_number"`
+	CountryOrRegion optionalString `json:"country_or_region"`
+	ICCID           optionalString `json:"iccid"`
 }
 
 func (s *simDetailsPatchRequest) UnmarshalJSON(raw []byte) error {
 	type plain simDetailsPatchRequest
 	return strictNested(raw, (*plain)(s), nil, "phone_number", "country_or_region", "iccid")
 }
-func simDetailsPatch(s optional[simDetailsPatchRequest]) service.Optional[service.SIMDetailsPatch] {
-	v := service.Optional[service.SIMDetailsPatch]{Set: s.Set}
-	if s.Value != nil {
-		v.Value = &service.SIMDetailsPatch{CardType: s.Value.CardType.serviceValue(), PhoneNumber: s.Value.PhoneNumber.serviceValue(), CountryOrRegion: s.Value.CountryOrRegion.serviceValue(), ICCID: s.Value.ICCID.serviceValue()}
+
+// simDetailsPatch converts the request's tri-state details field into the
+// service's explicit set flag and payload.
+func simDetailsPatch(s optionalSimDetails) (bool, *service.SIMDetailsPatch) {
+	if !s.Set {
+		return false, nil
 	}
-	return v
+	if s.Value == nil {
+		return true, nil
+	}
+	return true, &service.SIMDetailsPatch{CardType: s.Value.CardType.serviceValue(), PhoneNumber: s.Value.PhoneNumber.serviceValue(), CountryOrRegion: s.Value.CountryOrRegion.serviceValue(), ICCID: s.Value.ICCID.serviceValue()}
 }
 
 type serviceCreateRequest struct {
@@ -221,14 +275,14 @@ type serviceCreateRequest struct {
 	SIMDetails    *simDetailsRequest `json:"sim_details"`
 }
 type servicePatchRequest struct {
-	Name          *string                          `json:"name"`
-	CategoryID    *string                          `json:"category_id"`
-	Provider      optional[string]                 `json:"provider"`
-	Identifier    optional[string]                 `json:"identifier"`
-	ManagementURL optional[string]                 `json:"management_url"`
-	Notes         optional[string]                 `json:"notes"`
-	Status        *string                          `json:"status"`
-	SIMDetails    optional[simDetailsPatchRequest] `json:"sim_details"`
+	Name          *string            `json:"name"`
+	CategoryID    *string            `json:"category_id"`
+	Provider      optionalString     `json:"provider"`
+	Identifier    optionalString     `json:"identifier"`
+	ManagementURL optionalString     `json:"management_url"`
+	Notes         optionalString     `json:"notes"`
+	Status        *string            `json:"status"`
+	SIMDetails    optionalSimDetails `json:"sim_details"`
 }
 
 func categoryView(v service.Category) map[string]any {
