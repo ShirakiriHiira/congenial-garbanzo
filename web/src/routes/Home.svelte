@@ -4,7 +4,7 @@
   import RefreshCw from 'lucide-svelte/icons/refresh-cw';
   import Search from 'lucide-svelte/icons/search';
   import { api, fetchAllPages } from '../lib/api/resources';
-  import type { Category, ServiceFilter, ServiceOverviewResponse } from '../lib/api/types';
+  import type { Category, ServiceFilter, ServiceOverviewResponse, ServiceStatusFilter } from '../lib/api/types';
   import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
   import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
@@ -14,7 +14,7 @@
   import StatGrid from '../components/StatGrid.svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
   import ServiceList from '../components/ServiceList.svelte';
-  import FilterSheet, { type HomeStatus } from '../components/FilterSheet.svelte';
+  import FilterSheet from '../components/FilterSheet.svelte';
   import StickyFooter from '../components/StickyFooter.svelte';
   import AsyncState from '../components/AsyncState.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
@@ -28,7 +28,7 @@
   let collection = $state<ServiceOverviewResponse | null>(null);
   let categories = $state<Category[]>([]);
   let categoriesError = $state('');
-  let status = $state<HomeStatus>('active');
+  let status = $state<ServiceStatusFilter>('active');
   let categoryID = $state<string | null>(null);
   let draftQuery = $state('');
   let query = $state('');
@@ -190,7 +190,7 @@
     void loadFirst();
   }
 
-  function selectStatus(value: HomeStatus): void {
+  function selectStatus(value: ServiceStatusFilter): void {
     if (value === status) return;
     status = value;
     void loadFirst();

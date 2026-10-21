@@ -56,9 +56,12 @@ const period = {
   updated_at: '2027-01-01T00:00:00Z',
 };
 
-function servicePage(ids: string[], next: string | null) {
+function overviewPage(ids: string[], next: string | null) {
   return {
-    data: ids.map((id) => ({ ...service, id })),
+    data: {
+      counts: { total: ids.length, due_soon: 0, expired: 0, no_period: 0 },
+      items: ids.map((id) => ({ service: { ...service, id }, primary_period: null, periods: [] })),
+    },
     next_cursor: next,
     extra_field: 'ignored',
   };
@@ -187,13 +190,13 @@ describe('terminal authentication', () => {
 
 describe('decoder boundaries', () => {
   it('keeps IDs exact beyond Number.MAX_SAFE_INTEGER and rejects values outside int64', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(servicePage(['9007199254740993'], null))));
-    const page = await api.services();
-    expect(page.data[0].id).toBe('9007199254740993');
-    expect(page.data[0].category_id).toBe('2');
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(overviewPage(['9007199254740993'], null))));
+    const page = await api.serviceOverview();
+    expect(page.data.items[0].service.id).toBe('9007199254740993');
+    expect(page.data.items[0].service.category_id).toBe('2');
 
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(servicePage(['9223372036854775808'], null))));
-    await expect(api.services()).rejects.toMatchObject({ kind: 'server', code: 'invalid_response' });
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(overviewPage(['9223372036854775808'], null))));
+    await expect(api.serviceOverview()).rejects.toMatchObject({ kind: 'server', code: 'invalid_response' });
   });
 
   it('preserves an unsafe renewal amount for the precise-display fallback', () => {
@@ -332,14 +335,21 @@ describe('decoder boundaries', () => {
 describe('pagination', () => {
   it('builds service filter and cursor queries and loads all pages', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(servicePage(['1'], '2')))
-      .mockResolvedValueOnce(jsonResponse(servicePage(['2'], null)));
+      .mockResolvedValueOnce(jsonResponse(overviewPage(['1'], '2')))
+      .mockResolvedValueOnce(jsonResponse(overviewPage(['2'], null)));
     vi.stubGlobal('fetch', fetchMock);
 
-    const all = await fetchAllPages((after) => api.services(after, { q: 'acme', category_id: '3', status: 'archived' }));
-    expect(all.map((entry) => entry.id)).toEqual(['1', '2']);
-    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/api/v1/services?limit=20&q=acme&category_id=3&status=archived');
-    expect((fetchMock.mock.calls[1] as unknown as [string])[0]).toBe('/api/v1/services?limit=20&after_id=2&q=acme&category_id=3&status=archived');
+    const ids: string[] = [];
+    let after: string | null = null;
+    for (;;) {
+      const page = await api.serviceOverview(after, { q: 'acme', category_id: '3', status: 'archived' });
+      ids.push(...page.data.items.map((entry) => entry.service.id));
+      if (page.next_cursor === null) break;
+      after = page.next_cursor;
+    }
+    expect(ids).toEqual(['1', '2']);
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/api/v1/services/overview?limit=20&q=acme&category_id=3&status=archived');
+    expect((fetchMock.mock.calls[1] as unknown as [string])[0]).toBe('/api/v1/services/overview?limit=20&after_id=2&q=acme&category_id=3&status=archived');
 
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ data: [], next_cursor: null })));
     await api.reminders(null, 'pending');
@@ -352,13 +362,13 @@ describe('pagination', () => {
       : { data: [], next_cursor: null }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.services();
-    await api.services(null, { q: '', status: 'active' });
+    await api.serviceOverview();
+    await api.serviceOverview(null, { q: '', status: 'active' });
     await api.serviceOverview(null, { category_id: '4' });
 
     const urls = fetchMock.mock.calls.map((call) => call[0] as string);
-    expect(urls[0]).toBe('/api/v1/services?limit=20');
-    expect(urls[1]).toBe('/api/v1/services?limit=20&status=active');
+    expect(urls[0]).toBe('/api/v1/services/overview?limit=20');
+    expect(urls[1]).toBe('/api/v1/services/overview?limit=20&status=active');
     expect(urls[2]).toBe('/api/v1/services/overview?limit=20&category_id=4');
   });
 
@@ -414,16 +424,15 @@ describe('pagination', () => {
   });
 
   it('stops with a pagination error when the cursor repeats or moves backwards', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(servicePage([], '5'))));
-    await expect(fetchAllPages((after) => api.services(after))).rejects.toMatchObject({ kind: 'pagination' });
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(overviewPage([], '5'))));
+    await expect(api.serviceOverview('5')).rejects.toMatchObject({ kind: 'pagination' });
 
-    const cursors = ['5', '4'];
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(servicePage([], cursors.shift() ?? null))));
-    await expect(fetchAllPages((after) => api.services(after))).rejects.toMatchObject({ kind: 'pagination' });
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(overviewPage([], '4'))));
+    await expect(api.serviceOverview('5')).rejects.toMatchObject({ kind: 'pagination' });
   });
 
   it('rejects a page response whose next cursor does not advance', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(servicePage([], '4'))));
-    await expect(api.services('5')).rejects.toMatchObject({ kind: 'pagination' });
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(overviewPage([], '4'))));
+    await expect(api.serviceOverview('5')).rejects.toMatchObject({ kind: 'pagination' });
   });
 });

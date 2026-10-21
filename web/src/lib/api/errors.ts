@@ -66,10 +66,6 @@ export function apiErrorForStatus(status: number, code?: string, message?: strin
   return new ApiError(kind, message || fallback, status, code);
 }
 
-export function isApiError(value: unknown): value is ApiError {
-  return value instanceof ApiError;
-}
-
 export function isAbortError(value: unknown): boolean {
   return value instanceof DOMException && value.name === "AbortError";
 }

@@ -13,7 +13,6 @@
   import SectionHeader from '../components/SectionHeader.svelte';
   import Toast from '../components/Toast.svelte';
 
-  let { periodNames = {} }: { periodNames?: Readonly<Record<ID, string>> } = $props();
   type Detail = { open: boolean; loading: boolean; error: string; data?: ReminderJob };
   const statuses: ReminderStatusFilter[] = ['all', 'pending', 'sending', 'sent', 'failed', 'cancelled'];
   let status = $state<ReminderStatusFilter>('all');
@@ -250,7 +249,7 @@
     <ul class="reminders">
       {#each jobs as job (job.id)}
         <li class="job stack" aria-label={text.task(job.id)}>
-          <div class="job-heading"><h3>{periodNames[job.period_id] || text.period(job.period_id)}</h3><span class="badge" data-status={job.status}>{reminderStatusLabels[job.status]}</span></div>
+          <div class="job-heading"><h3>{text.period(job.period_id)}</h3><span class="badge" data-status={job.status}>{reminderStatusLabels[job.status]}</span></div>
           <dl>
             <div><dt>{text.scheduled}</dt><dd>{time(job.scheduled_at)}</dd></div>
             {#if job.sent_at}<div><dt>{text.sent}</dt><dd>{time(job.sent_at)}</dd></div>{/if}

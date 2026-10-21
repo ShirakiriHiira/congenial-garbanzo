@@ -40,38 +40,13 @@ describe('application routes', () => {
     expect(seen).toHaveBeenLastCalledWith('/app/settings');
     expect(() => router.navigate('https://example.org/app/')).toThrow();
   });
-  it('replaces a route without changing the scoped history index or adding an entry', async () => {
-    const seen = vi.fn();
-    stop = router.subscribe(seen);
-    router.navigate('/app/services/41');
-    const indexBefore = history.state.miniapp.index;
-    router.replace('/app/services/42');
-    expect(location.pathname).toBe('/app/services/42');
-    expect(history.state.miniapp.index).toBe(indexBefore);
-    expect(seen).toHaveBeenLastCalledWith('/app/services/42');
-    const returned = popFinished();
-    router.back('/app/');
-    await returned;
-    expect(location.pathname).toBe('/app/');
-  });
-
-  it('applies the leave guard to replacement and rejects external paths', () => {
-    stop = router.subscribe(() => {});
-    router.setLeaveGuard(() => false);
-    router.replace('/app/services/9');
-    expect(location.pathname).toBe('/app/');
-    router.setLeaveGuard(() => true);
-    expect(() => router.replace('https://example.org/app/services/9')).toThrow();
-  });
-
-  it('notifies query-only changes so creation presets survive replacement', () => {
+  it('notifies query-only changes so creation presets reach the new-service form', () => {
     const seen = vi.fn();
     stop = router.subscribe(seen);
     router.navigate('/app/services/new');
-    const index = history.state.miniapp.index;
-    router.replace('/app/services/new?category=sim');
+    router.navigate('/app/services/new?category=sim');
     expect(seen).toHaveBeenLastCalledWith('/app/services/new?category=sim');
-    expect(history.state.miniapp.index).toBe(index);
+    expect(location.search).toBe('?category=sim');
   });
 
   it('restores rejected browser back navigation and allows confirmed back', async () => {

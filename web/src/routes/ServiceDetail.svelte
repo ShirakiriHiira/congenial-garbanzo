@@ -45,7 +45,6 @@
   let deletePeriodOpen = $state(false);
   let deleteTarget = $state<Period | null>(null);
   let conflictPeriodID = $state('');
-  let conflictPreviousCycle = $state(0);
   const deleteConflict = new ConflictFlow<Period>(() => api.period(conflictPeriodID, controller.signal));
   let alive = true;
   let controller = new AbortController();
@@ -149,7 +148,7 @@
     const target = deleteTarget; if (!target || !deletePeriodOpen || actionBusy || !canWrite() || deleteConflict.changed || deleteConflict.open) return;
     actionBusy = true; actionError = '';
     try { await api.deletePeriod(target.id, target.cycle, controller.signal); if (!alive) return; stop(); periods = periods.filter((period) => period.id !== target.id); sections = {}; expanded = {}; notice = labels.periodDeleted; await reload(); }
-    catch (error) { if (alive) { if (error instanceof ApiError && error.kind === 'conflict') { conflictPeriodID = target.id; conflictPreviousCycle = target.cycle; deletePeriodOpen = false; await deleteConflict.present(); } else actionError = errorMessage(error); } }
+    catch (error) { if (alive) { if (error instanceof ApiError && error.kind === 'conflict') { conflictPeriodID = target.id; deletePeriodOpen = false; await deleteConflict.present(); } else actionError = errorMessage(error); } }
     finally { if (alive) { actionBusy = false; deletePeriodOpen = false; deleteTarget = null; } }
   }
   function useLatestPeriod(): void { if (!deleteConflict.current || deleteConflict.loading || deleteConflict.failed) return; const current = deleteConflict.current; periods = periods.map((period) => period.id === current.id ? current : period); deleteConflict.current = null; deleteConflict.dismiss(); }

@@ -1,5 +1,5 @@
-export type RouteName = 'home' | 'service-new' | 'service-detail' | 'service-edit' | 'period-new' | 'period-edit' | 'rules' | 'renew' | 'reminders' | 'settings' | 'not-found';
-export interface RouteMatch { name: RouteName; params: { id?: string } }
+type RouteName = 'home' | 'service-new' | 'service-detail' | 'service-edit' | 'period-new' | 'period-edit' | 'rules' | 'renew' | 'reminders' | 'settings' | 'not-found';
+interface RouteMatch { name: RouteName; params: { id?: string } }
 const routes: [RegExp, RouteName][] = [
   [/^\/app\/?$/, 'home'], [/^\/app\/services\/new\/?$/, 'service-new'],
   [/^\/app\/services\/(\d+)\/?$/, 'service-detail'], [/^\/app\/services\/(\d+)\/edit\/?$/, 'service-edit'],
@@ -55,13 +55,6 @@ export function navigate(path: string): void {
   if (restoring || (leaveGuard && !leaveGuard())) return;
   index += 1;
   history.pushState(marker(), '', url.pathname + url.search + url.hash);
-  notify();
-}
-export function replace(path: string): void {
-  const url = new URL(path, location.origin);
-  if (url.origin !== location.origin || !/^\/app(?:\/|$)/.test(url.pathname)) throw new Error('Route is outside /app');
-  if (restoring || (leaveGuard && !leaveGuard())) return;
-  history.replaceState(marker(), '', url.pathname + url.search + url.hash);
   notify();
 }
 export function back(fallback = '/app/'): void {

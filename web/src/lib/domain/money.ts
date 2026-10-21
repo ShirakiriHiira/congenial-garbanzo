@@ -1,4 +1,4 @@
-export interface MoneyValue { amount?: number; currency?: string }
+interface MoneyValue { amount?: number; currency?: string }
 
 // ISO 4217 minor-unit exponents that differ from the common two decimals.
 // Everything not listed uses two decimal places.
@@ -9,7 +9,7 @@ const CURRENCY_EXPONENT: Record<string, number> = {
   CLF: 4, UYW: 4,
 };
 
-export function currencyExponent(currency: string): number {
+function currencyExponent(currency: string): number {
   return CURRENCY_EXPONENT[currency] ?? 2;
 }
 

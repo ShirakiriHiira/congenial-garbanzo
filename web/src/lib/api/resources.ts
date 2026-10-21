@@ -14,7 +14,6 @@ import {
   rules as decodeRules,
   service as decodeService,
   serviceOverview as decodeServiceOverview,
-  services as decodeServices,
   user as decodeUser,
 } from "./decode";
 import type {
@@ -113,9 +112,6 @@ export const api = {
   updateCategory: (id: ID, body: CategoryNameInput, signal?: AbortSignal): Promise<Category> =>
     writeEntity(entityPath("/categories", id), "PATCH", body, signal, decodeCategory),
 
-  services: (after: ID | null = null, filter: ServiceFilter = {}, signal?: AbortSignal): Promise<Page<ServiceItem>> =>
-    getPage(`/services${serviceQuery(after, filter)}`, after, signal, decodeServices),
-
   serviceOverview: async (after: ID | null = null, filter: ServiceFilter = {}, signal?: AbortSignal): Promise<ServiceOverviewResponse> => {
     const result = (await request(`/services/overview${serviceQuery(after, filter)}`, { signal }, decodeServiceOverview)).data;
     if (after !== null) assertCursorAdvance(after, result.next_cursor);
@@ -183,4 +179,3 @@ export const api = {
   },
 };
 
-export type Api = typeof api;

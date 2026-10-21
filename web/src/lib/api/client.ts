@@ -7,13 +7,13 @@ const API_PREFIX = "/api/v1";
 const REQUEST_TIMEOUT_MS = 10_000;
 const activeRequests = new Set<AbortController>();
 
-export interface RequestOptions {
+interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
 }
 
-export interface ResponseData<T> {
+interface ResponseData<T> {
   status: number;
   data: T;
 }

@@ -246,7 +246,6 @@
       if (await loadRules(false)) toast = copy.deleted;
     }, rule);
   }
-  function returnToCard() { back(period ? `/app/services/${period.service_id}` : '/app/'); }
   function acceptConflict() {
     if (conflict.loading) return;
     const current = conflict.current;

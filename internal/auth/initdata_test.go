@@ -44,8 +44,8 @@ func TestVerifyFixedFixture(t *testing.T) {
 		sort.Sort(sort.Reverse(sort.StringSlice(parts)))
 		return strings.Join(parts, "&")
 	}()} {
-		id, err := VerifyInitData(raw, fixtureToken, now, 5*time.Minute)
-		if err != nil || id != 10001 {
+		id, issued, err := DecodeInitData(raw, fixtureToken, now)
+		if err != nil || !Fresh(issued, now, 5*time.Minute) || id != 10001 {
 			t.Fatalf("id=%d error=%v", id, err)
 		}
 	}
@@ -68,12 +68,17 @@ func TestRejectInvalidInitData(t *testing.T) {
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := VerifyInitData(raw, fixtureToken, now, 5*time.Minute); err != ErrInvalidInitData {
+			_, issued, err := DecodeInitData(raw, fixtureToken, now)
+			switch {
+			case err == ErrInvalidInitData:
+			case err != nil:
 				t.Fatalf("error=%v", err)
+			case Fresh(issued, now, 5*time.Minute):
+				t.Fatal("invalid init data accepted")
 			}
 		})
 	}
-	if _, err := VerifyInitData(fixture, "wrong", now, 5*time.Minute); err == nil {
+	if _, _, err := DecodeInitData(fixture, "wrong", now); err == nil {
 		t.Fatal("wrong token accepted")
 	}
 }
@@ -82,8 +87,9 @@ func TestAuthDateBoundaries(t *testing.T) {
 	now := time.Unix(1792238400, 0)
 	for _, date := range []string{"1792238100", "1792238430"} {
 		raw := signed(url.Values{"auth_date": {date}, "user": {"{\"id\":10001}"}})
-		if _, err := VerifyInitData(raw, fixtureToken, now, 5*time.Minute); err != nil {
-			t.Fatal(err)
+		_, issued, err := DecodeInitData(raw, fixtureToken, now)
+		if err != nil || !Fresh(issued, now, 5*time.Minute) {
+			t.Fatalf("error=%v issued=%v", err, issued)
 		}
 	}
 }

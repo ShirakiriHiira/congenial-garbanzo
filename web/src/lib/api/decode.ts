@@ -311,7 +311,6 @@ export const renewal: Decoder<Renewal> = (value) => decodeObject(value, decodeRe
 export const category: Decoder<Category> = (value) => decodeObject(value, decodeCategory);
 export const categories: Decoder<Page<Category>> = (value) => decodePage(value, decodeCategory);
 export const service: Decoder<ServiceItem> = (value) => decodeObject(value, decodeService);
-export const services: Decoder<Page<ServiceItem>> = (value) => decodePage(value, decodeService);
 
 export const serviceOverview: Decoder<ServiceOverviewResponse> = (value) => {
   const source = object(value, "response");

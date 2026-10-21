@@ -63,9 +63,9 @@ describe('reminder records', () => {
       job('2', { status: 'failed', attempts: 4, last_error_code: 'https://private.invalid/token' }),
     ]));
     vi.stubGlobal('fetch', fetcher);
-    render(Reminders, { periodNames: { '101': '测试套餐' } });
+    render(Reminders);
     const sent = (await screen.findAllByRole('listitem', { name: '提醒' }))[0];
-    expect(within(sent).getByRole('heading')).toHaveTextContent('测试套餐');
+    expect(within(sent).getByRole('heading')).toHaveTextContent('有效期');
     expect(sent).toHaveTextContent('2027-01-01 08:00:00');
     expect(sent).toHaveTextContent('2027-01-01 09:02:00');
     expect(sent).toHaveTextContent('已发送');

@@ -12,16 +12,15 @@ import (
 // ReminderDelivery is the immutable payload captured when a job is leased.
 // The attempt token fences every result write, including cancelled in-flight jobs.
 type ReminderDelivery struct {
-	ID, PeriodID, RuleID, Cycle, Revision, Attempts int64
-	TelegramUserID                                  int64
-	ChatID                                          *int64
-	ServiceName, PeriodName                         string
-	Expiration                                      domain.Expiration
-	Token                                           string
+	ID, PeriodID, Attempts int64
+	ChatID                 *int64
+	ServiceName, PeriodName string
+	Expiration             domain.Expiration
+	Token                  string
 }
 
-// ErrReminderStore hides SQL details from scheduler logs and API responses.
-var ErrReminderStore = errors.New("reminder storage unavailable")
+// errReminderStore hides SQL details from scheduler logs and API responses.
+var errReminderStore = errors.New("reminder storage unavailable")
 
 const reminderJoins = ` FROM reminder_jobs j
     JOIN service_periods p ON p.id=j.period_id
@@ -62,14 +61,14 @@ func permit(allowed func(int64) bool, telegramUserID int64) bool {
 func (s *Store) reminderTransaction(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return ErrReminderStore
+		return errReminderStore
 	}
 	defer tx.Rollback()
 	if err = fn(tx); err != nil {
-		return ErrReminderStore
+		return errReminderStore
 	}
 	if err = tx.Commit(); err != nil {
-		return ErrReminderStore
+		return errReminderStore
 	}
 	return nil
 }
@@ -299,12 +298,12 @@ func readReminderDelivery(ctx context.Context, tx *sql.Tx, id int64, token strin
 	var v ReminderDelivery
 	var expiry int64
 	err := tx.QueryRowContext(ctx, `
-        SELECT j.id,j.period_id,j.reminder_rule_id,j.cycle,j.rule_revision,j.attempts,
-               u.telegram_user_id,u.private_chat_id,s.name,p.name,j.expires_at_snapshot,
+        SELECT j.id,j.period_id,j.attempts,
+               u.private_chat_id,s.name,p.name,j.expires_at_snapshot,
                p.date_precision,p.local_expires_date,p.timezone,j.attempt_token`+reminderJoins+`
         WHERE j.id=? AND j.attempt_token=?`, id, token).
-		Scan(&v.ID, &v.PeriodID, &v.RuleID, &v.Cycle, &v.Revision, &v.Attempts,
-			&v.TelegramUserID, &v.ChatID, &v.ServiceName, &v.PeriodName, &expiry,
+		Scan(&v.ID, &v.PeriodID, &v.Attempts,
+			&v.ChatID, &v.ServiceName, &v.PeriodName, &expiry,
 			&v.Expiration.DatePrecision, &v.Expiration.LocalExpiresDate,
 			&v.Expiration.Timezone, &v.Token)
 	v.Expiration.ExpiresAt = time.Unix(expiry, 0).UTC()
@@ -390,7 +389,7 @@ func (s *Store) FinishReminder(ctx context.Context, id int64, token string, now 
 			next, code, now.Unix(), id, token)
 	}
 	if err != nil {
-		return ErrReminderStore
+		return errReminderStore
 	}
 	return nil
 }

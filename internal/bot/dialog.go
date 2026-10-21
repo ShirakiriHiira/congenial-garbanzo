@@ -46,7 +46,6 @@ func (d draft) get(key string) (string, bool) {
 
 func (d draft) set(key, value string) { d.Values[key] = value }
 func (d draft) del(key string)        { delete(d.Values, key) }
-func (d draft) has(key string) bool   { _, ok := d.Values[key]; return ok }
 
 // wizard is one rendering/dispatch cycle for the caller's live dialog.
 type wizard struct {

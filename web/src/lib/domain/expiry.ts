@@ -5,7 +5,6 @@ export interface ExpiryDisplay {
   tone: 'muted' | 'ok' | 'warn' | 'danger';
   label: string;
   days: number | null;
-  needsRefresh: boolean;
 }
 
 export function formatExpiry(period: Period): string {
@@ -15,16 +14,15 @@ export function formatExpiry(period: Period): string {
 
 /** Server status wins; the clock is only used for supplementary calendar-day text. */
 export function expiryDisplay(period: Period | null, now: string = new Date().toISOString()): ExpiryDisplay {
-  if (!period) return { tone: 'muted', label: '未设置有效期', days: null, needsRefresh: false };
-  if (period.status === 'expired') return { tone: 'danger', label: '已过期', days: null, needsRefresh: false };
+  if (!period) return { tone: 'muted', label: '未设置有效期', days: null };
+  if (period.status === 'expired') return { tone: 'danger', label: '已过期', days: null };
   const endDate = period.date_precision === 'date' ? period.local_expires_date : localDateAt(period.expires_at, period.timezone);
-  if (!endDate) return { tone: 'ok', label: '有效', days: null, needsRefresh: true };
+  if (!endDate) return { tone: 'ok', label: '有效', days: null };
   const days = calendarDaysBetween(localDateAt(now, period.timezone), endDate);
-  if (days < 0) return { tone: 'ok', label: '有效', days: null, needsRefresh: true };
+  if (days < 0) return { tone: 'ok', label: '有效', days: null };
   return {
     tone: days <= 7 ? 'warn' : 'ok',
     label: days === 0 ? '今天到期' : days <= 7 ? `${days} 天后到期` : '有效',
     days,
-    needsRefresh: false,
   };
 }

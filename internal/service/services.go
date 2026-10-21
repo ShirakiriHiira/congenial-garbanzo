@@ -45,14 +45,6 @@ func (r *serviceRow) value() ServiceItem {
 	return r.item
 }
 
-func scanService(row scanner) (ServiceItem, error) {
-	var r serviceRow
-	if err := row.Scan(r.args()...); err != nil {
-		return ServiceItem{}, err
-	}
-	return r.value(), nil
-}
-
 func getServiceItem(ctx context.Context, q queryer, uid, id int64) (ServiceItem, error) {
 	var r serviceRow
 	err := q.QueryRowContext(ctx, "SELECT "+serviceColumns+" FROM service_items s LEFT JOIN sim_details d ON d.service_id=s.id WHERE s.user_id=? AND s.id=?", uid, id).Scan(r.args()...)

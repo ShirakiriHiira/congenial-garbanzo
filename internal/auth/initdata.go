@@ -16,15 +16,6 @@ import (
 // ErrInvalidInitData deliberately carries no credential or parser details.
 var ErrInvalidInitData = errors.New("invalid init data")
 
-// VerifyInitData verifies Telegram's HMAC scheme and the freshness window.
-func VerifyInitData(raw, botToken string, now time.Time, maxAge time.Duration) (int64, error) {
-	userID, issued, err := DecodeInitData(raw, botToken, now)
-	if err != nil || !Fresh(issued, now, maxAge) {
-		return 0, ErrInvalidInitData
-	}
-	return userID, nil
-}
-
 // DecodeInitData verifies Telegram's bot-token HMAC scheme, decoding query
 // values exactly once. All received fields except hash participate in the MAC.
 // Freshness is checked separately so the API can consult a per-user window.

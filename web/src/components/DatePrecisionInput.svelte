@@ -3,9 +3,9 @@
   import type { Occurrence } from '../lib/domain/datetime';
   import DateTimeInput from './DateTimeInput.svelte';
   import FormField from './FormField.svelte';
-  let { id, precision = $bindable<DatePrecision>('date'), expires = $bindable(''), occurrence = $bindable<Occurrence | undefined>(), zone, disabled = false, error, showPrecision = true }: {
+  let { id, precision = $bindable<DatePrecision>('date'), expires = $bindable(''), occurrence = $bindable<Occurrence | undefined>(), zone, disabled = false, error }: {
     id: string; precision?: DatePrecision; expires?: string; occurrence?: Occurrence;
-    zone: string; disabled?: boolean; error?: string; showPrecision?: boolean;
+    zone: string; disabled?: boolean; error?: string;
   } = $props();
   function changePrecision(next: DatePrecision) {
     if (next === precision) return;
@@ -16,13 +16,11 @@
 </script>
 
 <div class="stack">
-  {#if showPrecision}
-    <fieldset {disabled}>
-      <legend>截止精度</legend>
-      <label class="choice"><input type="radio" name={`${id}-precision`} value="date" checked={precision === 'date'} onchange={() => changePrecision('date')} />日期</label>
-      <label class="choice"><input type="radio" name={`${id}-precision`} value="datetime" checked={precision === 'datetime'} onchange={() => changePrecision('datetime')} />精确时间</label>
-    </fieldset>
-  {/if}
+  <fieldset {disabled}>
+    <legend>截止精度</legend>
+    <label class="choice"><input type="radio" name={`${id}-precision`} value="date" checked={precision === 'date'} onchange={() => changePrecision('date')} />日期</label>
+    <label class="choice"><input type="radio" name={`${id}-precision`} value="datetime" checked={precision === 'datetime'} onchange={() => changePrecision('datetime')} />精确时间</label>
+  </fieldset>
   {#if precision === 'date'}
     <FormField {id} label="截止日期" required {error}>
       {#snippet children(field)}

@@ -19,21 +19,16 @@ export const labels = {
   cardList: '我的服务',
   emptyCards: '还没有服务。',
   noPeriod: '未设置有效期',
-  physicalSim: '实体 SIM',
-  esim: 'eSIM',
   loadMore: '加载更多',
   notFound: '此页面不存在',
   notFoundHint: '请返回首页查看服务。',
   home: '返回首页',
   back: '返回',
   leaveConfirm: '尚有未保存的修改，确定离开吗？',
-  notReady: '此页面尚未启用，请返回首页。',
   readOnly: '当前为只读模式。',
-  bootstrapNote: '服务资料与统计由服务端提供。',
   settings: '设置',
   statistics: '服务统计',
   filter: '筛选',
-  filterAll: '全部服务',
   filterActive: '当前服务',
   filterAllWithArchived: '全部（含归档）',
   filterArchived: '已归档',
@@ -41,8 +36,6 @@ export const labels = {
   filterArchivedNote: '归档视图只显示已归档的服务。',
   search: '搜索',
   searchPlaceholder: '搜索名称、服务商或公开标识',
-  clearSearch: '清空搜索',
-  searchTooLong: '搜索内容不能超过 200 个字符。',
   category: '类别',
   allCategories: '全部类别',
   filterEmpty: '没有符合条件的服务。',
@@ -51,10 +44,6 @@ export const labels = {
   addCard: '添加服务',
   close: '关闭',
   cardsTotal: (total: number | string) => `共 ${total} 项服务`,
-  deleteCard: '删除服务',
-  deleteCardTitle: '永久删除此服务？',
-  deleteCardMessage: (name: string) => `将永久删除「${name}」及其全部有效期、提醒规则、提醒任务和续期历史。此操作不可撤销，无法恢复；已发送的 Telegram 消息不会被撤回。`,
-  deleteCardConfirm: '确认永久删除服务',
   deletePeriod: '删除有效期',
   deletePeriodTitle: '永久删除这个有效期？',
   deletePeriodMessage: (name: string) => `将永久删除「${name}」及其全部提醒规则、提醒任务和续期历史。此操作不可撤销，无法恢复；服务和其他有效期不受影响，已发送的 Telegram 消息不会被撤回。`,
@@ -63,8 +52,6 @@ export const labels = {
   deleteConflict: '删除未完成，未自动重试。请核对最新值，再重新确认删除。',
   deleteConflictFailed: '读取最新有效期失败，删除操作已暂停。',
 } as const;
-
-export type LabelKey = keyof typeof labels;
 
 export const cardTypeLabels: Record<CardType, string> = { physical_sim: '实体 SIM', esim: 'eSIM' };
 export const serviceStatusLabels: Record<ServiceStatus, string> = { active: '使用中', archived: '已归档' };
@@ -202,7 +189,6 @@ export const renewalLabels = {
   history: '续期历史',
   noHistory: '暂无续期记录。',
   renewedAt: '续期时间',
-  previousCycle: '原周期',
   newExpiry: '新截止',
   conflictTitle: '数据已被其他操作更新',
   conflictMessage: '草稿已保留。请核对服务端最新值，基于最新周期重新编辑后再次提交；不会自动重试。',

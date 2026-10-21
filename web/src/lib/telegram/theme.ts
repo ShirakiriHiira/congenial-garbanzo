@@ -1,4 +1,3 @@
-import { session } from '../session.svelte';
 import { getWebApp, supportsVersion } from './sdk';
 
 export function startTheme(): () => void {
@@ -6,7 +5,6 @@ export function startTheme(): () => void {
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   const sync = () => {
     const theme = sdk?.colorScheme ?? (media.matches ? 'dark' : 'light');
-    session.theme = theme;
     document.documentElement.dataset.theme = theme;
     if (!sdk) return;
     const style = getComputedStyle(document.documentElement);

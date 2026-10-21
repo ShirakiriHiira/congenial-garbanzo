@@ -74,7 +74,7 @@ describe('服务端状态与日历有效期', () => {
   });
   it('服务端状态优先，不将本地负天数转为过期', () => {
     expect(expiryDisplay({ ...period, status: 'expired' }, now)).toMatchObject({ days: null, tone: 'danger' });
-    expect(expiryDisplay({ ...period, local_expires_date: '2026-12-31' }, now)).toMatchObject({ days: null, tone: 'ok', needsRefresh: true });
+    expect(expiryDisplay({ ...period, local_expires_date: '2026-12-31' }, now)).toMatchObject({ days: null, tone: 'ok' });
   });
 });
 

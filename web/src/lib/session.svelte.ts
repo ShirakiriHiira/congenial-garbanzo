@@ -5,8 +5,7 @@ export const session = $state<{
   me: User | null;
   auth: AuthState;
   dirty: boolean;
-  theme: 'light' | 'dark';
-}>({ me: null, auth: 'missing', dirty: false, theme: 'light' });
+}>({ me: null, auth: 'missing', dirty: false });
 
 const failureListeners = new Set<() => void>();
 const terminal = () => session.auth === 'expired' || session.auth === 'forbidden';

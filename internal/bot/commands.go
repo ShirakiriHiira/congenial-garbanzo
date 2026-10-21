@@ -13,14 +13,6 @@ import (
 
 const pageSize = 10
 
-func parseAfter(raw string) (int64, error) {
-	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
-	if err != nil || n < 0 {
-		return 0, fail("分页游标无效。")
-	}
-	return n, nil
-}
-
 func id(v int64) string { return strconv.FormatInt(v, 10) }
 
 func textOrDash(v *string) string {

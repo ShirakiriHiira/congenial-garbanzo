@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -36,13 +35,4 @@ func serviceLastAnswer(t *testing.T, f *fixture) string {
 		t.Fatal("callback was not answered")
 	}
 	return answers[len(answers)-1].form.Get("text")
-}
-
-func serviceMustContain(t *testing.T, text string, wants ...string) {
-	t.Helper()
-	for _, want := range wants {
-		if !strings.Contains(text, want) {
-			t.Fatalf("reply %q does not contain %q", text, want)
-		}
-	}
 }

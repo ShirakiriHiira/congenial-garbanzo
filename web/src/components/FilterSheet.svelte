@@ -1,29 +1,25 @@
-<script module lang="ts">
-  export type HomeStatus = 'active' | 'due_soon' | 'expired' | 'no_period' | 'archived' | 'all';
-</script>
-
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { Category, OverviewCounts } from '../lib/api/types';
-  import { labels, serviceStatusLabels } from '../lib/domain/labels';
+  import type { Category, OverviewCounts, ServiceStatusFilter } from '../lib/api/types';
+  import { labels } from '../lib/domain/labels';
 
   let {
     open = $bindable(false), status, categoryID, categories, categoriesError, counts,
     categoryLoading, onstatus, oncategory, onreloadcategories,
   }: {
     open: boolean;
-    status: HomeStatus;
+    status: ServiceStatusFilter;
     categoryID: string | null;
     categories: Category[];
     categoriesError: string;
     counts: OverviewCounts | null;
     categoryLoading: boolean;
-    onstatus: (status: HomeStatus) => void;
+    onstatus: (status: ServiceStatusFilter) => void;
     oncategory: (id: string) => void;
     onreloadcategories: () => void;
   } = $props();
   const uid = $props.id();
-  const options: { value: HomeStatus; label: string }[] = [
+  const options: { value: ServiceStatusFilter; label: string }[] = [
     { value: 'active', label: labels.filterActive },
     { value: 'due_soon', label: labels.dueSoon },
     { value: 'expired', label: labels.expiredCount },
@@ -46,7 +42,7 @@
     closeDialog();
     restoreFocus();
   }
-  function select(next: HomeStatus) {
+  function select(next: ServiceStatusFilter) {
     onstatus(next);
     close();
   }

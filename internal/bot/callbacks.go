@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"telegram.bot.remind/internal/service"
@@ -470,8 +469,3 @@ func objectStateMessage(err error) string {
 	return serviceMessage(err)
 }
 
-// parseInt is used for callback fields that must not accept zero.
-func parseInt(raw string) (int64, bool) {
-	n, err := strconv.ParseInt(raw, 10, 64)
-	return n, err == nil && n > 0
-}

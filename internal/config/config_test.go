@@ -35,10 +35,11 @@ func TestLoadDefaults(t *testing.T) {
 	if c.Token != "test-token" || c.DatabasePath != "./data/remind.db" || c.Timezone != "Asia/Taipei" {
 		t.Fatalf("unexpected default configuration: timezone=%q database=%q", c.Timezone, c.DatabasePath)
 	}
-	if c.Location == nil || c.Location.String() != "Asia/Taipei" {
-		t.Fatal("default location was not loaded")
+	loc, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, offset := time.Date(2027, 1, 1, 0, 0, 0, 0, c.Location).Zone()
+	_, offset := time.Date(2027, 1, 1, 0, 0, 0, 0, loc).Zone()
 	if offset != 8*60*60 {
 		t.Fatalf("Taipei offset = %d", offset)
 	}
@@ -79,7 +80,7 @@ func TestLoadOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabasePath != "/data/custom.db" || c.Timezone != "America/New_York" || c.Location.String() != c.Timezone {
+	if c.DatabasePath != "/data/custom.db" || c.Timezone != "America/New_York" {
 		t.Fatal("path or timezone override was ignored")
 	}
 	if c.ScanInterval != time.Second || c.CatchupWindow != 48*time.Hour || c.AuthMaxAge != 10*time.Minute {

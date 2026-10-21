@@ -17,7 +17,6 @@ type Config struct {
 	Token         string
 	DatabasePath  string
 	Timezone      string
-	Location      *time.Location
 	ScanInterval  time.Duration
 	CatchupWindow time.Duration
 	AuthMaxAge    time.Duration
@@ -54,12 +53,11 @@ func Load(token string) (Config, error) {
 	if c.Timezone == "" || c.Timezone == "Local" {
 		return Config{}, errors.New("APP_TIMEZONE must be a valid IANA timezone")
 	}
-	var err error
-	c.Location, err = time.LoadLocation(c.Timezone)
-	if err != nil {
+	if _, err := time.LoadLocation(c.Timezone); err != nil {
 		return Config{}, errors.New("APP_TIMEZONE must be a valid timezone")
 	}
 
+	var err error
 	c.ScanInterval, err = duration("REMINDER_SCAN_INTERVAL", "30s", time.Second)
 	if err != nil {
 		return Config{}, err

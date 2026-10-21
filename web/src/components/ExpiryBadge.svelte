@@ -3,8 +3,8 @@
   import { expiryDisplay } from '../lib/domain/expiry';
   import { labels } from '../lib/domain/labels';
 
-  let { period, now }: { period: Period | null; now?: string } = $props();
-  const display = $derived(expiryDisplay(period, now));
+  let { period }: { period: Period | null } = $props();
+  const display = $derived(expiryDisplay(period));
 </script>
 
 {#if period}
