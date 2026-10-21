@@ -8,6 +8,7 @@
   import AppShell from './components/AppShell.svelte';
   import AppHeader from './components/AppHeader.svelte';
   import ErrorBanner from './components/ErrorBanner.svelte';
+  import SessionNotice from './components/SessionNotice.svelte';
   import Home from './routes/Home.svelte';
   import ServiceDetail from './routes/ServiceDetail.svelte';
   import ServiceForm from './routes/ServiceForm.svelte';
@@ -86,9 +87,7 @@
   {:else}
     <AppHeader firstName="" photoUrl={null} onsettings={() => navigate('/app/settings')}>{#snippet children()}{/snippet}</AppHeader>
     <div class="content stack">
-      {#if session.auth === 'expired' || session.auth === 'forbidden'}
-        <ErrorBanner message={session.auth === 'expired' ? labels.expired : labels.forbidden} />
-      {/if}
+      <SessionNotice />
       <section class="section"><h2>{labels.notFound}</h2><p>{labels.notFoundHint}</p></section>
       <div class="actions"><button onclick={() => navigate('/app/')}>{labels.home}</button></div>
     </div>

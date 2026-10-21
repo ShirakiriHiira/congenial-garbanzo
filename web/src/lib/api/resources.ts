@@ -66,17 +66,15 @@ function pageQuery(after: ID | null, extra?: Record<string, string>): string {
   const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
   if (after !== null) query.set("after_id", after);
   for (const [key, value] of Object.entries(extra ?? {})) query.set(key, value);
-  const text = query.toString();
-  return text.length > 0 ? `?${text}` : "";
+  return `?${query.toString()}`;
 }
 
 function serviceQuery(after: ID | null, filter: ServiceFilter = {}): string {
-  const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
-  if (after !== null) query.set("after_id", after);
-  if (filter.q !== undefined && filter.q !== "") query.set("q", filter.q);
-  if (filter.category_id !== undefined && filter.category_id !== "") query.set("category_id", filter.category_id);
-  if (filter.status !== undefined) query.set("status", filter.status);
-  return `?${query.toString()}`;
+  const extra: Record<string, string> = {};
+  if (filter.q !== undefined && filter.q !== "") extra.q = filter.q;
+  if (filter.category_id !== undefined && filter.category_id !== "") extra.category_id = filter.category_id;
+  if (filter.status !== undefined) extra.status = filter.status;
+  return pageQuery(after, extra);
 }
 
 function entityPath(base: string, id: ID): string {

@@ -4,11 +4,16 @@
   import { ApiError } from '../lib/api/errors';
   import type { Category, Page, Period, Renewal, Rule, ServiceItem } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
-  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { canWrite, isTerminal, onSessionFailure, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
+  import ConflictBody from '../components/ConflictBody.svelte';
+  import SessionNotice from '../components/SessionNotice.svelte';
+  import { safeManagementURL } from '../lib/domain/url';
   import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
   import { formatDateTime } from '../lib/domain/datetime';
-  import { formatExpiry } from '../lib/domain/expiry';
+  import { formatExpiry, formatLocalCutoff } from '../lib/domain/expiry';
   import { cardTypeLabels, errorMessage, fieldLabels, labels, periodLabel, periodStatusLabels, serviceStatusLabels } from '../lib/domain/labels';
   import { formatTermsCycle } from '../lib/domain/terms';
   import { maskPhone } from '../lib/domain/mask';
@@ -48,10 +53,10 @@
   const deleteConflict = new ConflictFlow<Period>(() => api.period(conflictPeriodID, controller.signal));
   let alive = true;
   let controller = new AbortController();
-  const terminal = $derived(session.auth === 'expired' || session.auth === 'forbidden');
+  const terminal = $derived(isTerminal());
   const category = $derived(categories.find((item) => item.id === service?.category_id) ?? null);
   const serviceFields = $derived(fieldLabels(category?.code));
-  const managementURL = $derived(safeURL(service?.management_url ?? null));
+  const managementURL = $derived(safeManagementURL(service?.management_url));
 
   function stop(): AbortController { controller.abort(); controller = new AbortController(); return controller; }
   function section(periodID: string): Section { return sections[periodID] ?? (sections[periodID] = { rules: null, renewals: null, rulesLoading: false, renewalsLoading: false, rulesError: null, renewalsError: null }); }
@@ -90,7 +95,7 @@
     serviceLoading = periodLoading = true;
     serviceError = periodError = moreError = null;
     actionError = ''; notice = ''; sections = {}; expanded = {};
-    const account = session.me === null ? api.me(signal).then((user) => { if (alive && !signal.aborted) acceptMe(user); }).catch(() => {}) : Promise.resolve();
+    const account = session.me === null ? ensureSession(signal).catch(() => null) : Promise.resolve(null);
     await Promise.all([account, loadCategories(), fetchService(signal), loadPeriods(true)]);
   }
   async function loadMore(): Promise<void> { if (periodLoading || loadingMore || nextCursor === null) return; await loadPeriods(false); }
@@ -153,13 +158,8 @@
   }
   function useLatestPeriod(): void { if (!deleteConflict.current || deleteConflict.loading || deleteConflict.failed) return; const current = deleteConflict.current; periods = periods.map((period) => period.id === current.id ? current : period); deleteConflict.current = null; deleteConflict.dismiss(); }
   function renewalDate(renewal: Renewal, which: 'previous' | 'new'): string {
-    if (which === 'previous') return renewal.previous_date_precision === 'date' ? renewal.previous_local_expires_date ?? '日期不可用' : formatDateTime(renewal.previous_expires_at, renewal.timezone);
-    return renewal.new_date_precision === 'date' ? renewal.new_local_expires_date ?? '日期不可用' : formatDateTime(renewal.new_expires_at, renewal.timezone);
-  }
-  function safeURL(value: string | null): string | null {
-    if (!value || Array.from(value).length > 2048 || !/^https?:\/\/[^\s/@]+(?:[/?#]|$)/.test(value) || /^[^/]*\/\/[^/?#]*@/.test(value)) return null;
-    try { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname && !url.username && !url.password ? url.href : null; }
-    catch { return null; }
+    if (which === 'previous') return formatLocalCutoff(renewal.previous_date_precision, renewal.previous_local_expires_date, renewal.previous_expires_at, renewal.timezone);
+    return formatLocalCutoff(renewal.new_date_precision, renewal.new_local_expires_date, renewal.new_expires_at, renewal.timezone);
   }
 </script>
 
@@ -169,8 +169,8 @@
   {:else if service}
     <div class="heading"><IconTile cardType={service.sim_details?.card_type ?? null} /><div class="heading-text"><h1 id="service-detail-title">{service.name}</h1><p class="muted">{category?.name ?? '服务'} · {serviceStatusLabels[service.status]}</p></div><button type="button" onclick={() => navigate(`/app/services/${id}/edit`)} disabled={!canWrite() || actionBusy}>编辑</button></div>
     {#if service.status === 'archived'}<p class="notice" role="status">此服务已归档，不计入首页统计，未发送的提醒已取消。资料与历史仍保留，可随时恢复。</p>{/if}
-    {#if !canWrite()}<p class="notice">当前为只读模式。</p>{/if}
-    {#if terminal}<ErrorBanner message={session.auth === 'expired' ? '会话已过期，请关闭并重新打开 Mini App' : labels.forbidden} />{/if}
+    {#if !canWrite()}<ReadOnlyNotice />{/if}
+    {#if terminal}<SessionNotice />{/if}
     {#if actionError}<ErrorBanner message={actionError} />{/if}<Toast message={notice} ondismiss={() => { notice = ''; }} />
     {#if categoryError}<ErrorBanner message={errorMessage(categoryError)} onretry={loadCategories} />{/if}
     <div class="section stack"><SectionHeader title="服务资料">{#snippet children()}{/snippet}</SectionHeader><dl class="profile">
@@ -252,7 +252,11 @@
 <ConfirmDialog bind:open={restoreOpen} title="恢复此服务？" message="恢复会取消未发送提醒，并让相关有效期推进版本；旧的草稿与按钮将失效，需要按最新数据重新编辑或续期。" confirmLabel="确认恢复" busy={actionBusy} onconfirm={restore} oncancel={() => { restoreOpen = false; }} />
 <ConfirmDialog bind:open={deleteOpen} title="永久删除此服务？" message={`将永久删除「${service?.name ?? ''}」及其全部有效期、提醒规则、提醒任务和续期历史。此操作不可撤销；已发送的 Telegram 消息不会被撤回。`} confirmLabel="确认永久删除服务" busy={actionBusy} onconfirm={deleteService} oncancel={() => { deleteOpen = false; }} />
 <ConfirmDialog bind:open={deletePeriodOpen} title={labels.deletePeriodTitle} message={labels.deletePeriodMessage(deleteTarget ? periodLabel(deleteTarget) : '')} confirmLabel={labels.deletePeriodConfirm} busy={actionBusy} onconfirm={deletePeriod} oncancel={() => { deletePeriodOpen = false; deleteTarget = null; }} />
-<ConfirmDialog bind:open={deleteConflict.open} title="有效期已变化" message={labels.deleteConflict} confirmLabel="使用最新值" busy={deleteConflict.loading} onconfirm={useLatestPeriod} oncancel={() => deleteConflict.dismiss()}>{#if deleteConflict.loading}<p role="status">正在获取最新有效期…</p>{:else if deleteConflict.failed}<ErrorBanner message={labels.deleteConflictFailed} onretry={() => { void deleteConflict.retry(); }} />{:else if deleteConflict.current}<p>服务端名称：{periodLabel(deleteConflict.current)}</p><p>截止：{formatExpiry(deleteConflict.current)}</p><p>状态：{periodStatusLabels[deleteConflict.current.status]}</p>{/if}</ConfirmDialog>
+<ConfirmDialog bind:open={deleteConflict.open} title="有效期已变化" message={labels.deleteConflict} confirmLabel="使用最新值" busy={deleteConflict.loading} onconfirm={useLatestPeriod} oncancel={() => deleteConflict.dismiss()}>
+  <ConflictBody loading={deleteConflict.loading} failed={deleteConflict.failed} failedMessage={labels.deleteConflictFailed} onretry={() => { void deleteConflict.retry(); }}>
+    {#if deleteConflict.current}<p>服务端名称：{periodLabel(deleteConflict.current)}</p><p>截止：{formatExpiry(deleteConflict.current)}</p><p>状态：{periodStatusLabels[deleteConflict.current.status]}</p>{/if}
+  </ConflictBody>
+</ConfirmDialog>
 {#if deleteConflict.changed && !deleteConflict.open}<ErrorBanner message={deleteConflict.failed ? labels.deleteConflictFailed : labels.deleteConflict} onretry={() => { void deleteConflict.retry(); }} />{/if}
 <style>
   .heading{display:flex;align-items:center;gap:10px;min-width:0}.heading-text{flex:1;min-width:0;overflow-wrap:anywhere}h1{font-size:18px;line-height:1.4}.muted{color:var(--text-secondary);margin:0;overflow-wrap:anywhere}.profile{display:grid;gap:6px;margin:0}.profile div{display:flex;gap:10px;min-width:0}dt{flex:0 0 72px;color:var(--text-secondary)}dd{margin:0;min-width:0;overflow-wrap:anywhere}.preserve{white-space:pre-wrap}.periods,.plain{list-style:none;margin:0;padding:0;display:grid;gap:12px;min-width:0}.period{padding:14px 0;border-top:1px solid var(--border);min-width:0;display:grid;gap:12px}.period-head{display:flex;align-items:flex-start;gap:10px;min-width:0}.period-text{flex:1;min-width:0;display:grid;gap:4px}.period-name{margin:0;font-weight:600;overflow-wrap:anywhere}.badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}h3{font-size:13px;margin:0}.wrap{flex-wrap:wrap}.danger{color:var(--badge-danger-fg)}

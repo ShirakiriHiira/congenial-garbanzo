@@ -5,7 +5,11 @@
   import Search from 'lucide-svelte/icons/search';
   import { api, fetchAllPages } from '../lib/api/resources';
   import type { Category, ServiceFilter, ServiceOverviewResponse, ServiceStatusFilter } from '../lib/api/types';
-  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { canWrite, isTerminal, onSessionFailure, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
+  import LoadMoreButton from '../components/LoadMoreButton.svelte';
+  import SessionNotice from '../components/SessionNotice.svelte';
   import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
   import { parseDisplayUser } from '../lib/telegram/initdata';
@@ -46,7 +50,7 @@
   let pageController: AbortController | undefined;
   let categoryController: AbortController | undefined;
   let accountController: AbortController | undefined;
-  const terminal = $derived(session.auth === 'expired' || session.auth === 'forbidden');
+  const terminal = $derived(isTerminal());
   const items = $derived(collection?.data.items ?? []);
   const hasMore = $derived(Boolean(collection?.next_cursor));
   const loaded = $derived(collection !== null);
@@ -79,8 +83,7 @@
     const current = () => request === accountSequence && !signal.aborted && !terminal;
     accountError = false;
     try {
-      const user = await api.me(signal);
-      if (current()) acceptMe(user);
+      if (await ensureSession(signal) === null && current()) accountError = true;
     } catch {
       if (current()) accountError = true;
     }
@@ -218,10 +221,10 @@
 </AppHeader>
 <div class="content stack">
   {#if terminal}
-    <ErrorBanner message={session.auth === 'expired' ? labels.expired : labels.forbidden} />
+    <SessionNotice />
   {/if}
   {#if accountError && !terminal}<p class="notice" role="alert">{labels.accountFailed}</p>{/if}
-  {#if collection && (!canWrite() || accountError)}<p class="notice">{labels.readOnly}</p>{/if}
+  {#if collection && (!canWrite() || accountError)}<ReadOnlyNotice />{/if}
   <form class="search" role="search" onsubmit={(event) => { event.preventDefault(); applySearch(); }}>
     <label class="search-field">
       <Search size={17} strokeWidth={1.8} aria-hidden="true" />
@@ -249,9 +252,7 @@
     <ServiceList {items} {categories} onopen={(id) => navigate(`/app/services/${id}`)} />
   </AsyncState>
   {#if hasMore && !terminal}
-    <button type="button" class="load-more" onclick={loadMore} disabled={loading || loadingMore}>
-      {loadingMore ? labels.loading : labels.loadMore}
-    </button>
+    <LoadMoreButton loading={loadingMore} disabled={loading || loadingMore} onclick={() => { void loadMore(); }} />
   {/if}
 </div>
 <StickyFooter label={labels.cardsTotal(loaded ? total : '—')} onadd={() => navigate('/app/services/new')}
@@ -267,6 +268,5 @@
   .search-field input::placeholder{color:var(--text-secondary);opacity:.8}
   .search-submit{flex:0 0 auto}
   .filter-actions{align-self:flex-start;font-size:12px}
-  .load-more{width:100%}
   .icon-button{display:inline-flex;align-items:center;justify-content:center;width:44px;min-width:44px;height:44px;min-height:44px;padding:0}
 </style>

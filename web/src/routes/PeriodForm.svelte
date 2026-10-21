@@ -5,7 +5,10 @@
   import type { DatePrecision, Period, PeriodCreateInput, PeriodUpdateInput, PeriodTermsInput, TermsMode, IntervalUnit } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
-  import { acceptMe, canWrite, session } from '../lib/session.svelte';
+  import { canWrite, isTerminal, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
+  import ConflictBody from '../components/ConflictBody.svelte';
   import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
   import { instantToWallTime, isValidDate, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
@@ -110,14 +113,14 @@
   async function load() {
     loading = true;
     loadError = null;
-    if (!getInitData() || session.auth === 'expired' || session.auth === 'forbidden') { loading = false; return; }
+    if (!getInitData() || isTerminal()) { loading = false; return; }
     try {
       if (mode === 'edit') {
-        const [current, user] = await Promise.all([api.period(id, controller.signal), session.me ? Promise.resolve(session.me) : api.me(controller.signal)]);
-        if (alive) { acceptMe(user); fill(current); }
+        const [current, user] = await Promise.all([api.period(id, controller.signal), session.me ? Promise.resolve(session.me) : ensureSession(controller.signal)]);
+        if (alive && user) fill(current);
       } else {
-        const user = session.me ? session.me : await api.me(controller.signal);
-        if (alive) { acceptMe(user); zone = user.timezone; }
+        const user = session.me ?? await ensureSession(controller.signal);
+        if (alive && user) zone = user.timezone;
       }
     } catch (cause) { if (alive && !controller.signal.aborted) loadError = cause; }
     finally { if (alive) loading = false; }
@@ -211,7 +214,7 @@
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={load} />
   {:else if zone}
     <p class="muted">时区：{zone}</p>
-    {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
+    {#if !canWrite()}<ReadOnlyNotice />{/if}
     <Toast message={notice} ondismiss={() => { notice = ''; }} />
     <form class="stack" onsubmit={submit} novalidate>
       <FormField id="period-name" label="有效期名称" hint="可选" error={nameError}>
@@ -233,8 +236,8 @@
   {/if}
 </section>
 <ConfirmDialog bind:open={conflict.open} title="有效期周期冲突" message="草稿已保留。服务端记录已变化；取最新值后请重新编辑并再次保存，不会自动提交或合并。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
-  {#if conflict.loading}<p role="status">正在读取最新有效期…</p>
-  {:else if conflict.failed}<ErrorBanner message="读取最新有效期失败，保存已暂停。" onretry={() => { void conflict.retry(); }} />
-  {:else if conflict.current}<p>服务端名称：{periodLabel(conflict.current)}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{/if}
+  <ConflictBody loading={conflict.loading} failed={conflict.failed} failedMessage="读取最新有效期失败，保存已暂停。" onretry={() => { void conflict.retry(); }}>
+    {#if conflict.current}<p>服务端名称：{periodLabel(conflict.current)}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{/if}
+  </ConflictBody>
 </ConfirmDialog>
 <style>.muted{color:var(--text-secondary);margin:0}.terms{min-width:0;margin:0;padding:12px;border:1px solid var(--border);border-radius:8px}.terms legend{padding:0 4px;font-weight:600}.unsafe-money{display:grid;justify-items:start;gap:4px}.unsafe-money .text-button{margin-block:0}</style>

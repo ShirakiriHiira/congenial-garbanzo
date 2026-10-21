@@ -5,9 +5,13 @@
   import type { DatePrecision, Period, Renewal, RenewalCreateInput } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
-  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { canWrite, isTerminal, onSessionFailure, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
+  import ConflictBody from '../components/ConflictBody.svelte';
+  import LoadMoreButton from '../components/LoadMoreButton.svelte';
   import { formatDateTime, isValidDate, localDateAt, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
-  import { formatExpiry } from '../lib/domain/expiry';
+  import { formatExpiry, formatLocalCutoff } from '../lib/domain/expiry';
   import { formatMoney, formatMoneyInput, parseMoney } from '../lib/domain/money';
   import { formatTermsCycle } from '../lib/domain/terms';
   import { errorMessage, labels, periodLabel, renewalLabels as text } from '../lib/domain/labels';
@@ -50,7 +54,7 @@
   let historySequence = 0;
   const submitter = new Submitter();
   const conflict = new ConflictFlow<Period>(() => api.period(id, controller?.signal));
-  const terminal = $derived(session.auth === 'expired' || session.auth === 'forbidden');
+  const terminal = $derived(isTerminal());
   const writable = $derived(canWrite() && period !== null && !loading && !refreshRequired && !reviewRequired && !conflict.open && !submitter.busy);
 
   function current(request: number, signal: AbortSignal): boolean {
@@ -122,9 +126,8 @@
       const signal = controller.signal;
       accountLoading = session.me === null && !terminal;
       if (accountLoading) {
-        void api.me(signal)
-          .then((user) => { if (!signal.aborted) acceptMe(user); })
-          .catch(() => {})
+        void ensureSession(signal)
+          .catch(() => null)
           .finally(() => { if (!signal.aborted) accountLoading = false; });
       }
       void readPeriod().then(() => {
@@ -227,7 +230,7 @@
 <div class="content stack renew-page">
   <section class="section stack">
     <h1>{text.title}</h1>
-    {#if !canWrite() && !accountLoading}<p class="notice">{labels.readOnly}</p>{/if}
+    {#if !canWrite() && !accountLoading}<ReadOnlyNotice />{/if}
     {#if !period}
       <AsyncState {loading} error={periodError} onretry={terminal ? undefined : () => { void readPeriod().then(() => { if (period) { precision = period.date_precision; void readHistory(); } }); }} />
     {:else}
@@ -274,23 +277,23 @@
         {#each history as entry (entry.id)}
           <li class="stack">
             <p>{text.renewedAt} <time datetime={entry.renewed_at}>{formatDateTime(entry.renewed_at, entry.timezone)}</time></p>
-            <p>{text.newExpiry} {entry.new_date_precision === 'date' ? entry.new_local_expires_date ?? text.dateUnavailable : formatDateTime(entry.new_expires_at, entry.timezone)}</p>
+            <p>{text.newExpiry} {formatLocalCutoff(entry.new_date_precision, entry.new_local_expires_date, entry.new_expires_at, entry.timezone, text.dateUnavailable)}</p>
             <p>{formatMoney(entry.amount, entry.currency)}</p>
             {#if entry.notes}<p class="renew-notes">{entry.notes}</p>{/if}
           </li>
         {/each}
       </ul>
-      {#if historyCursor}<button type="button" disabled={terminal || historyLoading || historyMore} onclick={() => { void readHistory(true); }}>{historyMore ? labels.loading : labels.loadMore}</button>{/if}
+      {#if historyCursor}<LoadMoreButton loading={historyMore} disabled={terminal || historyLoading || historyMore} onclick={() => { void readHistory(true); }} />{/if}
     </section>
   {/if}
 </div>
 
 <ConfirmDialog open={conflict.open} title={text.conflictTitle} message={text.conflictMessage} confirmLabel={conflict.failed ? text.reloadLatest : text.editLatest} cancelLabel={labels.back} busy={conflict.loading} onconfirm={acceptLatest} oncancel={() => conflict.dismiss()}>
-  {#if conflict.loading}<p role="status">{labels.loading}</p>
-  {:else if conflict.failed}<p role="alert">{text.conflictReloadFailed}</p>
-  {:else if conflict.current}
-    <dl class="renew-facts"><dt>{text.currentExpiry}</dt><dd>{formatExpiry(conflict.current)}</dd><dt>{text.expiryInstant}</dt><dd>{formatDateTime(conflict.current.expires_at, conflict.current.timezone)}</dd></dl>
-  {/if}
+  <ConflictBody loading={conflict.loading} failed={conflict.failed} failedMessage={text.conflictReloadFailed}>
+    {#if conflict.current}
+      <dl class="renew-facts"><dt>{text.currentExpiry}</dt><dd>{formatExpiry(conflict.current)}</dd><dt>{text.expiryInstant}</dt><dd>{formatDateTime(conflict.current.expires_at, conflict.current.timezone)}</dd></dl>
+    {/if}
+  </ConflictBody>
 </ConfirmDialog>
 
 <style>

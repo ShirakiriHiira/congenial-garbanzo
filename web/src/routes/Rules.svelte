@@ -5,7 +5,11 @@
   import type { Period, Rule, RuleCreateInput } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
-  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { canWrite, isTerminal, onSessionFailure, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
+  import ConflictBody from '../components/ConflictBody.svelte';
+  import LoadMoreButton from '../components/LoadMoreButton.svelte';
   import { back } from '../lib/router';
   import { errorMessage, labels, periodLabel, rulesLabels as copy } from '../lib/domain/labels';
   import FormField from '../components/FormField.svelte';
@@ -100,16 +104,15 @@
     for (const rule of incoming) merged.set(rule.id, rule);
     return [...merged.values()].sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : BigInt(a.id) > BigInt(b.id) ? 1 : 0);
   }
-  function mayRead() { return session.auth !== 'expired' && session.auth !== 'forbidden' && session.auth !== 'missing'; }
+  function mayRead() { return !isTerminal() && session.auth !== 'missing'; }
   function loadAccount() {
     accountController?.abort();
     accountLoading = session.me === null && mayRead();
     if (!accountLoading) return;
     const controller = new AbortController();
     accountController = controller;
-    void api.me(controller.signal)
-      .then((user) => { if (!controller.signal.aborted) acceptMe(user); })
-      .catch(() => {})
+    void ensureSession(controller.signal)
+      .catch(() => null)
       .finally(() => { if (!controller.signal.aborted) accountLoading = false; });
   }
   async function loadPeriod(periodID = id) {
@@ -261,7 +264,7 @@
   <h1>{copy.title}</h1>
   {#if periodError}<ErrorBanner message={errorMessage(periodError)} onretry={mayRead() ? () => { void loadPeriod(); } : undefined} />{/if}
   {#if period}<p class="muted">{periodLabel(period)} · {period.timezone}</p>{/if}
-  {#if !canWrite() && !accountLoading}<p class="notice">{labels.readOnly}</p>{/if}
+  {#if !canWrite() && !accountLoading}<ReadOnlyNotice />{/if}
   {#if toast}<Toast message={toast} ondismiss={() => { toast = ''; }} />{/if}
   {#if submitter.error}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
   {#if reviewRequired && !conflict.open}
@@ -284,7 +287,7 @@
           </div>
       </article>
     {/each}
-    {#if nextCursor !== null}<button type="button" disabled={loading || loadingMore || submitter.busy || reviewRequired || !mayRead()} onclick={() => { void loadRules(true); }}>{loadingMore ? labels.loading : labels.loadMore}</button>{/if}
+    {#if nextCursor !== null}<LoadMoreButton loading={loadingMore} disabled={loading || loadingMore || submitter.busy || reviewRequired || !mayRead()} onclick={() => { void loadRules(true); }} />{/if}
   </section>
     <section class="section stack">
       <h2>{editing ? copy.edit : copy.create}</h2>
@@ -302,14 +305,14 @@
 </div>
 <ConfirmDialog bind:open={deleteOpen} title={copy.deleteTitle} message={copy.deleteMessage} confirmLabel={copy.remove} busy={submitter.busy} onconfirm={() => { void removeRule(); }} oncancel={() => { deleteTarget = null; }} />
 <ConfirmDialog bind:open={conflict.open} title={copy.conflictTitle} message={copy.conflictMessage} confirmLabel={conflict.failed ? labels.retry : copy.conflictContinue} busy={conflict.loading} onconfirm={acceptConflict} oncancel={() => conflict.dismiss()}>
-  {#if conflict.loading}<p role="status">{labels.loading}</p>{/if}
-  {#if conflict.failed}<p role="alert">{copy.conflictFailed}</p>{/if}
-  {#if conflict.current?.rule}
-    {@const current = conflict.current.rule}
-    <div class="notice"><p>{copy.latest}：{copy.detail(current.days_before, current.reminder_time)} · {current.enabled ? copy.enabledState : copy.disabledState}</p></div>
-  {:else if duplicate && !conflict.loading && !conflict.failed}
-    <div class="notice"><p>{copy.latest}：{copy.detail(duplicate.days_before, duplicate.reminder_time)} · {duplicate.enabled ? copy.enabledState : copy.disabledState}</p></div>
-  {/if}
+  <ConflictBody loading={conflict.loading} failed={conflict.failed} failedMessage={copy.conflictFailed}>
+    {#if conflict.current?.rule}
+      {@const current = conflict.current.rule}
+      <div class="notice"><p>{copy.latest}：{copy.detail(current.days_before, current.reminder_time)} · {current.enabled ? copy.enabledState : copy.disabledState}</p></div>
+    {:else if duplicate && !conflict.loading && !conflict.failed}
+      <div class="notice"><p>{copy.latest}：{copy.detail(duplicate.days_before, duplicate.reminder_time)} · {duplicate.enabled ? copy.enabledState : copy.disabledState}</p></div>
+    {/if}
+  </ConflictBody>
 </ConfirmDialog>
 <style>
   .rules-page h1,.rules-page h2,.rules-page p{margin:0}.rules-page__rule{padding:14px 0;border-bottom:1px solid var(--border);display:grid;gap:10px;min-width:0}.rules-page__summary{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.rules-page__summary h2{overflow-wrap:anywhere}.rules-page__status{background:var(--badge-ok-bg);color:var(--badge-ok-fg);padding:4px 8px;border-radius:8px;font-size:12px}.rules-page__disabled{border-left:3px solid var(--border-strong);padding-left:10px}.rules-page__disabled .rules-page__status{background:var(--border);color:var(--text-secondary)}.rules-page__checkbox{display:flex;align-items:center;gap:10px;min-height:44px}

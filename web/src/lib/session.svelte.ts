@@ -8,24 +8,28 @@ export const session = $state<{
 }>({ me: null, auth: 'missing', dirty: false });
 
 const failureListeners = new Set<() => void>();
-const terminal = () => session.auth === 'expired' || session.auth === 'forbidden';
+
+/** Terminal sessions cannot read or write anything. */
+export function isTerminal(): boolean {
+  return session.auth === 'expired' || session.auth === 'forbidden';
+}
 
 export function canWrite(): boolean {
   return session.auth === 'ready' && session.me !== null;
 }
 
 export function beginSession(hasInitData: boolean): void {
-  if (!terminal()) session.auth = hasInitData ? 'loading' : 'missing';
+  if (!isTerminal()) session.auth = hasInitData ? 'loading' : 'missing';
 }
 
 export function acceptMe(user: User): void {
-  if (terminal()) return;
+  if (isTerminal()) return;
   session.me = user;
   session.auth = 'ready';
 }
 
 export function failSession(status: 401 | 403): void {
-  if (terminal()) return;
+  if (isTerminal()) return;
   session.auth = status === 401 ? 'expired' : 'forbidden';
   for (const listener of failureListeners) listener();
 }

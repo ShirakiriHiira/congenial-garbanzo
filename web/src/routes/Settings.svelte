@@ -2,7 +2,9 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api/resources';
   import type { User } from '../lib/api/types';
-  import { acceptMe, canWrite, session } from '../lib/session.svelte';
+  import { acceptMe, canWrite, isTerminal, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
   import { Submitter } from '../lib/form.svelte';
   import { navigate } from '../lib/router';
   import { isValidTimeZone } from '../lib/domain/datetime';
@@ -28,7 +30,7 @@
   const timezoneDirty = $derived(me !== null && timezone !== me.timezone);
   const sessionDirty = $derived(me !== null && sessionTTL !== String(me.session_ttl_seconds ?? DEFAULT_SESSION_TTL));
   const dirty = $derived(timezoneDirty || sessionDirty);
-  const readAllowed = $derived(session.auth !== 'missing' && session.auth !== 'expired' && session.auth !== 'forbidden');
+  const readAllowed = $derived(session.auth !== 'missing' && !isTerminal());
   const disabled = $derived(!canWrite() || loading || submitter.busy || sessionSubmitter.busy);
   const sessionDisabled = $derived(!canWrite() || loading || sessionSubmitter.busy);
 
@@ -119,7 +121,7 @@
 
 <div class="content stack settings">
   <h1>{labels.settings}</h1>
-  {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
+  {#if !canWrite()}<ReadOnlyNotice />{/if}
   {#if loadError}<ErrorBanner message={loadError} onretry={readAllowed ? () => { void loadMe(); } : undefined} />{/if}
   <AsyncState loading={loading && !me}>
     {#if me}

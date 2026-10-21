@@ -5,7 +5,11 @@
   import type { Category, CategoryKind, CardType, ServiceCreateInput, ServiceItem, ServiceUpdateInput } from '../lib/api/types';
   import { ConflictFlow } from '../lib/conflict.svelte';
   import { Submitter } from '../lib/form.svelte';
-  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { canWrite, isTerminal, onSessionFailure, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
+  import ConflictBody from '../components/ConflictBody.svelte';
+  import { safeManagementURL } from '../lib/domain/url';
   import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
   import { cardTypeLabels, errorMessage, fieldLabels, labels } from '../lib/domain/labels';
@@ -69,7 +73,7 @@
     cleared = {};
   }
   async function load(): Promise<void> {
-    if (!getInitData() || session.auth === 'expired' || session.auth === 'forbidden') { loading = false; return; }
+    if (!getInitData() || isTerminal()) { loading = false; return; }
     loading = true;
     loadError = null;
     try {
@@ -77,7 +81,7 @@
         fetchAllPages((after) => api.categories(after, controller.signal)),
         id ? api.service(id, controller.signal) : Promise.resolve(null),
       ]);
-      if (!session.me) await api.me(controller.signal).then((user) => { if (alive && !controller.signal.aborted) acceptMe(user); });
+      if (!session.me) await ensureSession(controller.signal);
       if (!alive || controller.signal.aborted) return;
       categories = allCategories;
       if (current) fill(current);
@@ -97,14 +101,6 @@
   });
   onDestroy(() => { alive = false; controller.abort(); session.dirty = false; });
 
-  function validManagementURL(value: string): boolean {
-    if (!value) return true;
-    if (Array.from(value).length > 2048 || !/^https?:\/\/[^\s/@]+(?:[/?#]|$)/.test(value) || /^[^/]*\/\/[^/?#]*@/.test(value)) return false;
-    try {
-      const url = new URL(value);
-      return (url.protocol === 'http:' || url.protocol === 'https:') && Boolean(url.hostname) && !url.username && !url.password;
-    } catch { return false; }
-  }
   function validate(): boolean {
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = '请输入服务名称';
@@ -114,7 +110,7 @@
     for (const field of generalFields) {
       if (Array.from(general[field.key]).length > field.limit) next[field.key] = `最多 ${field.limit} 个字符`;
     }
-    if (!validManagementURL(general.management_url)) next.management_url = '请输入无账号密码的绝对 HTTP 或 HTTPS 链接';
+    if (general.management_url && !safeManagementURL(general.management_url)) next.management_url = '请输入无账号密码的绝对 HTTP 或 HTTPS 链接';
     if (kind === 'sim') for (const field of simFields) if (Array.from(sim[field.key]).length > 200) next[field.key] = '最多 200 个字符';
     errors = next;
     return Object.keys(next).length === 0;
@@ -205,7 +201,7 @@
   {#if loading}<p role="status">{labels.loading}</p>
   {:else if loadError}<ErrorBanner message={errorMessage(loadError)} onretry={session.auth === 'ready' ? load : undefined} />
   {:else}
-    {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
+    {#if !canWrite()}<ReadOnlyNotice />{/if}
     <form class="stack" onsubmit={submit} novalidate>
       <FormField id="service-name" label="服务名称" required error={errors.name}>
         {#snippet children(field)}<input id={field.id} bind:value={name} maxlength="200" disabled={!canWrite() || submitter.busy} required aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
@@ -274,9 +270,9 @@
   {/if}
 </section>
 <ConfirmDialog bind:open={conflict.open} title="服务资料已变化" message="草稿已保留。取最新值将更新未修改的字段；请重新检查、编辑后再次保存，不会自动提交。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
-  {#if conflict.loading}<p role="status">正在读取最新资料…</p>
-  {:else if conflict.failed}<ErrorBanner message="最新资料读取失败，提交已暂停。" onretry={() => { void conflict.retry(); }} />
-  {:else if conflict.current}<p>服务端名称：{conflict.current.name}</p><p>类别 ID：{conflict.current.category_id}</p><p>最后更新：{conflict.current.updated_at}</p>{/if}
+  <ConflictBody loading={conflict.loading} failed={conflict.failed} failedMessage="最新资料读取失败，提交已暂停。" onretry={() => { void conflict.retry(); }}>
+    {#if conflict.current}<p>服务端名称：{conflict.current.name}</p><p>类别 ID：{conflict.current.category_id}</p><p>最后更新：{conflict.current.updated_at}</p>{/if}
+  </ConflictBody>
 </ConfirmDialog>
 
 <style>

@@ -1,4 +1,4 @@
-import type { Period } from '../api/types';
+import type { DatePrecision, Period } from '../api/types';
 import { calendarDaysBetween, formatDateTime, localDateAt } from './datetime';
 
 export interface ExpiryDisplay {
@@ -7,9 +7,17 @@ export interface ExpiryDisplay {
   days: number | null;
 }
 
+/**
+ * Renders a cutoff as a local date or a local wall time. A date-precision
+ * cutoff has no local date only when the server could not resolve one.
+ */
+export function formatLocalCutoff(precision: DatePrecision, localDate: string | null, expiresAt: string, timezone: string, fallback = '日期不可用'): string {
+  if (precision === 'date') return localDate ?? fallback;
+  return formatDateTime(expiresAt, timezone);
+}
+
 export function formatExpiry(period: Period): string {
-  if (period.date_precision === 'date') return period.local_expires_date ?? '日期不可用';
-  return formatDateTime(period.expires_at, period.timezone);
+  return formatLocalCutoff(period.date_precision, period.local_expires_date, period.expires_at, period.timezone);
 }
 
 /** Server status wins; the clock is only used for supplementary calendar-day text. */

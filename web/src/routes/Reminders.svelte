@@ -3,7 +3,10 @@
   import { api } from '../lib/api/resources';
   import { ApiError } from '../lib/api/errors';
   import type { ID, ReminderJob, ReminderStatusFilter } from '../lib/api/types';
-  import { acceptMe, canWrite, onSessionFailure, session } from '../lib/session.svelte';
+  import { canWrite, isTerminal, onSessionFailure, session } from '../lib/session.svelte';
+  import { ensureSession } from '../lib/session-load';
+  import ReadOnlyNotice from '../components/ReadOnlyNotice.svelte';
+  import LoadMoreButton from '../components/LoadMoreButton.svelte';
   import { formatDateTime } from '../lib/domain/datetime';
   import { errorMessage, labels, remindersLabels as text, reminderStatusLabels } from '../lib/domain/labels';
   import { getInitData } from '../lib/telegram/sdk';
@@ -37,7 +40,7 @@
   const detailControllers = new Map<ID, AbortController>();
   let alive = true;
   const timezone = $derived(session.me?.timezone ?? 'UTC');
-  const readable = () => session.auth !== 'expired' && session.auth !== 'forbidden' && getInitData().length > 0;
+  const readable = () => !isTerminal() && getInitData().length > 0;
   const cancellable = (job: ReminderJob) => ['pending', 'sending', 'failed'].includes(job.status);
   const time = (value: string) => formatDateTime(value, timezone);
 
@@ -198,12 +201,8 @@
     accountController?.abort();
     const controller = new AbortController();
     accountController = controller;
-    try {
-      const user = await api.me(controller.signal);
-      if (alive && !controller.signal.aborted) acceptMe(user);
-    } catch {
-      // api.me failures are already reflected in the global session state.
-    }
+    // A failed account load is already reflected in the global session state.
+    await ensureSession(controller.signal);
   }
 
   onMount(() => {
@@ -241,7 +240,7 @@
     </select>
   </label>
   <p class="muted">{text.zone}：{timezone}</p>
-  {#if !canWrite()}<p class="notice">{labels.readOnly}</p>{/if}
+  {#if !canWrite()}<ReadOnlyNotice />{/if}
   <Toast message={toast} ondismiss={() => { toast = ''; }} />
   {#if actionError}<ErrorBanner message={actionError} />{/if}
   {#if refreshing}<p role="status">{text.refreshing}</p>{/if}
@@ -284,7 +283,7 @@
     </ul>
   </AsyncState>
   {#if moreError}<ErrorBanner message={`${failedMode === 'more' ? text.partial : text.refreshFailed} ${moreError}`} onretry={readable() ? () => load(failedMode) : undefined} />{/if}
-  {#if nextCursor && !listError}<button type="button" onclick={() => load('more')} disabled={!readable() || loadingMore || refreshing || cancelling}>{loadingMore ? labels.loading : labels.loadMore}</button>{/if}
+  {#if nextCursor && !listError}<LoadMoreButton loading={loadingMore} disabled={!readable() || loadingMore || refreshing || cancelling} onclick={() => { void load('more'); }} />{/if}
 </section>
 
 <ConfirmDialog bind:open={confirmOpen} title={text.cancelTitle} message={cancelTarget?.status === 'sending' ? text.sendingWarning : text.cancelMessage} confirmLabel={text.cancelConfirm} busy={cancelling} onconfirm={cancelReminder} oncancel={() => { cancelTarget = null; }} />
