@@ -1,8 +1,6 @@
 services:
   app:
-    image: sim-reminder:local
-    build:
-      context: .
+    image: ${REMIND_APP_IMAGE:-ghcr.io/shirakirishu/telegram-bot-remind-app:main}
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN}
       ALLOWED_TELEGRAM_USER_IDS: ${ALLOWED_TELEGRAM_USER_IDS:?Set ALLOWED_TELEGRAM_USER_IDS}
@@ -23,9 +21,7 @@ services:
     stop_grace_period: 40s
 
   web:
-    image: sim-reminder-web:local
-    build:
-      context: ./web
+    image: ${REMIND_WEB_IMAGE:-ghcr.io/shirakirishu/telegram-bot-remind-web:main}
     depends_on:
       app:
         condition: service_healthy

@@ -1,0 +1,8 @@
+# 本地构建覆盖：docker compose -f compose.yaml -f compose.build.yaml build
+services:
+  app:
+    build:
+      context: .
+  web:
+    build:
+      context: ./web
