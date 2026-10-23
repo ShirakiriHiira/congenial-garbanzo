@@ -32,7 +32,7 @@ docker compose -f compose.yaml -f compose.build.yaml up -d
 - `ghcr.io/shirakirishu/telegram-bot-remind-app`
 - `ghcr.io/shirakirishu/telegram-bot-remind-web`
 
-标签：`main`、`<version>`、`<major>.<minor>`（仅 tag 推送）、`sha-<short>`。镜像为 `linux/amd64` + `linux/arm64` 多架构。
+标签：`main`、`<version>`、`<major>.<minor>`（仅 tag 推送）、`sha-<short>`。镜像架构为 `linux/amd64`。
 
 VPS 只需 Docker（无需 Go/Node 工具链）：
 
