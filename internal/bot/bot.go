@@ -202,21 +202,20 @@ func (h *Handler) handleDialogInput(ctx context.Context, b *telegram.Bot, user s
 	w.text(ctx, text)
 }
 
-// cancelDialog removes the live dialog and reports the outcome. An empty
-// emptyText means "no flow" is not a distinct outcome, so the cancellation is
-// always reported as done. The return value is the callback answer text.
-func (h *Handler) cancelDialog(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, emptyText string) string {
+// cancelDialog removes the live dialog and reports the outcome in the chat. An
+// empty emptyText means "no flow" is not a distinct outcome, so the
+// cancellation is always reported as done.
+func (h *Handler) cancelDialog(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, emptyText string) {
 	removed, err := h.svc.CancelDialog(ctx, user.ID)
 	if err != nil {
 		h.send(ctx, b, resp, serviceMessage(err))
-		return serviceMessage(err)
+		return
 	}
 	if emptyText != "" && !removed {
 		h.send(ctx, b, resp, emptyText)
-		return emptyText
+		return
 	}
 	h.send(ctx, b, resp, cancelDialogText)
-	return "已取消"
 }
 
 // splitCommand parses "/name@bot rest". It returns the lowercase command name,

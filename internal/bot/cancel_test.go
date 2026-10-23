@@ -37,8 +37,8 @@ func TestCancelPathsReportTheirOwnOutcome(t *testing.T) {
 		if text := f.stub.lastText(); !strings.Contains(text, "当前没有进行中的流程") {
 			t.Fatalf("cancel button without a flow: %q", text)
 		}
-		if answer := serviceLastAnswer(t, f); !strings.Contains(answer, "当前没有进行中的流程") {
-			t.Fatalf("cancel button answer: %q", answer)
+		if answer := serviceLastAnswer(t, f); answer != "" {
+			t.Fatalf("cancel button answered with a toast: %q", answer)
 		}
 	})
 
@@ -50,8 +50,8 @@ func TestCancelPathsReportTheirOwnOutcome(t *testing.T) {
 		if text := f.stub.lastText(); !strings.Contains(text, "已取消当前流程，未写入任何修改。") {
 			t.Fatalf("cancel button with a flow: %q", text)
 		}
-		if answer := serviceLastAnswer(t, f); !strings.Contains(answer, "已取消") {
-			t.Fatalf("cancel button answer: %q", answer)
+		if answer := serviceLastAnswer(t, f); answer != "" {
+			t.Fatalf("cancel button answered with a toast: %q", answer)
 		}
 	})
 }

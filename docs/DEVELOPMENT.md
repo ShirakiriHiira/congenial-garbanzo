@@ -73,6 +73,7 @@ User 1─0..1 BotDialog
 - 只保留 7 个入口：`/start`、`/help`、`/services`、`/add`、`/reminders`、`/settings`、`/cancel`；不接受用户输入任何 ID、`key=value` 或周期编号。
 - 向导动作白名单：`service_add`、`service_edit`、`period_add`、`period_edit`、`rule_add`、`rule_edit`、`renew`、`timezone`；每用户最多一个 15 分钟草稿，读取命令不清草稿。
 - 回调就地改写原消息并显式清空 `reply_markup`，否则会留下失效按钮；`message is not modified` 视为成功，其他编辑失败降级为新消息。提醒卡片按钮走 `notify` 作用域，不改写正文。正文超 3800 字改为新消息。
+- 回调必须恰好回执一次（否则按钮转圈不消失）；回执文案是 Toast，只有聊天里没有任何输出时才带文案，聊天已显示结果时只做静默回执，不弹「xx已发送」。
 - 配置 `MINIAPP_PUBLIC_URL` 时，`/start` 为用户私聊安装 `web_app` 菜单按钮并记入 `users.menu_button_url`；同名 URL 不重复调用，失败只记日志，下次 `/start` 重试。
 
 ## 6. 数据库与迁移

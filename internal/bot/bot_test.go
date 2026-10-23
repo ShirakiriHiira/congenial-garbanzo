@@ -354,12 +354,18 @@ func TestDeniedAndGroupChatsNeverReadOrWrite(t *testing.T) {
 	f.start(userA)
 	f.createSIM("B卡")
 	f.callback(userB, cb("service", "view", "1", "0"), nil)
-	if got := serviceLastAnswer(t, f); !strings.Contains(got, "不存在") {
-		t.Fatalf("cross-user view: %q", got)
+	if text := f.stub.lastText(); !strings.Contains(text, "不存在") {
+		t.Fatalf("cross-user view: %q", text)
+	}
+	if got := serviceLastAnswer(t, f); got != "" {
+		t.Fatalf("cross-user view answered with a toast: %q", got)
 	}
 	f.callback(userB, cb("period", "view", "1"), nil)
-	if got := serviceLastAnswer(t, f); !strings.Contains(got, "不存在") {
-		t.Fatalf("cross-user period: %q", got)
+	if text := f.stub.lastText(); !strings.Contains(text, "不存在") {
+		t.Fatalf("cross-user period: %q", text)
+	}
+	if got := serviceLastAnswer(t, f); got != "" {
+		t.Fatalf("cross-user period answered with a toast: %q", got)
 	}
 }
 
@@ -426,14 +432,15 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 		data string
 		msg  *models.Message
 		want string
+		chat string
 	}{
-		{"malformed", userA, "v3:period:renew:abc", nil, "未知操作"},
-		{"unknown scope", userA, "v3:delete:view:1", nil, "未知操作"},
-		{"inline only", userA, "v3:period:view:1", nil, "请在私聊中使用"},
-		{"unauthorized", stranger, "v3:period:view:1", nil, "无权限"},
-		{"missing period", userA, "v3:period:view:999", nil, "不存在"},
-		{"group message", userA, "v3:period:view:1", &models.Message{ID: 60, Chat: models.Chat{ID: -100, Type: models.ChatTypeGroup}, Date: 1}, "请在私聊中使用"},
-		{"view", userA, "v3:period:view:1", nil, "详情已发送"},
+		{"malformed", userA, "v3:period:renew:abc", nil, "未知操作", ""},
+		{"unknown scope", userA, "v3:delete:view:1", nil, "未知操作", ""},
+		{"inline only", userA, "v3:period:view:1", nil, "请在私聊中使用", ""},
+		{"unauthorized", stranger, "v3:period:view:1", nil, "无权限", ""},
+		{"missing period", userA, "v3:period:view:999", nil, "", "不存在"},
+		{"group message", userA, "v3:period:view:1", &models.Message{ID: 60, Chat: models.Chat{ID: -100, Type: models.ChatTypeGroup}, Date: 1}, "请在私聊中使用", ""},
+		{"view", userA, "v3:period:view:1", nil, "", "项目"},
 	}
 	for _, tc := range cases {
 		update := callbackUpdate(tc.uid, tc.data, tc.msg)
@@ -446,8 +453,19 @@ func TestCallbackAnswersEveryBranch(t *testing.T) {
 		if len(answers) != before+1 {
 			t.Fatalf("%s: answered %d times", tc.name, len(answers)-before)
 		}
-		if got := answers[len(answers)-1].form.Get("text"); !strings.Contains(got, tc.want) {
+		got := answers[len(answers)-1].form.Get("text")
+		if tc.want == "" {
+			// The chat already shows the result, so the callback stays silent.
+			if got != "" {
+				t.Fatalf("%s: unexpected toast %q", tc.name, got)
+			}
+		} else if !strings.Contains(got, tc.want) {
 			t.Fatalf("%s: answer %q, want %q", tc.name, got, tc.want)
+		}
+		if tc.chat != "" {
+			if text := f.stub.lastText(); !strings.Contains(text, tc.chat) {
+				t.Fatalf("%s: chat %q, want %q", tc.name, text, tc.chat)
+			}
 		}
 	}
 }

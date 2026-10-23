@@ -501,8 +501,8 @@ func TestOverviewFiltersAndCategories(t *testing.T) {
 	}
 
 	f.callback(userA, cb("service", "list", "1", "0", "0"), nil)
-	if got := serviceLastAnswer(t, f); got != "服务列表已发送" {
-		t.Fatalf("answer=%q", got)
+	if got := serviceLastAnswer(t, f); got != "" {
+		t.Fatalf("overview answered with a toast: %q", got)
 	}
 	text := f.stub.lastText()
 	for _, want := range []string{"我的服务", "DueSvc", "ExpiredSvc", "BareSvc"} {
@@ -519,8 +519,8 @@ func TestOverviewFiltersAndCategories(t *testing.T) {
 		t.Fatalf("archived filter: %q", text)
 	}
 	f.callback(userA, cb("service", "cats", "1", "0"), nil)
-	if got := serviceLastAnswer(t, f); got != "请选择类别" {
-		t.Fatalf("cats answer=%q", got)
+	if got := serviceLastAnswer(t, f); got != "" {
+		t.Fatalf("cats answered with a toast: %q", got)
 	}
 	f.callback(userA, cb("service", "list", "1", id(vps), "0"), nil)
 	if text := f.stub.lastText(); !strings.Contains(text, "DueSvc") {
