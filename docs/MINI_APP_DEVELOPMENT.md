@@ -1,6 +1,6 @@
 # Mini App 开发规范
 
-前端专项规范。HTTP 契约见 [API.md](API.md)，领域规则见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+前端专项规范。HTTP 契约见 [API.md](API.md)，领域规则见 [DEVELOPMENT.md](DEVELOPMENT.md)，Git 提交与代码标准见 [GIT.md](GIT.md)。
 
 ## 1. 路由
 
@@ -55,6 +55,7 @@
 
 ## 5. 视觉、状态与移动端
 
+- 避免多余的二级标签与说明文案，让布局本身传达含义；避免冗余的辅助文本、描述性文案与重复的界面微文案。
 - 深色头部、三张统计卡、紧凑列表、双主题、吸底操作区、Telegram 安全区；只用现有 CSS token，不写字面色值。
 - 触控区 ≥44×44；在 320/375/430 CSS px 检查长名称、系统大字、刘海与底部手势，不得横向溢出。
 - 空状态、加载、错误、只读、冲突复用 `AsyncState`、`ErrorBanner`、`ConfirmDialog`、`Toast`。

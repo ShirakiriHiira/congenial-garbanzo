@@ -105,10 +105,3 @@ cd web && npm run check && npm test && npm run build
 
 `scripts/test-miniapp.sh`：假签名 API + Vite，不启动 Bot 轮询或投递，不读 `.env` 与生产库，Ctrl-C 删除临时库。
 `scripts/dev-miniapp.sh`：真实联调（Bot 轮询、调度器、菜单按钮），默认 `data/miniapp-test.db`，检测到生产库或已有业务数据时拒绝启动，除非 `MINIAPP_ALLOW_EXISTING_DB=1`。
-
-## 8. Git 提交规范
-
-- 标题 `type: 简明英文描述`，默认单行，不加正文与脚注。
-- 类型：`feat` `fix` `refactor` `docs` `test` `style` `build` `ci` `perf` `chore`。
-- 未明确要求不写 issue 编号或 `Closes #xxxx`；确需关闭 issue 时按要求附加。
-- 不添加未经要求的描述、测试报告或协作署名。
