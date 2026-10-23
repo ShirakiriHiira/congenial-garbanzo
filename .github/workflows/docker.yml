@@ -42,6 +42,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: app
@@ -50,7 +51,7 @@ jobs:
             image: ghcr.io/${{ github.repository_owner }}/telegram-bot-remind-app
           - name: web
             context: ./web
-            dockerfile: Dockerfile
+            dockerfile: web/Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/telegram-bot-remind-web
     steps:
       - uses: actions/checkout@v4
