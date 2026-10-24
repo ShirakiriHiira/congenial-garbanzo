@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { Category, OverviewCounts, ServiceStatusFilter } from '../lib/api/types';
+  import type { Category, ServiceStatusFilter } from '../lib/api/types';
   import { labels } from '../lib/domain/labels';
 
   let {
-    open = $bindable(false), status, categoryID, categories, categoriesError, counts,
+    open = $bindable(false), status, categoryID, categories, categoriesError,
     categoryLoading, onstatus, oncategory, onreloadcategories,
   }: {
     open: boolean;
@@ -12,7 +12,6 @@
     categoryID: string | null;
     categories: Category[];
     categoriesError: string;
-    counts: OverviewCounts | null;
     categoryLoading: boolean;
     onstatus: (status: ServiceStatusFilter) => void;
     oncategory: (id: string) => void;
@@ -104,12 +103,6 @@
   {#if categoriesError}
     <p class="note" role="alert">{categoriesError} <button type="button" class="text-button" onclick={onreloadcategories}>{labels.retry}</button></p>
   {/if}
-  {#if open && counts}
-    <p class="count">{labels.cardsTotal(counts.total)}</p>
-  {/if}
-  {#if status === 'archived'}
-    <p class="note">{labels.filterArchivedNote}</p>
-  {/if}
 </dialog>
 
 <style>
@@ -123,5 +116,5 @@
   input{width:18px;height:18px;margin:0;accent-color:var(--icon-esim-fg)}
   .category{display:grid;gap:6px;margin-top:8px}
   .category select{width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--border-strong);border-radius:10px;background:var(--page-bg);color:var(--text)}
-  .count,.note{margin:8px 0 0;font-size:12px;line-height:1.5;color:var(--text-secondary);overflow-wrap:anywhere}
+  .note{margin:8px 0 0;font-size:12px;line-height:1.5;color:var(--text-secondary);overflow-wrap:anywhere}
 </style>

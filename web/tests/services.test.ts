@@ -235,7 +235,6 @@ describe('service detail', () => {
     await fireEvent.click(screen.getByRole('button', { name: '详情' }));
     await screen.findByText('续期记录 1');
     await fireEvent.click(screen.getByRole('button', { name: '加载更多规则' }));
-    await screen.findByText('2 天前 09:00 · 启用');
     expect(calls.filter((path) => path.includes('/renewals')).length).toBe(1);
     await fireEvent.click(screen.getByRole('button', { name: '加载更多历史' }));
     await screen.findByText('续期记录 2');

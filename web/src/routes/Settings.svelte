@@ -126,18 +126,15 @@
   <AsyncState loading={loading && !me}>
     {#if me}
       <section class="section stack" aria-label={settingsLabels.currentTimezone}>
-        <h2>{settingsLabels.currentTimezone}</h2>
-        <p class="settings__zone">{me.timezone}</p>
         <form class="stack" onsubmit={confirmChange} novalidate>
           <TimeZoneSelect id="settings-timezone" bind:value={timezone} {disabled} error={timezoneError} />
           {#if submitter.error}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
           <div class="actions"><button class="primary" type="submit" disabled={disabled || !timezoneDirty}>{settingsLabels.saveTimezone}</button></div>
         </form>
       </section>
-      <section class="section stack" aria-labelledby="session-heading">
-        <h2 id="session-heading">{settingsLabels.sessionValidity}</h2>
+      <section class="section stack" aria-label={settingsLabels.sessionValidity}>
         <form class="stack" onsubmit={saveSession}>
-          <FormField id="settings-session-ttl" label="有效期" hint={settingsLabels.sessionHint}>
+          <FormField id="settings-session-ttl" label={settingsLabels.sessionValidity}>
             {#snippet children(field)}
               <select id={field.id} bind:value={sessionTTL} disabled={sessionDisabled}>
                 {#each sessionTTLOptions as option (option.value)}
@@ -150,8 +147,7 @@
           <div class="actions"><button class="primary" type="submit" disabled={sessionDisabled || !sessionDirty}>{settingsLabels.saveSession}</button></div>
         </form>
       </section>
-      <section class="section stack" aria-labelledby="private-chat-heading">
-        <h2 id="private-chat-heading">{settingsLabels.privateChat}</h2>
+      <section class="section stack" aria-label={settingsLabels.privateChat}>
         <p role="status">{me.has_private_chat ? settingsLabels.bound : settingsLabels.unbound}</p>
         {#if !me.has_private_chat}<p>{settingsLabels.bindHint}</p>{/if}
         <div class="actions"><button type="button" disabled={!readAllowed || loading || submitter.busy || sessionSubmitter.busy} onclick={() => { void loadMe(); }}>{loading ? labels.loading : settingsLabels.refreshBinding}</button></div>
@@ -159,13 +155,7 @@
     {/if}
   </AsyncState>
   <section class="section stack">
-    <h2>{settingsLabels.reminders}</h2>
-    <p>{settingsLabels.remindersHint}</p>
     <div class="actions"><button type="button" onclick={() => navigate('/app/reminders')}>{settingsLabels.reminders}</button></div>
-  </section>
-  <section class="section stack" aria-labelledby="privacy-heading">
-    <h2 id="privacy-heading">{settingsLabels.privacy}</h2>
-    <p>{settingsLabels.privacyHint}</p>
   </section>
 </div>
 
@@ -174,5 +164,5 @@
 </ConfirmDialog>
 
 <style>
-  h2{font-size:16px;margin:0}p{margin:0;overflow-wrap:anywhere}.settings__zone{font-weight:600}.settings{min-width:0}
+  p{margin:0;overflow-wrap:anywhere}.settings{min-width:0}
 </style>

@@ -49,7 +49,7 @@ describe('settings', () => {
     vi.stubGlobal('fetch', fetcher);
     render(Settings);
     expect(await screen.findByText('请先向此机器人私聊发送 /start，再刷新绑定状态')).toBeInTheDocument();
-    expect(screen.getByText('Asia/Taipei', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '时区' })).toHaveValue('Asia/Taipei');
     const refresh = await screen.findByRole('button', { name: '刷新绑定状态' });
     await fireEvent.click(refresh);
     expect(await screen.findByText('已绑定私聊')).toBeInTheDocument();
@@ -68,7 +68,7 @@ describe('settings', () => {
     const fetcher = vi.fn(async (_path: string, request: RequestInit) => Response.json({ data: request.method === 'PATCH' ? updated : user }));
     vi.stubGlobal('fetch', fetcher);
     render(Settings);
-    const select = await screen.findByRole('combobox', { name: '有效期' });
+    const select = await screen.findByRole('combobox', { name: '会话有效期' });
     expect(select).toHaveValue('86400');
     await waitFor(() => expect(select).toBeEnabled());
     await fireEvent.change(select, { target: { value: '21600' } });
@@ -220,12 +220,10 @@ describe('settings', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('offers reminder navigation and explains where full private identifiers appear', async () => {
+  it('offers reminder navigation to the reminder records page', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: user })));
     render(Settings);
     await screen.findByRole('button', { name: '刷新绑定状态' });
-    expect(screen.getByRole('heading', { name: '隐私说明' })).toBeInTheDocument();
-    expect(screen.getByText(/完整手机号和 ICCID 仅在编辑表单中显示/)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: '提醒记录' }));
     expect(location.pathname).toBe('/app/reminders');
   });

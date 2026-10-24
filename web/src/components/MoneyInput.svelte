@@ -1,8 +1,8 @@
 <script lang="ts">
   import { parseMoney } from '../lib/domain/money';
   import FormField from './FormField.svelte';
-  let { id, label = '金额', hint = '可输入小数，按币种标准小数位换算；金额和币种同时填写或同时留空。', amount = $bindable(''), currency = $bindable(''), disabled = false, error }: {
-    id: string; label?: string; hint?: string; amount?: string; currency?: string; disabled?: boolean; error?: string;
+  let { id, label = '金额', amount = $bindable(''), currency = $bindable(''), disabled = false, error }: {
+    id: string; label?: string; amount?: string; currency?: string; disabled?: boolean; error?: string;
   } = $props();
   const validation = $derived.by(() => {
     if (error) return error;
@@ -14,12 +14,12 @@
 </script>
 
 <div class="stack">
-  <FormField {id} {label} error={validation} {hint}>
+  <FormField {id} {label} error={validation}>
     {#snippet children(field)}
       <input bind:this={input} {id} type="text" inputmode="decimal" pattern="[0-9]*[.]?[0-9]*" bind:value={amount} {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid} />
     {/snippet}
   </FormField>
-  <FormField id={`${id}-currency`} label="币种" hint="三位大写英文字母，例如 CNY。">
+  <FormField id={`${id}-currency`} label="币种">
     {#snippet children(field)}
       <input id={field.id} type="text" bind:value={currency} pattern={'[A-Z]{3}'} maxlength="3" autocapitalize="characters" spellcheck={false} {disabled} aria-invalid={Boolean(validation)} aria-describedby={field.describedby} />
     {/snippet}

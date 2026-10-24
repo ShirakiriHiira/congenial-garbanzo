@@ -62,7 +62,7 @@
   {#if session.auth === 'missing'}
     <AppHeader firstName="" photoUrl={null} onsettings={() => navigate('/app/settings')}>{#snippet children()}{/snippet}</AppHeader>
     <div class="content stack">
-      <section class="section"><h2>{labels.openTelegram}</h2><p>{labels.openTelegramHint}</p></section>
+      <section class="section"><h2>{labels.openTelegram}</h2></section>
     </div>
   {:else if route.name === 'home'}
     {#key route.name}<Home />{/key}
@@ -88,7 +88,7 @@
     <AppHeader firstName="" photoUrl={null} onsettings={() => navigate('/app/settings')}>{#snippet children()}{/snippet}</AppHeader>
     <div class="content stack">
       <SessionNotice />
-      <section class="section"><h2>{labels.notFound}</h2><p>{labels.notFoundHint}</p></section>
+      <section class="section"><h2>{labels.notFound}</h2></section>
       <div class="actions"><button onclick={() => navigate('/app/')}>{labels.home}</button></div>
     </div>
   {/if}

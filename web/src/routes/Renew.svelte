@@ -241,7 +241,6 @@
         <dt>{text.expiryInstant}</dt><dd><time datetime={period.expires_at}>{formatDateTime(period.expires_at, period.timezone)}</time></dd>
         <dt>{text.timezone}</dt><dd>{period.timezone}</dd>
       </dl>
-      <p class="muted">{text.termsReferenceHint}</p>
       {#if periodError}<ErrorBanner message={periodError} onretry={terminal ? undefined : () => { void readPeriod(); }} />{/if}
       <Toast message={toast} ondismiss={() => { toast = ''; }} />
       {#if replayMessage}<p role="status" class="notice">{replayMessage}</p>{/if}
@@ -250,11 +249,9 @@
         {/if}
         <form class="stack" onsubmit={submit} oninput={() => { dirty = true; }}>
           <DatePrecisionInput id="renew-expires" bind:precision bind:expires bind:occurrence zone={period.timezone} disabled={!writable} error={fieldError} />
-          <p class="muted">{text.expiryHint}</p>
-          <p class="muted">{text.actualPaymentHint}</p>
           <MoneyInput id="renew-amount" bind:amount bind:currency disabled={!writable} />
           {#if period.terms.amount !== null && period.terms.currency !== null}<div class="actions"><button type="button" onclick={() => { amount = formatMoneyInput(period!.terms.amount, period!.terms.currency); currency = period!.terms.currency ?? ''; dirty = true; }} disabled={!writable}>使用约定金额</button></div>{/if}
-          <FormField id="renew-notes" label={text.notes} error={notesError} hint={text.notesHint}>
+          <FormField id="renew-notes" label={text.notes} error={notesError}>
             {#snippet action()}
               {#if notes}<button type="button" class="text-button" aria-label={text.clearNotes} disabled={!writable} onclick={() => { notes = ''; dirty = true; }}>清除</button>{/if}
             {/snippet}

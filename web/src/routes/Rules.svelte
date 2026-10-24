@@ -292,10 +292,10 @@
     <section class="section stack">
       <h2>{editing ? copy.edit : copy.create}</h2>
       <form onsubmit={save} novalidate>
-        <FormField id={`${uid}-days`} label={copy.days} hint={copy.daysHint} error={daysError} required>
+        <FormField id={`${uid}-days`} label={copy.days} error={daysError} required>
           {#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" bind:value={days} aria-describedby={field.describedby} aria-invalid={field.invalid} disabled={submitter.busy} />{/snippet}
         </FormField>
-        <FormField id={`${uid}-time`} label={copy.time} hint={copy.timeHint} error={timeError} required>
+        <FormField id={`${uid}-time`} label={copy.time} error={timeError} required>
           {#snippet children(field)}<input id={field.id} type="time" step="60" bind:value={time} aria-describedby={field.describedby} aria-invalid={field.invalid} disabled={submitter.busy} />{/snippet}
         </FormField>
         <label class="rules-page__checkbox"><input type="checkbox" bind:checked={enabled} disabled={submitter.busy} />{copy.enabled}</label>

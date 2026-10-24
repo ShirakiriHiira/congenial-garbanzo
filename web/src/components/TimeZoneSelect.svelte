@@ -10,7 +10,7 @@
   $effect(() => { control?.setCustomValidity(validation); });
 </script>
 
-<FormField {id} label="时区" required error={validation} hint="使用 IANA 时区名称，例如 Asia/Taipei；不使用设备本地时区。">
+<FormField {id} label="时区" required error={validation}>
   {#snippet children(field)}
     {#if zones.length}
       <select bind:this={control} {id} bind:value required {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid}>

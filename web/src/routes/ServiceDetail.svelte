@@ -14,7 +14,7 @@
   import { getInitData } from '../lib/telegram/sdk';
   import { formatDateTime } from '../lib/domain/datetime';
   import { formatExpiry, formatLocalCutoff } from '../lib/domain/expiry';
-  import { cardTypeLabels, errorMessage, fieldLabels, labels, periodLabel, periodStatusLabels, serviceStatusLabels } from '../lib/domain/labels';
+  import { cardTypeLabels, errorMessage, fieldLabels, labels, periodLabel, periodStatusLabels, rulesLabels, serviceStatusLabels } from '../lib/domain/labels';
   import { formatTermsCycle } from '../lib/domain/terms';
   import { maskPhone } from '../lib/domain/mask';
   import { formatMoney } from '../lib/domain/money';
@@ -167,8 +167,7 @@
   {#if serviceLoading && !service}<AsyncState loading />
   {:else if serviceError && !service}<ErrorBanner message={errorMessage(serviceError)} onretry={refresh} />
   {:else if service}
-    <div class="heading"><IconTile cardType={service.sim_details?.card_type ?? null} /><div class="heading-text"><h1 id="service-detail-title">{service.name}</h1><p class="muted">{category?.name ?? '服务'} · {serviceStatusLabels[service.status]}</p></div><button type="button" onclick={() => navigate(`/app/services/${id}/edit`)} disabled={!canWrite() || actionBusy}>编辑</button></div>
-    {#if service.status === 'archived'}<p class="notice" role="status">此服务已归档，不计入首页统计，未发送的提醒已取消。资料与历史仍保留，可随时恢复。</p>{/if}
+    <div class="heading"><IconTile cardType={service.sim_details?.card_type ?? null} /><div class="heading-text"><h1 id="service-detail-title">{service.name}</h1><p class="muted">{serviceStatusLabels[service.status]}</p></div><button type="button" onclick={() => navigate(`/app/services/${id}/edit`)} disabled={!canWrite() || actionBusy}>编辑</button></div>
     {#if !canWrite()}<ReadOnlyNotice />{/if}
     {#if terminal}<SessionNotice />{/if}
     {#if actionError}<ErrorBanner message={actionError} />{/if}<Toast message={notice} ondismiss={() => { notice = ''; }} />
@@ -180,7 +179,6 @@
       {#if managementURL}<div><dt>管理链接</dt><dd><a href={managementURL} target="_blank" rel="noopener noreferrer">{service.management_url}</a></dd></div>{/if}
       {#if service.sim_details}<div><dt>卡片类型</dt><dd>{cardTypeLabels[service.sim_details.card_type]}</dd></div>{#if service.sim_details.phone_number}<div><dt>手机号</dt><dd>{maskPhone(service.sim_details.phone_number)}</dd></div>{/if}{#if service.sim_details.country_or_region}<div><dt>国家或地区</dt><dd>{service.sim_details.country_or_region}</dd></div>{/if}{/if}
       {#if service.notes}<div><dt>备注</dt><dd class="preserve">{service.notes}</dd></div>{/if}
-      {#if !service.provider && !service.identifier && !service.management_url && !service.notes && !service.sim_details?.phone_number && !service.sim_details?.country_or_region}<p class="muted">未填写其他资料。</p>{/if}
     </dl></div>
     <div class="section stack">
       <SectionHeader title="有效期">
@@ -199,8 +197,8 @@
                   <p class="period-name">{periodLabel(period)}</p>
                   <p class="muted">{formatExpiry(period)}</p>
                   <div class="badges"><ExpiryBadge {period} /></div>
-                  <p class="muted">约定周期：{formatTermsCycle(period.terms)}</p>
-                  <p class="muted">约定费用：{formatMoney(period.terms.amount, period.terms.currency)}</p>
+                  {#if period.terms.mode !== 'custom'}<p class="muted">约定周期：{formatTermsCycle(period.terms)}</p>{/if}
+                  {#if period.terms.amount !== null && period.terms.currency !== null}<p class="muted">约定费用：{formatMoney(period.terms.amount, period.terms.currency)}</p>{/if}
                 </div>
                 <button type="button" class="toggle" aria-expanded={Boolean(expanded[period.id])} onclick={() => toggle(period)}>{expanded[period.id] ? '收起' : '详情'}</button>
               </div>
@@ -215,7 +213,7 @@
                   {#if sections[period.id]?.rulesLoading && !sections[period.id]?.rules}<p role="status">正在加载规则…</p>
                   {:else if sections[period.id]?.rules?.data.length}
                     <ul class="plain">
-                      {#each sections[period.id]!.rules!.data as rule (rule.id)}<li>{rule.days_before} 天前 {rule.reminder_time} · {rule.enabled ? '启用' : '已禁用'}</li>{/each}
+                      {#each sections[period.id]!.rules!.data as rule (rule.id)}<li>{rulesLabels.detail(rule.days_before, rule.reminder_time)} · {rule.enabled ? rulesLabels.enabledState : rulesLabels.disabledState}</li>{/each}
                     </ul>
                     {#if sections[period.id]?.rules?.next_cursor}<button type="button" onclick={() => loadRules(period.id, true)} disabled={sections[period.id]?.rulesLoading}>加载更多规则</button>{/if}
                   {:else if !sections[period.id]?.rulesError}<p class="muted">暂无提醒规则。</p>{/if}

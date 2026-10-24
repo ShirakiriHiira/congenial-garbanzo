@@ -291,9 +291,9 @@ describe('period form', () => {
     });
     render(PeriodForm, { props: { id: '5', mode: 'edit' } });
     await fireEvent.input(await screen.findByRole('textbox', { name: '有效期名称' }), { target: { value: '' } });
-    expect(Temporal.PlainDateTime.from((screen.getByLabelText('开始时间（可选）', { exact: false }) as HTMLInputElement).value).equals('2027-01-15T18:00:30')).toBe(true);
+    expect(Temporal.PlainDateTime.from((screen.getByLabelText('开始时间') as HTMLInputElement).value).equals('2027-01-15T18:00:30')).toBe(true);
     expect(Temporal.PlainDateTime.from((screen.getByLabelText('截止时间', { exact: false }) as HTMLInputElement).value).equals('2027-02-02T00:00:35')).toBe(true);
-    await fireEvent.input(screen.getByLabelText('开始时间（可选）', { exact: false }), { target: { value: '2027-01-15T18:00:45' } });
+    await fireEvent.input(screen.getByLabelText('开始时间'), { target: { value: '2027-01-15T18:00:45' } });
     await fireEvent.input(screen.getByLabelText('截止时间', { exact: false }), { target: { value: '2027-02-02T00:00:50' } });
     await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
     await waitFor(() => expect(writeOf(fetcher, 'PATCH')).toBeDefined());

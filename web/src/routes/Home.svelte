@@ -258,8 +258,7 @@
 <StickyFooter label={labels.cardsTotal(loaded ? total : '—')} onadd={() => navigate('/app/services/new')}
   disabled={!canWrite() || accountError || terminal} />
 <FilterSheet bind:open={sheetOpen} {status} {categoryID} {categories} {categoriesError}
-  counts={collection?.data.counts ?? null} {categoryLoading}
-  onstatus={selectStatus} oncategory={selectCategory} onreloadcategories={loadCategories} />
+  {categoryLoading} onstatus={selectStatus} oncategory={selectCategory} onreloadcategories={loadCategories} />
 
 <style>
   .search{display:flex;align-items:center;gap:8px;min-width:0;margin:0}

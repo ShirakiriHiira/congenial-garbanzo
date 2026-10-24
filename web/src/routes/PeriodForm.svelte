@@ -217,11 +217,11 @@
     {#if !canWrite()}<ReadOnlyNotice />{/if}
     <Toast message={notice} ondismiss={() => { notice = ''; }} />
     <form class="stack" onsubmit={submit} novalidate>
-      <FormField id="period-name" label="有效期名称" hint="可选" error={nameError}>
+      <FormField id="period-name" label="有效期名称" error={nameError}>
         {#snippet children(field)}<input id={field.id} bind:value={name} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
       </FormField>
       <DatePrecisionInput id="period-expires" bind:precision bind:expires bind:occurrence {zone} disabled={!canWrite() || submitter.busy} error={expiresError} />
-      <DateTimeInput id="period-starts" label="开始时间（可选）" bind:value={starts} bind:occurrence={startsOccurrence} {zone} disabled={!canWrite() || submitter.busy} error={startsError} />
+      <DateTimeInput id="period-starts" label="开始时间" bind:value={starts} bind:occurrence={startsOccurrence} {zone} disabled={!canWrite() || submitter.busy} error={startsError} />
       <fieldset class="terms stack"><legend>约定条款</legend>
         <FormField id="terms-mode" label="条款类型" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
         {#if termsMode === 'recurring'}<FormField id="terms-count" label="周期次数" required error={intervalError}>{#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={intervalCount} disabled={!canWrite() || submitter.busy} />{/snippet}</FormField><FormField id="terms-unit" label="周期单位" required>{#snippet children(field)}<select id={field.id} bind:value={intervalUnit} disabled={!canWrite() || submitter.busy}>{#each Object.entries(intervalUnitLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>{/if}
