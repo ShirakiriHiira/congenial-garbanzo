@@ -29,8 +29,8 @@ docker compose -f compose.yaml -f compose.build.yaml up -d
 
 `.github/workflows/docker.yml` 在 `main` 分支推送、`v*` 标签推送时构建两个镜像并推送到 GHCR（公开包，无需登录）：
 
-- `ghcr.io/shirakirishu/telegram-bot-remind-app`
-- `ghcr.io/shirakirishu/telegram-bot-remind-web`
+- `ghcr.io/shirakirihiira/telegram-bot-remind-app`
+- `ghcr.io/shirakirihiira/telegram-bot-remind-web`
 
 标签：`main`、`<version>`、`<major>.<minor>`（仅 tag 推送）、`sha-<short>`。镜像架构为 `linux/amd64`。
 
