@@ -8,7 +8,7 @@ Telegram Bot + Mini App：管理 SIM/eSIM、VPS、域名、软件与 AI 订阅�
 
 ## 部署
 
-### Docker Compose（推荐）
+### Docker Compose
 
 ```sh
 cp .env.example .env
@@ -24,25 +24,6 @@ docker compose up -d
 docker compose -f compose.yaml -f compose.build.yaml build
 docker compose -f compose.yaml -f compose.build.yaml up -d
 ```
-
-### CI 构建镜像 + VPS 拉取
-
-`.github/workflows/docker.yml` 在 `main` 分支推送、`v*` 标签推送时构建两个镜像并推送到 GHCR（公开包，无需登录）：
-
-- `ghcr.io/shirakirihiira/telegram-bot-remind-app`
-- `ghcr.io/shirakirihiira/telegram-bot-remind-web`
-
-标签：`main`、`<version>`、`<major>.<minor>`（仅 tag 推送）、`sha-<short>`。镜像架构为 `linux/amd64`。
-
-VPS 只需 Docker（无需 Go/Node 工具链）：
-
-```sh
-docker compose pull
-docker compose up -d
-```
-
-镜像若为私有包，先 `docker login ghcr.io`（PAT 需 `read:packages` 权限），再 pull。
-换版本：在 `.env` 中固定 `REMIND_APP_IMAGE` / `REMIND_WEB_IMAGE` 为带标签的镜像，然后 `docker compose pull && docker compose up -d`。
 
 验证：
 
