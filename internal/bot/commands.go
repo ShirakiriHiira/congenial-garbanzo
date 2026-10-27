@@ -89,7 +89,7 @@ func renewalText(ctx context.Context, svc *service.Service, user service.User, r
 		fmt.Fprintf(&b, "新日期：%s（%s，当日结束前有效）\n", *r.NewLocalExpiresDate, r.Timezone)
 	}
 	if r.Amount != nil && r.Currency != nil {
-		fmt.Fprintf(&b, "金额：%d %s（最小货币单位）\n", *r.Amount, *r.Currency)
+		fmt.Fprintf(&b, "金额：%s %s\n", domain.FormatMoney(*r.Amount, *r.Currency), *r.Currency)
 	}
 	if r.Notes != nil && *r.Notes != "" {
 		fmt.Fprintf(&b, "备注：%s\n", *r.Notes)

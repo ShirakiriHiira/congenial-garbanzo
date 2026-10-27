@@ -369,7 +369,7 @@ func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user servic
 	for _, r := range page.Data {
 		fmt.Fprintf(&text, "\n· %s → %s", stamp(r.PreviousExpiresAt, r.Timezone), stamp(r.NewExpiresAt, r.Timezone))
 		if r.Amount != nil && r.Currency != nil {
-			fmt.Fprintf(&text, "\n  金额 %d %s", *r.Amount, *r.Currency)
+			fmt.Fprintf(&text, "\n  金额 %s %s", domain.FormatMoney(*r.Amount, *r.Currency), *r.Currency)
 		}
 		if r.Notes != nil && *r.Notes != "" {
 			fmt.Fprintf(&text, "\n  备注：%s", *r.Notes)

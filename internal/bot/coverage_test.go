@@ -341,7 +341,7 @@ func TestRenewWizardConventionStaleAndExpiry(t *testing.T) {
 	}
 	f.callback(userA, cb("dialog", "use_convention"), nil)
 	f.callback(userA, cb("dialog", "skip"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "请确认续期") || !strings.Contains(text, "1200 TWD") {
+	if text := f.stub.lastText(); !strings.Contains(text, "请确认续期") || !strings.Contains(text, "12 TWD") {
 		t.Fatalf("preview: %q", text)
 	}
 	f.callback(userA, cb("dialog", "confirm"), nil)

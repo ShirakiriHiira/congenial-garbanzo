@@ -62,7 +62,7 @@ User 1─0..1 BotDialog
 
 **时间**：内部 UTC。`date` 是用户时区当地日历日结束的排他截止，`datetime` 是带 offset 的 RFC3339。Bot 向导接受本地 `YYYY-MM-DD HH:MM`（`domain.ParseLocalDateTime`），也接受 RFC3339；DST 跳过的时间拒绝，重复取较早。改时区时 `date` 重算、`datetime` 保持绝对时刻。
 
-**金额**：金额与币种必须成对；API 金额为非负整数最小货币单位，Mini App 输入小数并按 ISO 4217 小数位换算；币种为三位大写字母。提醒规则必须早于截止。
+**金额**：金额与币种必须成对；API 金额为非负整数最小货币单位，Bot 与 Mini App 都输入小数并按 ISO 4217 小数位换算，超出币种小数位的输入直接拒绝而非四舍五入；展示时用 `domain.FormatMoney` 还原为小数，不再显示最小单位整数；币种为三位大写字母。提醒规则必须早于截止。
 
 **投递**：幂等键 `(period_id, rule_id, cycle, rule_revision)`，成功发送按 `(period_id, rule_id, expires_at_snapshot)` 去重；补发窗口、有限重试、租约、fencing token 与取消竞态语义保留，不承诺 exactly-once。
 

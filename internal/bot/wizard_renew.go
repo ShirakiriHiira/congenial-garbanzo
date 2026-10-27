@@ -8,6 +8,7 @@ import (
 
 	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"telegram.bot.remind/internal/domain"
 	"telegram.bot.remind/internal/service"
 )
 
@@ -65,7 +66,7 @@ func (w *wizard) renderRenew(ctx context.Context) {
 			rows = append(rows, []models.InlineKeyboardButton{button("使用约定金额", cb("dialog", "use_convention"))})
 		}
 		rows = append(rows, navRows(true, true)...)
-		w.reply(ctx, "本次实际续期金额（可选）：发送“金额 币种”，例如 1000 TWD。\n金额为最小货币单位整数；不会自动采用约定金额。", rows...)
+		w.reply(ctx, "本次实际续期金额（可选）：发送“金额 币种”，例如 10.30 CNY 或 1200 JPY。\n小数位按币种；不会自动采用约定金额。", rows...)
 	case "renew_notes":
 		w.reply(ctx, "续期备注（普通说明，不要填写密码或 Token）。可跳过。", navRows(true, true)...)
 	case "renew_preview":
@@ -83,7 +84,10 @@ func renewPreviewText(p service.Period, item service.ServiceItem, d draft) strin
 	precision := precisionLabel(d.Values["precision"])
 	money := "未填写"
 	if amount := strings.TrimSpace(d.Values["amount"]); amount != "" {
-		money = amount + " " + strings.ToUpper(strings.TrimSpace(d.Values["currency"])) + "（最小货币单位）"
+		currency := strings.ToUpper(strings.TrimSpace(d.Values["currency"]))
+		if value, err := strconv.ParseInt(amount, 10, 64); err == nil {
+			money = domain.FormatMoney(value, currency) + " " + currency
+		}
 	}
 	notes := strings.TrimSpace(d.Values["notes"])
 	if notes == "" {

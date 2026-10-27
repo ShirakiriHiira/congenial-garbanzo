@@ -2,6 +2,8 @@ package bot
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -277,6 +279,9 @@ func wallClockDisplay(value, zone string) string {
 	return at.In(loc).Format("2006-01-02 15:04")
 }
 
+// parseMoney converts a major-unit decimal amount into stored minor units.
+// The bot and the Mini App share one representation, so a value entered here
+// reads back as the same decimal in both surfaces.
 func parseMoney(amountText, currencyText string) (*int64, *string, error) {
 	amountText, currencyText = strings.TrimSpace(amountText), strings.ToUpper(strings.TrimSpace(currencyText))
 	if amountText == "" && currencyText == "" {
@@ -284,18 +289,6 @@ func parseMoney(amountText, currencyText string) (*int64, *string, error) {
 	}
 	if amountText == "" || currencyText == "" {
 		return nil, nil, fail("金额与币种必须同时提供或同时留空。")
-	}
-	var amount int64
-	for _, r := range amountText {
-		if r < '0' || r > '9' {
-			return nil, nil, fail("金额必须是大于等于 0 的整数（最小货币单位）。")
-		}
-	}
-	if len(amountText) > 18 {
-		return nil, nil, fail("金额超出支持范围。")
-	}
-	for _, r := range amountText {
-		amount = amount*10 + int64(r-'0')
 	}
 	if len(currencyText) != 3 {
 		return nil, nil, fail("币种必须是三位大写字母，例如 USD。")
@@ -305,10 +298,24 @@ func parseMoney(amountText, currencyText string) (*int64, *string, error) {
 			return nil, nil, fail("币种必须是三位大写字母，例如 USD。")
 		}
 	}
+	amount, err := domain.ParseMoney(amountText, currencyText)
+	switch {
+	case err == nil:
+	case errors.Is(err, domain.ErrMoneyFraction):
+		exponent := domain.CurrencyExponent(currencyText)
+		if exponent == 0 {
+			return nil, nil, fail(currencyText + " 不支持小数。")
+		}
+		return nil, nil, fail(fmt.Sprintf("金额最多 %d 位小数（%s）。", exponent, currencyText))
+	case errors.Is(err, domain.ErrMoneyRange):
+		return nil, nil, fail("金额超出支持范围。")
+	default:
+		return nil, nil, fail("金额必须是非负十进制数，例如 10.30。")
+	}
 	return &amount, &currencyText, nil
 }
 
-// parseSpaceMoney accepts "1000 TWD" or an empty line. A currency is never
+// parseSpaceMoney accepts "10.30 CNY" or an empty line. A currency is never
 // inferred from the user's locale.
 func parseSpaceMoney(text string) (*int64, *string, error) {
 	fields := strings.Fields(text)
@@ -318,7 +325,7 @@ func parseSpaceMoney(text string) (*int64, *string, error) {
 	case 2:
 		return parseMoney(fields[0], fields[1])
 	default:
-		return nil, nil, fail("请发送“金额 币种”，例如 1000 TWD。")
+		return nil, nil, fail("请发送“金额 币种”，例如 10.30 CNY。")
 	}
 }
 

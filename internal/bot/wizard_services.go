@@ -555,7 +555,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 120000 JPY；金额为最小货币单位整数。\n约定费用不代表已付款。", optionalNav(true)...)
+		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 1200 JPY 或 10.30 CNY；小数位按币种（JPY 等无小数，CNY/USD 两位，KWD 等三位）。\n约定费用不代表已付款。", optionalNav(true)...)
 	case "period_preview":
 		w.reply(ctx, periodAddPreviewText(item, w.dr, w.user.Timezone), []models.InlineKeyboardButton{button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
@@ -661,8 +661,12 @@ func (w *wizard) textPeriodAdd(ctx context.Context, text string) {
 			break
 		}
 		amount, currency, err := parseSpaceMoney(value)
-		if err != nil || amount == nil {
-			w.stepError(ctx, "请发送“金额 币种”，例如 2999 USD；金额必须是非负整数。", true, true)
+		if err != nil {
+			w.stepError(ctx, err.Error(), true, true)
+			return
+		}
+		if amount == nil {
+			w.stepError(ctx, "请发送“金额 币种”，例如 2999 USD。", true, true)
 			return
 		}
 		w.dr.set("amount", strconv.FormatInt(*amount, 10))
@@ -805,7 +809,7 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 120000 JPY；发送“无”或跳过表示不记录金额。", optionalNav(true)...)
+		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 1200 JPY 或 10.30 CNY；发送“无”或跳过表示不记录金额。", optionalNav(true)...)
 	case "edit_preview":
 		w.reply(ctx, periodEditPreviewText(p, w.dr), []models.InlineKeyboardButton{button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
@@ -919,8 +923,12 @@ func (w *wizard) textPeriodEdit(ctx context.Context, text string) {
 			break
 		}
 		amount, currency, err := parseSpaceMoney(value)
-		if err != nil || amount == nil {
-			w.stepError(ctx, "请发送“金额 币种”，例如 2999 USD；金额必须是非负整数。", true, true)
+		if err != nil {
+			w.stepError(ctx, err.Error(), true, true)
+			return
+		}
+		if amount == nil {
+			w.stepError(ctx, "请发送“金额 币种”，例如 2999 USD。", true, true)
 			return
 		}
 		w.dr.set("amount", strconv.FormatInt(*amount, 10))
