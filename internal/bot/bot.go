@@ -148,7 +148,7 @@ func (h *Handler) handleMessage(ctx context.Context, b *telegram.Bot, msg *model
 			if msg.Chat.Type == models.ChatTypePrivate {
 				target = msg.From.ID // never trust a sender-relative chat mismatch
 			}
-			h.send(ctx, b, &responder{chatID: target}, "请在私聊中使用此机器人。")
+			h.send(ctx, b, &responder{chatID: target}, "请在私聊中使用。")
 		}
 		return
 	}
@@ -170,7 +170,7 @@ func (h *Handler) handleMessage(ctx context.Context, b *telegram.Bot, msg *model
 			w.render(ctx)
 			return
 		}
-		h.send(ctx, b, resp, "请发送文本命令，使用 /help 查看用法。")
+		h.send(ctx, b, resp, "请发送文本命令。")
 		return
 	}
 	if !strings.HasPrefix(text, "/") {
@@ -185,10 +185,10 @@ func (h *Handler) handleDialogInput(ctx context.Context, b *telegram.Bot, user s
 	if err != nil {
 		if service.Code(err) == "not_found" {
 			if purged, _ := h.svc.PurgeExpiredDialog(ctx, user.ID); purged {
-				h.send(ctx, b, resp, "对话已过期（15 分钟），本次输入未写入任何数据。\n\n"+shortHelp)
+				h.send(ctx, b, resp, "对话已过期（15 分钟），请重新开始。")
 				return
 			}
-			h.send(ctx, b, resp, "当前没有进行中的对话。\n\n"+shortHelp)
+			h.send(ctx, b, resp, "当前没有进行中的对话。")
 			return
 		}
 		h.send(ctx, b, resp, serviceMessage(err))
@@ -300,9 +300,9 @@ func serviceMessage(err error) string {
 	case "invalid_input":
 		return "输入无效，请检查格式和数值。"
 	case "not_found":
-		return "对象不存在。"
+		return "内容不存在或已删除。"
 	case "conflict":
-		return "操作冲突：数据已更新或当前状态不允许此操作，请重新查看后重试。"
+		return "数据已更新，请重新打开后再操作。"
 	case "forbidden":
 		return "无权限使用此机器人。"
 	default:

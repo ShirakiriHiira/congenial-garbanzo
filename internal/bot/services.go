@@ -22,9 +22,8 @@ func termsText(t service.PeriodTerms) string {
 		b.WriteString("约定条款：暂未设置")
 	}
 	if t.Amount != nil && t.Currency != nil {
-		fmt.Fprintf(&b, "，约定费用 %s %s（非已付款）", domain.FormatMoney(*t.Amount, *t.Currency), *t.Currency)
+		fmt.Fprintf(&b, "，约定费用 %s %s", domain.FormatMoney(*t.Amount, *t.Currency), *t.Currency)
 	}
-	b.WriteString("；仅记录，不自动扣款或推进截止。")
 	return b.String()
 }
 

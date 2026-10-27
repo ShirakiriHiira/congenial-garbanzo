@@ -22,7 +22,7 @@ func TestCancelPathsReportTheirOwnOutcome(t *testing.T) {
 		f.start(userA)
 		f.send(userA, "/add")
 		text := f.send(userA, "/cancel")
-		if !strings.Contains(text, "已取消当前流程，未写入任何修改。") {
+		if !strings.Contains(text, "已取消当前流程。") {
 			t.Fatalf("cancel with a flow: %q", text)
 		}
 		if n := f.count("SELECT count(*) FROM bot_dialogs"); n != 0 {
@@ -34,7 +34,7 @@ func TestCancelPathsReportTheirOwnOutcome(t *testing.T) {
 		f := newFixture(t)
 		f.start(userA)
 		f.callback(userA, cb("dialog", "cancel"), nil)
-		if text := f.stub.lastText(); !strings.Contains(text, "当前没有进行中的流程") {
+		if text := f.stub.lastText(); !strings.Contains(text, "当前没有进行中的对话。") {
 			t.Fatalf("cancel button without a flow: %q", text)
 		}
 		if answer := serviceLastAnswer(t, f); answer != "" {
@@ -47,7 +47,7 @@ func TestCancelPathsReportTheirOwnOutcome(t *testing.T) {
 		f.start(userA)
 		f.send(userA, "/add")
 		f.callback(userA, cb("dialog", "cancel"), nil)
-		if text := f.stub.lastText(); !strings.Contains(text, "已取消当前流程，未写入任何修改。") {
+		if text := f.stub.lastText(); !strings.Contains(text, "已取消当前流程。") {
 			t.Fatalf("cancel button with a flow: %q", text)
 		}
 		if answer := serviceLastAnswer(t, f); answer != "" {

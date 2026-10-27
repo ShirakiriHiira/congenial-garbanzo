@@ -11,7 +11,7 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-const expiredButtonMessage = "按钮已过期，请发送 /services 重新打开"
+const expiredButtonMessage = "按钮已过期，请重新打开。"
 
 // silentAnswer acknowledges a callback without a popup. Telegram still needs
 // the answer to stop the button spinner, but the chat already shows the
@@ -52,15 +52,15 @@ func (h *Handler) handleCallback(ctx context.Context, b *telegram.Bot, cq *model
 // v3 payloads, then authenticates the sender's private chat.
 func (h *Handler) callbackIdentity(ctx context.Context, cq *models.CallbackQuery) (service.User, models.Message, string) {
 	if cq.Message.Message == nil {
-		return service.User{}, models.Message{}, "请在私聊中使用"
+		return service.User{}, models.Message{}, "请在私聊中使用。"
 	}
 	msg := cq.Message.Message
 	if msg.Chat.Type != models.ChatTypePrivate || cq.From.ID <= 0 || msg.Chat.ID != cq.From.ID {
-		return service.User{}, models.Message{}, "请在私聊中使用"
+		return service.User{}, models.Message{}, "请在私聊中使用。"
 	}
 	uid := cq.From.ID
 	if !h.svc.Allowed(uid) {
-		return service.User{}, models.Message{}, "无权限使用此机器人"
+		return service.User{}, models.Message{}, "无权限使用此机器人。"
 	}
 	user, err := h.svc.Authenticate(ctx, uid, &msg.Chat.ID)
 	if err != nil {
@@ -100,7 +100,7 @@ func (h *Handler) handleCallbackV3(ctx context.Context, b *telegram.Bot, cq *mod
 func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, v3 callbackV3) string {
 	switch v3.action {
 	case "cancel":
-		h.cancelDialog(ctx, b, user, resp, "当前没有进行中的流程")
+		h.cancelDialog(ctx, b, user, resp, "当前没有进行中的对话。")
 		return silentAnswer
 	case "new_service":
 		h.startServiceAdd(ctx, b, user, resp)
@@ -113,7 +113,7 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 	if err != nil {
 		// The dialog this keyboard belongs to is gone, so the buttons must go
 		// with it; the answer alone would leave a dead keyboard behind.
-		message := "流程已过期，请重新打开详情"
+		message := "流程已过期，请重新打开。"
 		if service.Code(err) != "not_found" {
 			message = serviceMessage(err)
 		}
@@ -192,7 +192,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		if item.Status == "archived" {
 			return "服务已归档"
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("归档服务「%s」？\n归档会保留有效期、续期历史与已发送记录，停止未完成的提醒任务；之后可恢复。", item.Name),
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("归档服务「%s」？\n未发送的提醒会取消，资料与历史保留，可随时恢复。", item.Name),
 			markup([]models.InlineKeyboardButton{button("确认归档", cb("service", "archive", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
 		return silentAnswer
 	case "archive":
@@ -208,7 +208,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		if item.Status == "active" {
 			return "服务已是可用状态"
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("恢复服务「%s」？\n恢复后有效期会推进版本，旧的按钮与草稿失效；历史与已发送记录保留。", item.Name),
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("恢复服务「%s」？\n未发送的提醒会取消，旧的按钮与草稿失效。", item.Name),
 			markup([]models.InlineKeyboardButton{button("确认恢复", cb("service", "restore", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
 		return silentAnswer
 	case "restore":
@@ -221,7 +221,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		h.showServiceDetail(ctx, b, user, resp, serviceID, 0)
 		return silentAnswer
 	case "delete_ask":
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除服务「%s」？\n将同时永久删除它的全部有效期、提醒规则、提醒任务与续期历史，无法恢复。", item.Name),
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除服务「%s」？\n有效期、提醒规则、提醒任务与续期记录会一并删除，无法恢复。", item.Name),
 			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("service", "delete", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
 		return silentAnswer
 	case "delete":
@@ -277,7 +277,7 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 		h.startPeriodEdit(ctx, b, user, resp, p.ID)
 		return silentAnswer
 	case "delete_ask":
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除有效期「%s」？\n将同时永久删除它的提醒规则、提醒任务与续期历史，无法恢复。", periodName(p)),
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除有效期「%s」？\n提醒规则、提醒任务与续期记录会一并删除，无法恢复。", periodName(p)),
 			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("period", "delete", id(p.ID))), button("取消", cb("period", "view", id(p.ID)))}))
 		return silentAnswer
 	case "delete":
@@ -314,14 +314,14 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 	case "enable_ask", "disable_ask":
 		desired := v3.action == "enable_ask"
 		if r.Enabled == desired {
-			h.send(ctx, b, resp, ruleLinePlain(r)+"\n未重复修改。")
+			h.send(ctx, b, resp, ruleLinePlain(r)+"\n未做修改。")
 			return silentAnswer
 		}
 		verb := "禁用"
 		if desired {
 			verb = "启用"
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("%s这条规则？\n提前 %d 天 · %s\n%s后，未完成的相关任务会取消并重新排程。", verb, r.DaysBefore, r.ReminderTime, verb),
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("%s这条规则？\n提前 %d 天 · %s\n%s", verb, r.DaysBefore, r.ReminderTime, ruleToggleEffect(desired)),
 			markup([]models.InlineKeyboardButton{button("确认"+verb, cb("rule", v3.action[:len(v3.action)-4], id(r.ID))), button("取消", cb("rule", "view", id(r.ID)))}))
 		return silentAnswer
 	case "enable", "disable":
@@ -329,7 +329,7 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 		if r.Enabled != enabled {
 			if _, err := h.svc.UpdateRule(ctx, user.ID, r.ID, service.RulePatch{ExpectedRevision: r.Revision, Enabled: &enabled}); err != nil {
 				if service.Code(err) == "conflict" {
-					return "规则已被修改，请重新打开规则列表"
+					return "规则已修改，请重新打开。"
 				}
 				return h.replyState(ctx, b, resp, objectStateMessage(err))
 			}
@@ -337,7 +337,7 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 		h.showRuleDetail(ctx, b, user, resp, r.ID)
 		return silentAnswer
 	case "delete_ask":
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除规则（提前 %d 天 %s）？\n会同时删除该规则的任务记录，无法恢复。", r.DaysBefore, r.ReminderTime),
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除规则（提前 %d 天 %s）？\n任务记录会一并删除，无法恢复。", r.DaysBefore, r.ReminderTime),
 			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("rule", "delete", id(r.ID))), button("取消", cb("rule", "view", id(r.ID)))}))
 		return silentAnswer
 	case "delete":
@@ -385,17 +385,17 @@ func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service
 		if job.Status == "cancelled" {
 			return "任务已取消"
 		}
-		h.sendMarkup(ctx, b, resp, "取消该提醒任务？\n已发送的消息无法撤回；正在发送中的任务可能仍会完成一次投递。",
+		h.sendMarkup(ctx, b, resp, "取消该提醒任务？\n发送中的提醒可能仍会送达。",
 			markup([]models.InlineKeyboardButton{button("确认取消", cb("job", "cancel", id(job.ID))), button("返回提醒列表", cb("job", "list", "1", "0"))}))
 		return silentAnswer
 	case "cancel":
 		if err := h.svc.CancelJob(ctx, user.ID, job.ID); err != nil {
 			if service.Code(err) == "conflict" {
-				return "任务状态已变化（可能已发送）"
+				return "任务状态已变化。"
 			}
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, "任务已取消。\n注意：正在发送中的提醒无法撤回已经发出的消息。", markup([]models.InlineKeyboardButton{button("返回提醒列表", cb("job", "list", "1", "0"))}))
+		h.sendMarkup(ctx, b, resp, "任务已取消。", markup([]models.InlineKeyboardButton{button("返回提醒列表", cb("job", "list", "1", "0"))}))
 		return silentAnswer
 	default:
 		return "未知操作"
@@ -453,11 +453,20 @@ func (h *Handler) replyState(ctx context.Context, b *telegram.Bot, resp *respond
 func objectStateMessage(err error) string {
 	switch service.Code(err) {
 	case "not_found":
-		return "对象不存在或已删除"
+		return "内容不存在或已删除"
 	case "conflict":
-		return "对象状态已变化，请重新打开详情"
+		return "状态已变化，请重新打开详情"
 	case "forbidden":
-		return "无权限使用此机器人"
+		return "无权限使用此机器人。"
 	}
 	return serviceMessage(err)
+}
+
+// ruleToggleEffect states what enabling or disabling a rule does to the tasks
+// that have not been sent yet.
+func ruleToggleEffect(enabled bool) string {
+	if enabled {
+		return "未发送的提醒会重新排程。"
+	}
+	return "未发送的提醒会取消。"
 }

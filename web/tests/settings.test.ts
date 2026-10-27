@@ -92,10 +92,9 @@ describe('settings', () => {
     await chooseTimezone();
     expect(session.dirty).toBe(true);
     const dialog = await openConfirmation();
-    expect(dialog).toHaveTextContent('相关有效期会推进版本');
-    expect(dialog).toHaveTextContent('日期（date）精度的截止时间会按新时区重新计算');
-    expect(dialog).toHaveTextContent('日期时间（datetime）精度对应的实际时刻保持不变');
-    expect(dialog).toHaveTextContent('所有未发送提醒任务会被取消');
+    expect(dialog).toHaveTextContent('仅日期截止会按新时区重新计算');
+    expect(dialog).toHaveTextContent('精确时间的实际时刻不变');
+    expect(dialog).toHaveTextContent('未发送的提醒会被取消');
     expect(fetcher).toHaveBeenCalledTimes(1);
     await fireEvent.click(within(dialog).getByRole('button', { name: '确认修改' }));
     await waitFor(() => expect(location.pathname).toBe('/app/'));
@@ -161,7 +160,7 @@ describe('settings', () => {
     for (const value of ['', 'Local']) {
       await fireEvent.input(input, { target: { value } });
       await fireEvent.click(screen.getByRole('button', { name: '保存时区' }));
-      expect(screen.getByText('请输入有效的 IANA 时区，不能使用空值或 Local。')).toBeInTheDocument();
+      expect(screen.getByText('请输入有效的 IANA 时区（不能使用 Local）。')).toBeInTheDocument();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     }
     expect(fetcher).toHaveBeenCalledTimes(1);

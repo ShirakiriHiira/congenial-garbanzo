@@ -178,7 +178,7 @@
         fill(saved);
         session.dirty = false;
         if (mode === 'new') navigate(`/app/services/${saved.service_id}`);
-        else notice = '有效期已保存，页面已使用服务端返回的最新周期。';
+        else notice = '有效期已保存。';
       } catch (cause) {
         if (alive && mode === 'edit' && cause instanceof ApiError && cause.kind === 'conflict') { stale = true; await conflict.present(); }
         throw cause;
@@ -226,16 +226,16 @@
         <FormField id="terms-mode" label="条款类型" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
         {#if termsMode === 'recurring'}<FormField id="terms-count" label="周期次数" required error={intervalError}>{#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={intervalCount} disabled={!canWrite() || submitter.busy} />{/snippet}</FormField><FormField id="terms-unit" label="周期单位" required>{#snippet children(field)}<select id={field.id} bind:value={intervalUnit} disabled={!canWrite() || submitter.busy}>{#each Object.entries(intervalUnitLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>{/if}
         <MoneyInput id="period-terms-money" label="约定费用" bind:amount bind:currency disabled={!canWrite() || submitter.busy} error={termsError} />
-        {#if unsafeMoney && isExplicitUnsafeReset(readTerms())}<p class="notice">保存后将把约定条款重置为自定义且无费用；原金额不会被四舍五入写入。</p>
-        {:else if unsafeMoney}<div class="unsafe-money"><p class="notice">{"已保存的约定费用无法精确编辑；保留空白可保存其他资料，修改条款请重新填写金额和币种，或明确重置为无费用条款。"}</p><button class="text-button" type="button" onclick={() => { termsMode = 'custom'; intervalCount = ''; intervalUnit = 'month'; amount = ''; currency = ''; termsError = ''; unsafeTermsReset = true; }} disabled={!canWrite() || submitter.busy}>重置约定条款</button></div>{/if}
+        {#if unsafeMoney && isExplicitUnsafeReset(readTerms())}<p class="notice">保存后条款将重置为自定义且无费用。</p>
+        {:else if unsafeMoney}<div class="unsafe-money"><p class="notice">{"已保存的约定费用无法精确编辑，请重新填写金额和币种，或重置条款。"}</p><button class="text-button" type="button" onclick={() => { termsMode = 'custom'; intervalCount = ''; intervalUnit = 'month'; amount = ''; currency = ''; termsError = ''; unsafeTermsReset = true; }} disabled={!canWrite() || submitter.busy}>重置约定条款</button></div>{/if}
       </fieldset>
       {#if submitter.error && !conflict.open}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
-      {#if stale && !conflict.open}<ErrorBanner message="草稿已保留。请先读取最新值，再继续编辑。" onretry={() => { void conflict.retry(); }} />{/if}
+      {#if stale && !conflict.open}<ErrorBanner message="请先读取最新值后再编辑。" onretry={() => { void conflict.retry(); }} />{/if}
       <button class="primary" type="submit" disabled={!canWrite() || submitter.busy || stale || conflict.open || conflict.failed || (mode === 'edit' && !dirty)}>{submitter.busy ? '保存中…' : '保存有效期'}</button>
     </form>
   {/if}
 </section>
-<ConfirmDialog bind:open={conflict.open} title="有效期周期冲突" message="草稿已保留。服务端记录已变化；取最新值后请重新编辑并再次保存，不会自动提交或合并。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
+<ConfirmDialog bind:open={conflict.open} title="有效期周期冲突" message="草稿已保留。取最新值后请重新编辑并保存。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
   <ConflictBody loading={conflict.loading} failed={conflict.failed} failedMessage="读取最新有效期失败，保存已暂停。" onretry={() => { void conflict.retry(); }}>
     {#if conflict.current}<p>服务端名称：{periodLabel(conflict.current)}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{/if}
   </ConflictBody>

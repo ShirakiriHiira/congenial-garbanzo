@@ -247,7 +247,7 @@ func TestPeriodEditWizardFieldsAndConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.callback(userA, cb("dialog", "confirm"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "已被其他操作更新") {
+	if text := f.stub.lastText(); !strings.Contains(text, "有效期已被其他操作更新，本次未写入。\n草稿已保留。") {
 		t.Fatalf("conflict reply: %q", text)
 	}
 	if got := serviceLookupString(t, f, "SELECT name FROM service_periods WHERE id=1"); got == "冲突名字" {
@@ -362,7 +362,7 @@ func TestRenewWizardConventionStaleAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.callback(userA, cb("dialog", "confirm"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "已被其他操作更新") {
+	if text := f.stub.lastText(); !strings.Contains(text, "数据已更新，本次未写入") {
 		t.Fatalf("stale reply: %q", text)
 	}
 	if n := f.count("SELECT count(*) FROM renewals"); n != 2 {
@@ -396,7 +396,7 @@ func TestReadOnlyKeepsDraftAndReplacementIsExplicit(t *testing.T) {
 		t.Fatalf("read-only cleared draft: %d", n)
 	}
 	f.send(userA, "/add")
-	if text := f.stub.lastText(); !strings.Contains(text, "继续当前") || !strings.Contains(text, "取消并开始") {
+	if text := f.stub.lastText(); !strings.Contains(text, "继续不会丢失草稿") || !strings.Contains(text, "取消并开始") {
 		t.Fatalf("replacement prompt: %q", text)
 	}
 	f.callback(userA, cb("dialog", "keep"), nil)
@@ -459,7 +459,7 @@ func TestServiceEditWizardAndClear(t *testing.T) {
 	f.start(userA)
 	sim := f.createSIM("卡")
 	f.callback(userA, cb("service", "edit", id(sim.ID)), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "请选择要修改的字段") {
+	if text := f.stub.lastText(); !strings.Contains(text, "选择要修改的字段") {
 		t.Fatalf("field prompt: %q", text)
 	}
 	// Category choices stay within the SIM kind.

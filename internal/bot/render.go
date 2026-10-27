@@ -118,9 +118,6 @@ func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.Se
 			fmt.Fprintf(&b, "   %s · %s · %s\n", periodName(*p), periodExpiry(*p), expiryBadge(*p, now, loc))
 		}
 	}
-	if overview.Items.NextCursor != nil {
-		b.WriteString("\n更多服务请使用下方分页按钮。\n")
-	}
 	return strings.TrimRight(b.String(), "\n"), overview, nil
 }
 
@@ -161,7 +158,7 @@ func (h *Handler) overviewKeyboard(ctx context.Context, uid int64, filter servic
 func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid int64, resp *responder, code string) {
 	status, ok := serviceFilterFromCode(code)
 	if !ok {
-		h.send(ctx, b, resp, "该按钮已失效，请发送 /services 重新打开。")
+		h.send(ctx, b, resp, expiredButtonMessage)
 		return
 	}
 	categories := mustCategories(ctx, h, uid)
@@ -219,13 +216,13 @@ func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item
 	now := time.Now()
 	b.WriteString("\n有效期：\n")
 	if after == 0 && len(page.Data) == 0 {
-		b.WriteString("（未配置有效期；不会发送提醒）\n")
+		b.WriteString("（未设置有效期）\n")
 	}
 	for _, p := range page.Data {
 		fmt.Fprintf(&b, "· %s\n  截止 %s · %s\n  %s\n", periodName(p), periodExpiry(p), expiryBadge(p, now, loc), termsText(p.Terms))
 	}
 	if page.NextCursor != nil {
-		b.WriteString("\n更多有效期请使用下方分页按钮。")
+
 	}
 	return strings.TrimRight(b.String(), "\n"), page, nil
 }
@@ -299,7 +296,7 @@ func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.U
 	var text strings.Builder
 	fmt.Fprintf(&text, "提醒规则 · %s\n截止 %s\n", periodName(p), periodExpiry(p))
 	if len(page.Data) == 0 {
-		text.WriteString("\n尚未配置规则；添加后会按用户时区发送提醒。\n")
+		text.WriteString("\n尚未配置规则。\n")
 	}
 	for _, r := range page.Data {
 		state := "已启用"
@@ -336,7 +333,7 @@ func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user serv
 	if !r.Enabled {
 		state = "已禁用"
 	}
-	text := fmt.Sprintf("提醒规则\n提前 %d 天 · %s · %s\n\n启用/禁用或删除只影响这一条规则；删除会同时移除该规则未发送与已发送的任务记录。",
+	text := fmt.Sprintf("提醒规则\n提前 %d 天 · %s · %s\n\n删除规则会一并移除它的任务记录。",
 		r.DaysBefore, r.ReminderTime, state)
 	rows := [][]models.InlineKeyboardButton{
 		[]models.InlineKeyboardButton{button("编辑规则", cb("rule", "edit", id(r.ID))), button("删除规则", cb("rule", "delete_ask", id(r.ID)))},
@@ -425,7 +422,7 @@ func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.Us
 		if j.LastErrorCode != nil {
 			fmt.Fprintf(&text, "\n  原因 %s", *j.LastErrorCode)
 			if *j.LastErrorCode == "no_private_chat" {
-				text.WriteString("（请先私聊发送 /start 建立接收地址）")
+				text.WriteString("（请先发送 /start）")
 			}
 		}
 		text.WriteString("\n")
@@ -459,12 +456,11 @@ func (h *Handler) showSettings(ctx context.Context, b *telegram.Bot, user servic
 }
 
 func (h *Handler) settingsText(user service.User) string {
-	bound := "已绑定私聊（当前会话）"
+	bound := "已绑定私聊"
 	if user.PrivateChatID == nil || *user.PrivateChatID != user.TelegramUserID {
 		bound = "私聊绑定状态未知；请在本私聊发送 /start"
 	}
-	return fmt.Sprintf("设置\n当前时区：%s\n私聊绑定：%s\n\n修改时区时，仅日期截止会按新时区重算日历日结束，精确时间保持绝对时刻；相关有效期会推进版本，未完成提醒任务取消并重新排程。",
-		user.Timezone, bound)
+	return fmt.Sprintf("设置\n当前时区：%s\n私聊绑定：%s", user.Timezone, bound)
 }
 
 func ruleLinePlain(r service.Rule) string {

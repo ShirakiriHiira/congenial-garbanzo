@@ -5,7 +5,7 @@
     id: string; value?: string; disabled?: boolean; error?: string;
   } = $props();
   const zones = timeZoneOptions();
-  const validation = $derived(error || (value && !isValidTimeZone(value) ? '请输入有效的 IANA 时区，不能使用 Local' : ''));
+  const validation = $derived(error || (value && !isValidTimeZone(value) ? '请输入有效的 IANA 时区（不能使用 Local）' : ''));
   let control = $state<HTMLInputElement | HTMLSelectElement>();
   $effect(() => { control?.setCustomValidity(validation); });
 </script>

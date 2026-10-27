@@ -261,7 +261,6 @@
           {#snippet action()}{#if general.notes}<button type="button" class="text-button" aria-label="清除备注" disabled={!canWrite() || submitter.busy} onclick={() => { general.notes = ''; cleared.notes = Boolean(id); }}>清除</button>{/if}{/snippet}
           {#snippet children(field)}<textarea id={field.id} rows="4" bind:value={general.notes} maxlength="4000" oninput={() => { cleared.notes = false; }} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby}></textarea>{/snippet}
         </FormField>
-        <p class="muted">{labels.secretsWarning}</p>
       {/if}
       {#if submitter.error && !conflict.open}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
       {#if conflict.failed && !conflict.open}<ErrorBanner message="无法读取最新资料，提交已暂停。" onretry={() => { void conflict.retry(); }} />{/if}
@@ -269,14 +268,13 @@
     </form>
   {/if}
 </section>
-<ConfirmDialog bind:open={conflict.open} title="服务资料已变化" message="草稿已保留。取最新值将更新未修改的字段；请重新检查、编辑后再次保存，不会自动提交。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
+<ConfirmDialog bind:open={conflict.open} title="服务资料已变化" message="草稿已保留。取最新值会更新未修改的字段，请检查后再次保存。" confirmLabel="取最新值继续编辑" busy={conflict.loading} onconfirm={useLatest} oncancel={() => conflict.dismiss()}>
   <ConflictBody loading={conflict.loading} failed={conflict.failed} failedMessage="最新资料读取失败，提交已暂停。" onretry={() => { void conflict.retry(); }}>
     {#if conflict.current}<p>服务端名称：{conflict.current.name}</p><p>类别 ID：{conflict.current.category_id}</p><p>最后更新：{conflict.current.updated_at}</p>{/if}
   </ConflictBody>
 </ConfirmDialog>
 
 <style>
-  .muted{color:var(--text-secondary);margin:0}
   .inline-category{padding:12px;border:1px solid var(--border);border-radius:8px}
   .wrap{flex-wrap:wrap}
 </style>

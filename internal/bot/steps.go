@@ -196,7 +196,7 @@ func optionalStep(step string) bool {
 // example "2027-02-28 23:59" or "2027-02-28T23:59:30".
 var localDateTimePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?$`)
 
-const dateTimeHelp = "精确时间请发送本地时间，例如 2027-02-28 23:59（按你的时区）；也接受带 offset 的 RFC3339。"
+const dateTimeHelp = "请发送本地时间，例如 2027-02-28 23:59（按你的时区），也接受带 offset 的 RFC3339。"
 
 // normalizeDateTime turns an offset-qualified RFC3339 timestamp or a local
 // wall-clock timestamp in zone into RFC3339 with the zone's offset. Drafts and
@@ -231,7 +231,7 @@ func validateManagementURL(value string) error {
 	}
 	u, err := url.Parse(value)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-		return fail("管理链接必须是无内嵌凭据的绝对 http(s) 地址。")
+		return fail("管理链接必须是 http(s) 绝对地址，且不能带账号密码。")
 	}
 	return nil
 }
@@ -250,14 +250,14 @@ func normalizePrecisionValue(precision, value, zone string) (string, error) {
 	case "datetime":
 		return normalizeDateTime(value, zone)
 	}
-	return "", fail("精度必须是 date 或 datetime。")
+	return "", fail("截止方式无效，请重新打开。")
 }
 
 // expirationHint renders the cutoff example for the selected precision, so a
 // prompt never shows a format the current step would reject.
 func expirationHint(precision string) string {
 	if precision == "datetime" {
-		return "示例：2027-02-28 23:59（精确时间，按你的时区）"
+		return "示例：2027-02-28 23:59（按你的时区）"
 	}
 	return "示例：2027-02-28（仅日期）"
 }
@@ -489,22 +489,22 @@ var choiceKeys = map[string]string{
 func (w *wizard) setChoice(ctx context.Context, key, value string) {
 	draftKey, ok := choiceKeys[key]
 	if !ok {
-		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+		w.failure(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	value, ok = decodeChoice(key, value)
 	if !ok {
-		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+		w.failure(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	if draftKey == "field" {
 		if w.d.Action == service.DialogPeriodEdit {
 			if !validPeriodField(value) {
-				w.failure(ctx, "该字段不可编辑，请重新打开流程。", false, false)
+				w.failure(ctx, expiredButtonMessage, false, false)
 				return
 			}
 		} else if !validEditField(value) {
-			w.failure(ctx, "该字段不可编辑，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 	}
@@ -519,12 +519,12 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 		}
 	case "card_type":
 		if value != "esim" && value != "physical_sim" {
-			w.failure(ctx, "卡类型无效，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 	case "mode":
 		if value != "once" && value != "recurring" && value != "custom" {
-			w.failure(ctx, "条款模式无效，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 	case "tz":
@@ -535,7 +535,7 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 			}
 		}
 		if !found {
-			w.failure(ctx, "时区示例无效，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 	case "category_id":
@@ -546,7 +546,7 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 			}
 		}
 		if !found {
-			w.failure(ctx, "类别不存在或不可用，请重新打开流程。", false, false)
+			w.failure(ctx, "类别不存在或不可用，请重新打开。", false, false)
 			return
 		}
 		w.dr.set("kind", kind)
@@ -555,7 +555,7 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 		next = nextStep(w.d.Action, w.dr, w.d.Step)
 	}
 	if next == "" {
-		w.failure(ctx, "该选择无效，请重新打开流程。", false, false)
+		w.failure(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	if !w.persist(ctx, next) {

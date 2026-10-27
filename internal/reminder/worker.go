@@ -98,13 +98,13 @@ func reminderText(job *storage.ReminderDelivery) string {
 	exp := job.Expiration
 	cutoff := exp.ExpiresAt.UTC().Format(time.RFC3339)
 	if exp.DatePrecision == domain.PrecisionDate && exp.LocalExpiresDate != nil {
-		cutoff = *exp.LocalExpiresDate + "（当日结束前有效，" + exp.Timezone + "）"
+		cutoff = *exp.LocalExpiresDate + "（" + exp.Timezone + "，当日结束前有效）"
 	} else if loc, err := time.LoadLocation(exp.Timezone); err == nil {
 		cutoff = exp.ExpiresAt.In(loc).Format(time.RFC3339) + "（" + exp.Timezone + "）"
 	}
-	name := job.PeriodName
-	if strings.TrimSpace(name) == "" {
-		name = "有效期"
+	text := fmt.Sprintf("有效期提醒\n服务：%s\n", job.ServiceName)
+	if name := strings.TrimSpace(job.PeriodName); name != "" {
+		text += "有效期：" + name + "\n"
 	}
-	return fmt.Sprintf("有效期提醒\n服务：%s\n项目：%s\n截止：%s\n项目 ID：%d\n确认续期时请提供新的截止日期；不会自动延长有效期。", job.ServiceName, name, cutoff, job.PeriodID)
+	return text + "截止：" + cutoff
 }

@@ -22,7 +22,7 @@ func TestReminderTextShowsLocalCutoff(t *testing.T) {
 			Timezone:         "Asia/Taipei",
 		},
 	})
-	for _, want := range []string{"服务：日本卡", "号码有效期", "2027-01-31", "Asia/Taipei", "项目 ID：9"} {
+	for _, want := range []string{"服务：日本卡", "有效期：号码有效期", "截止：2027-01-31（Asia/Taipei，当日结束前有效）"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("message %q missing %q", text, want)
 		}
@@ -35,8 +35,8 @@ func TestReminderTextShowsLocalCutoff(t *testing.T) {
 func TestReminderTextFallsBackForBlankTitle(t *testing.T) {
 	for _, name := range []string{"", " \t"} {
 		text := reminderText(&storage.ReminderDelivery{PeriodName: name})
-		if !strings.Contains(text, "项目：有效期\n") {
-			t.Fatalf("blank title: %q", text)
+		if strings.Contains(text, "项目：") || strings.Contains(text, "有效期：") {
+			t.Fatalf("blank title kept a name line: %q", text)
 		}
 	}
 }

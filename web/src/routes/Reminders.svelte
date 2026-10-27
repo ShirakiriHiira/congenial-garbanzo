@@ -266,7 +266,6 @@
                 <AsyncState loading={detail.loading} error={detail.error} onretry={readable() ? () => loadDetail(job.id) : undefined}>
                   {#if detail.data}
                     <dl>
-                      <div><dt>{text.rule}</dt><dd>已配置</dd></div>
                       <div><dt>{text.snapshot}</dt><dd>{time(detail.data.expires_at_snapshot)}</dd></div>
                       {#if detail.data.next_attempt_at}<div><dt>{text.nextAttempt}</dt><dd>{time(detail.data.next_attempt_at)}</dd></div>{/if}
                       <div><dt>{text.created}</dt><dd>{time(detail.data.created_at)}</dd></div>

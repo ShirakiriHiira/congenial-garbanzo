@@ -141,9 +141,8 @@ describe('reminder records', () => {
     await fireEvent.click(within(row).getByRole('button', { name: '查看详情' }));
     expect(await within(row).findByRole('alert')).toHaveTextContent('服务暂时不可用');
     await fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    expect(await screen.findByText('已配置')).toBeInTheDocument();
+    expect(await screen.findByText('到期时间快照')).toBeInTheDocument();
     const current = (await screen.findAllByRole('listitem', { name: '提醒' }))[0];
-    expect(screen.getByText('到期时间快照')).toBeInTheDocument();
     expect(within(current).queryByText('条款版本')).not.toBeInTheDocument();
     expect(current).toHaveTextContent('已发送');
     expect(current).toHaveTextContent('尝试次数1');
@@ -161,8 +160,7 @@ describe('reminder records', () => {
     const row = (await screen.findAllByRole('listitem', { name: '提醒' }))[0];
     await fireEvent.click(within(row).getByRole('button', { name: '取消提醒' }));
     const dialog = screen.getByRole('dialog', { name: '取消这次提醒？' });
-    expect(dialog).toHaveTextContent('在途投递可能已经发生');
-    expect(dialog).toHaveTextContent('不能撤回已发送的 Telegram 消息');
+    expect(dialog).toHaveTextContent('提醒正在发送，可能已经送达。');
     const confirm = within(dialog).getByRole('button', { name: '确认取消' });
     await fireEvent.click(confirm);
     await fireEvent.click(confirm);

@@ -69,7 +69,7 @@ func (w *wizard) persist(ctx context.Context, step string) bool {
 	}
 	d, err := w.h.svc.UpdateDialogDraft(ctx, w.user.ID, w.d.Step, w.dr.encode())
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "保存对话进度失败："+serviceMessage(err)+"\n发送 /cancel 可取消当前流程。")
+		w.h.send(ctx, w.b, w.resp, "保存对话进度失败："+serviceMessage(err))
 		return false
 	}
 	w.d = d
@@ -121,7 +121,7 @@ func (w *wizard) skipRest(ctx context.Context) {
 
 // stepError keeps the user on the current step with navigation intact.
 func (w *wizard) stepError(ctx context.Context, format string, canBack, canSkip bool) {
-	w.failure(ctx, format+"\n\n当前步骤未保存，可重新发送。", canBack, canSkip)
+	w.failure(ctx, format, canBack, canSkip)
 }
 
 const replaceStep = "confirm_replace"
@@ -136,7 +136,7 @@ func (w *wizard) back(ctx context.Context) {
 	}
 	prev := previousStep(w.d.Action, w.dr, w.d.Step)
 	if prev == "" {
-		w.failure(ctx, "已经在第一步。发送 /cancel 可取消当前流程。", false, false)
+		w.failure(ctx, "已经是第一步。", false, false)
 		return
 	}
 	if !w.persist(ctx, prev) {
@@ -154,7 +154,7 @@ func (w *wizard) promptReplace(ctx context.Context, command string) {
 			return
 		}
 	}
-	w.reply(ctx, "当前有未完成的流程："+describeTarget(ctx, w.h, w.user, w.d)+"\n\n继续当前流程不会丢失草稿；取消并开始会丢弃该草稿。\n发送 /cancel 也可取消当前流程。",
+	w.reply(ctx, "当前有未完成的流程："+describeTarget(ctx, w.h, w.user, w.d)+"\n\n继续不会丢失草稿；取消并开始会丢弃草稿。",
 		[]models.InlineKeyboardButton{button("继续当前", cb("dialog", "keep")), button("取消并开始", cb("dialog", "replace"))})
 }
 
@@ -187,7 +187,7 @@ func (w *wizard) replace(ctx context.Context) {
 	}
 	switch {
 	case command == "":
-		w.h.send(ctx, w.b, w.resp, "已取消当前流程。\n\n"+shortHelp)
+		w.h.send(ctx, w.b, w.resp, cancelDialogText)
 	case strings.HasPrefix(command, "@start:"):
 		w.h.startIntent(ctx, w.b, w.user, w.resp, strings.TrimPrefix(command, "@start:"))
 	default:
@@ -220,7 +220,7 @@ func (w *wizard) render(ctx context.Context) {
 
 func (w *wizard) abort(ctx context.Context, reason string) {
 	_, _ = w.h.svc.CancelDialog(ctx, w.user.ID)
-	w.h.send(ctx, w.b, w.resp, reason+"，请重新打开对应详情后再操作。")
+	w.h.send(ctx, w.b, w.resp, reason+"，请重新打开。")
 }
 
 func (w *wizard) text(ctx context.Context, text string) {
@@ -265,7 +265,7 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 		case "replace":
 			w.replace(ctx)
 		default:
-			w.failure(ctx, "请选择继续当前流程或取消并开始。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 		}
 		return
 	}
@@ -280,7 +280,7 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 		w.confirm(ctx)
 	case "change_field":
 		if w.d.Action != service.DialogServiceEdit && w.d.Action != service.DialogPeriodEdit {
-			w.failure(ctx, "未知操作，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 		if !w.persist(ctx, "edit_field") {
@@ -289,13 +289,13 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 		w.render(ctx)
 	case "new_service":
 		if w.d.Action != service.DialogServiceAdd {
-			w.failure(ctx, "未知操作，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 		w.h.startServiceAdd(ctx, w.b, w.user, w.resp)
 	case "new_category":
 		if w.d.Action != service.DialogServiceAdd || w.d.Step != "add_category" {
-			w.failure(ctx, "未知操作，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 		if !w.persist(ctx, "add_category_name") {
@@ -310,12 +310,12 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 		w.toggleEnabled(ctx)
 	case "set":
 		if len(args) != 2 {
-			w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+			w.failure(ctx, expiredButtonMessage, false, false)
 			return
 		}
 		w.setChoice(ctx, args[0], args[1])
 	default:
-		w.failure(ctx, "未知操作，请重新打开流程。", false, false)
+		w.failure(ctx, expiredButtonMessage, false, false)
 	}
 }
 
@@ -323,7 +323,7 @@ func (w *wizard) nav(ctx context.Context, action string, args []string) {
 // The step gate is explicit so a crafted callback cannot change other flows.
 func (w *wizard) toggleEnabled(ctx context.Context) {
 	if (w.d.Action != service.DialogRuleAdd && w.d.Action != service.DialogRuleEdit) || w.d.Step != "rule_preview" {
-		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+		w.failure(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	if w.dr.Values["enabled"] == "false" {
@@ -351,13 +351,13 @@ func navRows(canBack, canSkip bool) [][]models.InlineKeyboardButton {
 
 func optionalNav(canBack bool) [][]models.InlineKeyboardButton {
 	return [][]models.InlineKeyboardButton{
-		[]models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("跳过", cb("dialog", "skip")), button("跳过剩余可选资料", cb("dialog", "skip_rest")), button("取消", cb("dialog", "cancel"))},
+		[]models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("跳过", cb("dialog", "skip")), button("跳过剩余", cb("dialog", "skip_rest")), button("取消", cb("dialog", "cancel"))},
 	}
 }
 
 func (w *wizard) clearValue(ctx context.Context) {
 	if w.d.Step != "edit_value" || (w.d.Action != service.DialogServiceEdit && w.d.Action != service.DialogPeriodEdit) {
-		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+		w.failure(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	if w.d.Action == service.DialogServiceEdit && w.dr.Values["field"] == "name" {
@@ -403,7 +403,7 @@ func describeTarget(ctx context.Context, h *Handler, user service.User, d servic
 // confirm finalizes the preview step of the current wizard.
 func (w *wizard) confirm(ctx context.Context) {
 	if !strings.HasSuffix(w.d.Step, "_preview") {
-		w.failure(ctx, "当前步骤还不能提交，请按提示继续。", true, false)
+		w.failure(ctx, expiredButtonMessage, true, false)
 		return
 	}
 	switch w.d.Action {

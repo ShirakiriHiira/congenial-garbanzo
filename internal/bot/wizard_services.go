@@ -37,34 +37,34 @@ func (w *wizard) renderServiceAdd(ctx context.Context) {
 			w.abort(ctx, "读取类别失败")
 			return
 		}
-		w.reply(ctx, "添加服务 · 第 1 步，选择类别。\n只会列出你可使用的内置类别与本人自定义类别；也可发送 /cancel 取消。", rows...)
+		w.reply(ctx, "添加服务 · 第 1 步，选择类别。", rows...)
 	case "add_category_name":
-		w.reply(ctx, "输入新类别名称（最多 200 字）。创建后会回到类别选择。", navRows(true, false)...)
+		w.reply(ctx, "新类别名称（最多 200 字）。", navRows(true, false)...)
 	case "add_name":
 		w.reply(ctx, "第 2 步，输入服务名称（例如：东京 VPS）。", navRows(true, false)...)
 	case "add_card_type":
-		w.reply(ctx, "这是 SIM 类别，请选择卡类型。", []models.InlineKeyboardButton{
+		w.reply(ctx, "选择卡类型。", []models.InlineKeyboardButton{
 			button("实体卡", choiceCallback("card_type", "physical_sim")),
 			button("eSIM", choiceCallback("card_type", "esim")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "add_provider":
-		w.reply(ctx, "可选：服务商/运营商（例如 Carrier、Cloud Provider）。", optionalNav(true)...)
+		w.reply(ctx, "可选：服务商/运营商。", optionalNav(true)...)
 	case "add_identifier":
-		w.reply(ctx, "可选：公开标识（主机名、域名、账号标识；不要填密码）。", optionalNav(true)...)
+		w.reply(ctx, "可选：公开标识（主机名、域名或账号标识）。", optionalNav(true)...)
 	case "add_management_url":
-		w.reply(ctx, "可选：管理链接（必须是无内嵌凭据的 http(s) 绝对地址）。", optionalNav(true)...)
+		w.reply(ctx, "可选：管理链接（http(s) 绝对地址，不能带账号密码）。", optionalNav(true)...)
 	case "add_phone":
-		w.reply(ctx, "可选：号码。会保存在数据库，不会进入回调或日志。", optionalNav(true)...)
+		w.reply(ctx, "可选：号码。", optionalNav(true)...)
 	case "add_region":
 		w.reply(ctx, "可选：国家或地区。", optionalNav(true)...)
 	case "add_iccid":
-		w.reply(ctx, "可选：ICCID（敏感信息不进入回调或日志）。", optionalNav(true)...)
+		w.reply(ctx, "可选：ICCID。", optionalNav(true)...)
 	case "add_notes":
-		w.reply(ctx, "可选：普通备注（最多 4000 字；不要保存密码、API Token 或私钥）。", optionalNav(true)...)
+		w.reply(ctx, "可选：备注（最多 4000 字）。", optionalNav(true)...)
 	case "add_preview":
 		w.renderServiceAddPreview(ctx)
 	default:
-		w.abort(ctx, "添加服务流程状态无效")
+		w.abort(ctx, "该流程已失效")
 	}
 }
 
@@ -84,7 +84,7 @@ func (w *wizard) renderServiceAddPreview(ctx context.Context) {
 	if kind == "sim" {
 		fmt.Fprintf(&b, "卡类型：%s\n号码：%s\n国家/地区：%s\nICCID：%s\n", cardTypeLabel(w.dr.Values["card_type"]), shown(w.dr, "phone"), shown(w.dr, "region"), shown(w.dr, "iccid"))
 	}
-	b.WriteString("\n确认后只创建这一个服务；不会自动创建有效期或提醒规则。")
+
 	w.reply(ctx, b.String(), []models.InlineKeyboardButton{button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 }
 
@@ -146,7 +146,7 @@ func (w *wizard) textServiceAdd(ctx context.Context, text string) {
 		}
 		w.dr.set("management_url", value)
 	default:
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
+		w.stepError(ctx, "请用下方按钮选择。", false, false)
 		return
 	}
 	next := nextStep(service.DialogServiceAdd, w.dr, w.d.Step)
@@ -159,7 +159,7 @@ func (w *wizard) textServiceAdd(ctx context.Context, text string) {
 func (w *wizard) confirmServiceAdd(ctx context.Context) {
 	categoryID, err := strconv.ParseInt(w.dr.Values["category_id"], 10, 64)
 	if err != nil || categoryID < 1 || w.dr.Values["name"] == "" {
-		w.stepError(ctx, "类别或名称缺失，请返回修改。", false, false)
+		w.stepError(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	in := service.ServiceInput{Name: w.dr.Values["name"], CategoryID: categoryID,
@@ -176,7 +176,7 @@ func (w *wizard) confirmServiceAdd(ctx context.Context) {
 	}
 	item, err := w.h.svc.CreateService(ctx, w.user.ID, in)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "创建失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "创建失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
@@ -288,9 +288,10 @@ func (w *wizard) renderServiceEdit(ctx context.Context) {
 	}
 	kind := kindOf(item)
 	w.dr.set("kind", kind)
+	category := categoryName(ctx, w.h, w.user.ID, item.CategoryID)
 	switch w.d.Step {
 	case "edit_field":
-		w.reply(ctx, "编辑服务「"+item.Name+"」\n请选择要修改的字段；每次只提交一项，确认前不会写入。", editFieldRows(item)...)
+		w.reply(ctx, "编辑服务「"+item.Name+"」\n选择要修改的字段。", editFieldRows(item)...)
 	case "edit_value":
 		field := w.dr.Values["field"]
 		if field == "category_id" {
@@ -310,11 +311,11 @@ func (w *wizard) renderServiceEdit(ctx context.Context) {
 				rows = append(rows, row)
 			}
 			rows = append(rows, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
-			w.reply(ctx, "当前类别："+editValue(item, field)+"\n请选择新的类别（只能在同类 kind 内切换）。", rows...)
+			w.reply(ctx, "当前类别："+category+"\n\n选择新的类别。", rows...)
 			return
 		}
 		if field == "card_type" {
-			w.reply(ctx, "当前卡类型："+editValue(item, field), []models.InlineKeyboardButton{
+			w.reply(ctx, "当前卡类型："+editValue(item, field, category), []models.InlineKeyboardButton{
 				button("实体卡", choiceCallback("card_type", "physical_sim")),
 				button("eSIM", choiceCallback("card_type", "esim")),
 			}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
@@ -324,15 +325,24 @@ func (w *wizard) renderServiceEdit(ctx context.Context) {
 		if field != "name" {
 			rows = append([][]models.InlineKeyboardButton{[]models.InlineKeyboardButton{button("清空当前值", cb("dialog", "clear_value"))}}, rows...)
 		}
-		w.reply(ctx, fmt.Sprintf("当前值：%s\n\n请输入新的%s；名称不能清空。", editValue(item, field), editLabel(field)), rows...)
+		w.reply(ctx, fmt.Sprintf("当前值：%s\n\n新的%s：", editValue(item, field, category), editLabel(field)), rows...)
 	case "edit_preview":
 		field := w.dr.Values["field"]
+		newValue := draftEditValue(w.dr, field)
+		if field == "category_id" {
+			if n, err := strconv.ParseInt(w.dr.Values["category_id"], 10, 64); err == nil {
+				newValue = categoryName(ctx, w.h, w.user.ID, n)
+			}
+		}
+		if field == "card_type" {
+			newValue = cardTypeLabel(w.dr.Values["card_type"])
+		}
 		w.reply(ctx, fmt.Sprintf("请确认修改服务「%s」：\n字段：%s\n旧值：%s\n新值：%s",
-			item.Name, editLabel(field), editValue(item, field), draftEditValue(w.dr, field)),
+			item.Name, editLabel(field), editValue(item, field, category), newValue),
 			[]models.InlineKeyboardButton{button("确认修改", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))},
 			[]models.InlineKeyboardButton{button("改其他字段", cb("dialog", "change_field")), button("取消", cb("dialog", "cancel"))})
 	default:
-		w.abort(ctx, "编辑流程状态无效")
+		w.abort(ctx, "该流程已失效")
 	}
 }
 
@@ -345,7 +355,7 @@ func editLabel(field string) string {
 	return field
 }
 
-func editValue(item service.ServiceItem, field string) string {
+func editValue(item service.ServiceItem, field string, category string) string {
 	switch field {
 	case "name":
 		return item.Name
@@ -358,7 +368,7 @@ func editValue(item service.ServiceItem, field string) string {
 	case "notes":
 		return textOrDash(item.Notes)
 	case "category_id":
-		return "当前类别"
+		return category
 	}
 	if d := item.SIMDetails; d != nil {
 		switch field {
@@ -406,12 +416,12 @@ func editFieldRows(item service.ServiceItem) [][]models.InlineKeyboardButton {
 
 func (w *wizard) textServiceEdit(ctx context.Context, text string) {
 	if w.d.Step != "edit_value" {
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
+		w.stepError(ctx, "请用下方按钮选择。", false, false)
 		return
 	}
 	field, value := w.dr.Values["field"], trimmed(text)
 	if field == "category_id" || field == "card_type" {
-		w.stepError(ctx, "请使用下方按钮选择。", true, false)
+		w.stepError(ctx, "请用下方按钮选择。", true, false)
 		return
 	}
 	switch field {
@@ -452,7 +462,7 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	case "category_id":
 		n, err := strconv.ParseInt(w.dr.Values["category_id"], 10, 64)
 		if err != nil || n < 1 {
-			w.stepError(ctx, "类别无效，请返回修改。", false, false)
+			w.stepError(ctx, expiredButtonMessage, false, false)
 			return
 		}
 		patch.CategoryID = &n
@@ -461,7 +471,7 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	case "identifier":
 		item, err := w.h.svc.GetService(ctx, w.user.ID, *w.d.ServiceID)
 		if err != nil {
-			w.stepError(ctx, "服务已不存在，请重新打开编辑。", false, false)
+			w.stepError(ctx, "服务已不存在，请重新打开。", false, false)
 			return
 		}
 		if item.SIMDetails != nil {
@@ -489,12 +499,12 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 		patch.SIMDetailsSet = true
 		patch.SIMDetails = &details
 	default:
-		w.stepError(ctx, "未知字段，请重新打开编辑。", false, false)
+		w.stepError(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	item, err := w.h.svc.UpdateService(ctx, w.user.ID, *w.d.ServiceID, patch)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "修改失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "修改失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
@@ -536,7 +546,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	}
 	switch w.d.Step {
 	case "period_name":
-		w.reply(ctx, fmt.Sprintf("添加有效期到「%s」· 第 1 步，有效期名称（可选，例如：年付套餐）。", item.Name), optionalNav(true)...)
+		w.reply(ctx, fmt.Sprintf("添加有效期到「%s」· 第 1 步，有效期名称（可选）。", item.Name), optionalNav(true)...)
 	case "period_precision":
 		w.reply(ctx, "第 2 步，截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。", []models.InlineKeyboardButton{
 			button("仅日期", choiceCallback("precision", "date")),
@@ -547,7 +557,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	case "period_starts":
 		w.reply(ctx, "第 4 步，开始时间（可选，按你的时区，必须早于截止）。\n示例：2027-01-01 00:00", optionalNav(true)...)
 	case "terms_mode":
-		w.reply(ctx, "第 5 步，续费约定（可选，只作记录，不会自动扣款或推算日期）。", []models.InlineKeyboardButton{
+		w.reply(ctx, "第 5 步，续费约定（可选，只作记录，不影响提醒日期）。", []models.InlineKeyboardButton{
 			button("一次性", choiceCallback("mode", "once")),
 			button("周期性", choiceCallback("mode", "recurring")),
 			button("暂不设置", choiceCallback("mode", "custom")),
@@ -555,11 +565,11 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 1200 JPY 或 10.30 CNY；小数位按币种（JPY 等无小数，CNY/USD 两位，KWD 等三位）。\n约定费用不代表已付款。", optionalNav(true)...)
+		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
 	case "period_preview":
 		w.reply(ctx, periodAddPreviewText(item, w.dr, w.user.Timezone), []models.InlineKeyboardButton{button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
-		w.abort(ctx, "添加有效期流程状态无效")
+		w.abort(ctx, "该流程已失效")
 	}
 }
 
@@ -600,7 +610,7 @@ func periodAddPreviewText(item service.ServiceItem, d draft, zone string) string
 	if value := d.Values["starts_at"]; strings.TrimSpace(value) != "" {
 		starts = wallClockDisplay(value, zone)
 	}
-	return fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n约定：%s\n\n创建后不会自动创建提醒规则。",
+	return fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n约定：%s",
 		item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), expires, starts, termsText(termsDraft(d)))
 }
 
@@ -672,7 +682,7 @@ func (w *wizard) textPeriodAdd(ctx context.Context, text string) {
 		w.dr.set("amount", strconv.FormatInt(*amount, 10))
 		w.dr.set("currency", *currency)
 	default:
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
+		w.stepError(ctx, "请用下方按钮选择。", false, false)
 		return
 	}
 	next := nextStep(service.DialogPeriodAdd, w.dr, w.d.Step)
@@ -719,7 +729,7 @@ func (w *wizard) confirmPeriodAdd(ctx context.Context) {
 	in.Terms = termsFromDraft(w.dr)
 	p, err := w.h.svc.CreatePeriod(ctx, w.user.ID, *w.d.ServiceID, in)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "创建有效期失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "创建有效期失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
@@ -781,17 +791,17 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 			rows = append(rows, row)
 		}
 		rows = append(rows, []models.InlineKeyboardButton{button("返回有效期", cb("period", "view", id(p.ID))), button("取消", cb("dialog", "cancel"))})
-		w.reply(ctx, "编辑有效期「"+periodName(p)+"」\n请选择要修改的字段；确认前不会写入。", rows...)
+		w.reply(ctx, "编辑有效期「"+periodName(p)+"」\n选择要修改的字段。", rows...)
 	case "edit_value":
 		field := w.dr.Values["field"]
 		if field == "name" {
-			w.reply(ctx, "当前名称："+shownValue(p.Name)+"\n请输入新名称；发送空内容表示不设置名称。", navRows(true, false)...)
+			w.reply(ctx, "当前名称："+shownValue(p.Name)+"\n\n新名称（留空表示不设置）：", navRows(true, false)...)
 		} else {
 			rows := navRows(true, false)
 			if p.StartsAt != nil {
 				rows = append([][]models.InlineKeyboardButton{[]models.InlineKeyboardButton{button("清除开始时间", cb("dialog", "clear_value"))}}, rows...)
 			}
-			w.reply(ctx, "当前开始："+startValue(p.StartsAt, p.Timezone)+"\n请输入本地时间，例如 2027-01-01 00:00（按 "+p.Timezone+"）；也接受带 offset 的 RFC3339。", rows...)
+			w.reply(ctx, "当前开始："+startValue(p.StartsAt, p.Timezone)+"\n\n新开始时间，例如 2027-01-01 00:00（按 "+p.Timezone+"）。", rows...)
 		}
 	case "period_precision":
 		w.reply(ctx, "选择新的截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。", []models.InlineKeyboardButton{
@@ -799,9 +809,9 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 			button("精确时间", choiceCallback("precision", "datetime")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "period_expires":
-		w.reply(ctx, "当前截止："+periodExpiry(p)+"\n请输入新的截止（"+precisionLabel(w.dr.Values["precision"])+"，时区 "+p.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
+		w.reply(ctx, "当前截止："+periodExpiry(p)+"\n\n新截止（"+precisionLabel(w.dr.Values["precision"])+"，时区 "+p.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
 	case "terms_mode":
-		w.reply(ctx, "当前约定："+termsText(p.Terms)+"\n请选择新的条款模式；条款只作记录，不会自动扣款或改变截止。", []models.InlineKeyboardButton{
+		w.reply(ctx, "当前约定："+termsText(p.Terms)+"\n\n选择新的条款模式。", []models.InlineKeyboardButton{
 			button("一次性", choiceCallback("mode", "once")),
 			button("周期性", choiceCallback("mode", "recurring")),
 			button("暂不设置", choiceCallback("mode", "custom")),
@@ -809,11 +819,11 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 1200 JPY 或 10.30 CNY；发送“无”或跳过表示不记录金额。", optionalNav(true)...)
+		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
 	case "edit_preview":
 		w.reply(ctx, periodEditPreviewText(p, w.dr), []models.InlineKeyboardButton{button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
-		w.abort(ctx, "编辑有效期流程状态无效")
+		w.abort(ctx, "该流程已失效")
 	}
 }
 
@@ -844,7 +854,7 @@ func periodEditPreviewText(p service.Period, d draft) string {
 	case "terms":
 		old, next = termsText(p.Terms), termsText(termsDraft(d))
 	}
-	return fmt.Sprintf("请确认修改有效期「%s」：\n字段：%s\n旧值：%s\n新值：%s\n\n保存时会按当前版本校验；若已被其他操作更新会拒绝并保留草稿。",
+	return fmt.Sprintf("请确认修改有效期「%s」：\n字段：%s\n旧值：%s\n新值：%s",
 		periodName(p), periodFieldLabel(field), old, next)
 }
 
@@ -861,7 +871,7 @@ func (w *wizard) textPeriodEdit(ctx context.Context, text string) {
 	value := trimmed(text)
 	loadPeriod := func() (service.Period, bool) {
 		if w.d.PeriodID == nil {
-			w.abort(ctx, "编辑流程缺少有效期")
+			w.abort(ctx, "该流程已失效")
 			return service.Period{}, false
 		}
 		p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
@@ -934,7 +944,7 @@ func (w *wizard) textPeriodEdit(ctx context.Context, text string) {
 		w.dr.set("amount", strconv.FormatInt(*amount, 10))
 		w.dr.set("currency", *currency)
 	default:
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
+		w.stepError(ctx, "请用下方按钮选择。", false, false)
 		return
 	}
 	next := nextStep(service.DialogPeriodEdit, w.dr, w.d.Step)
@@ -951,7 +961,7 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		return
 	}
 	if w.d.ExpectedCycle == nil || p.Cycle != *w.d.ExpectedCycle {
-		w.h.send(ctx, w.b, w.resp, "有效期已被其他操作更新，本次未写入；草稿仍保留。请取消后重新打开有效期查看最新状态。")
+		w.h.send(ctx, w.b, w.resp, "有效期已被其他操作更新，本次未写入。\n草稿已保留。")
 		return
 	}
 	field := w.dr.Values["field"]
@@ -968,7 +978,7 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		patch.DatePrecision, patch.ExpiresAt = &precision, &expires
 	case "terms":
 		if w.d.ExpectedTermsRevision == nil {
-			w.abort(ctx, "条款对话缺少版本信息")
+			w.abort(ctx, "该流程已失效")
 			return
 		}
 		patch.ExpectedTermsRevision = w.d.ExpectedTermsRevision
@@ -978,14 +988,14 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 			patch.Terms = &service.TermsInput{Mode: "custom"}
 		}
 	default:
-		w.stepError(ctx, "未知字段，请重新打开编辑。", false, false)
+		w.stepError(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	updated, err := w.h.svc.UpdatePeriod(ctx, w.user.ID, p.ID, patch)
 	if err != nil {
-		hint := "保存失败：" + serviceMessage(err) + "\n草稿仍保留，可返回修改或取消。"
+		hint := "保存失败：" + serviceMessage(err) + "\n草稿已保留。"
 		if service.Code(err) == "conflict" {
-			hint = "保存失败：有效期已被其他操作更新，本次未写入。\n草稿仍保留；可取消后重新打开有效期查看最新状态。"
+			hint = "保存失败：有效期已被其他操作更新，本次未写入。\n草稿已保留。"
 		}
 		w.h.send(ctx, w.b, w.resp, hint)
 		return
@@ -1088,12 +1098,12 @@ func (w *wizard) renderRule(ctx context.Context) {
 		}
 		w.reply(ctx, rulePreviewText(p, w.dr), []models.InlineKeyboardButton{button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{toggle}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
-		w.abort(ctx, "提醒规则流程状态无效")
+		w.abort(ctx, "该流程已失效")
 	}
 }
 
 func rulePreviewText(p service.Period, d draft) string {
-	return fmt.Sprintf("请确认提醒规则：\n有效期：%s\n截止：%s\n提前：%s 天\n提醒时间：%s\n启用：%s\n\n保存时由服务层重新校验提醒时间是否早于截止。",
+	return fmt.Sprintf("请确认提醒规则：\n有效期：%s\n截止：%s\n提前：%s 天\n提醒时间：%s\n启用：%s",
 		periodName(p), periodExpiry(p), d.Values["days_before"], d.Values["reminder_time"], enabledLabel(d.Values["enabled"]))
 }
 
@@ -1121,7 +1131,7 @@ func (w *wizard) textRule(ctx context.Context, text string) {
 		}
 		w.dr.set("reminder_time", value)
 	default:
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
+		w.stepError(ctx, "请用下方按钮选择。", false, false)
 		return
 	}
 	next := nextStep(w.d.Action, w.dr, w.d.Step)
@@ -1139,29 +1149,29 @@ func (w *wizard) confirmRule(ctx context.Context) {
 	}
 	days, err := strconv.Atoi(w.dr.Values["days_before"])
 	if err != nil {
-		w.stepError(ctx, "提前天数无效，请返回修改。", false, false)
+		w.stepError(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	enabled := w.dr.Values["enabled"] != "false"
 	if w.d.Action == service.DialogRuleAdd {
 		rule, err := w.h.svc.CreateRule(ctx, w.user.ID, p.ID, service.RuleInput{DaysBefore: days, ReminderTime: w.dr.Values["reminder_time"], Enabled: &enabled})
 		if err != nil {
-			w.h.send(ctx, w.b, w.resp, "创建规则失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+			w.h.send(ctx, w.b, w.resp, "创建规则失败："+serviceMessage(err)+"\n草稿已保留。")
 			return
 		}
 		w.finishRule(ctx, rule, "提醒规则已创建。")
 		return
 	}
 	if w.d.RuleID == nil || w.d.ExpectedRevision == nil {
-		w.abort(ctx, "规则对话缺少版本信息")
+		w.abort(ctx, "该流程已失效")
 		return
 	}
 	reminder := w.dr.Values["reminder_time"]
 	rule, err := w.h.svc.UpdateRule(ctx, w.user.ID, *w.d.RuleID, service.RulePatch{ExpectedRevision: *w.d.ExpectedRevision, DaysBefore: &days, ReminderTime: &reminder, Enabled: &enabled})
 	if err != nil {
-		hint := "保存规则失败：" + serviceMessage(err) + "\n草稿仍保留，可返回修改或取消。"
+		hint := "保存规则失败：" + serviceMessage(err) + "\n草稿已保留。"
 		if service.Code(err) == "conflict" {
-			hint = "保存失败：规则已被修改，请取消后重新打开规则列表。\n草稿仍保留。"
+			hint = "保存失败：规则已被修改，本次未写入。\n草稿已保留。"
 		}
 		w.h.send(ctx, w.b, w.resp, hint)
 		return
@@ -1215,16 +1225,16 @@ func (w *wizard) renderTimezone(ctx context.Context) {
 		rows = append(rows, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 		w.reply(ctx, "当前时区："+w.user.Timezone+"\n请选择常用时区，或直接发送合法 IANA 名称（例如 Asia/Taipei）。", rows...)
 	case "tz_preview":
-		w.reply(ctx, fmt.Sprintf("请确认修改时区：\n旧时区：%s\n新时区：%s\n\n仅日期截止会按新时区重算当地日历日结束；精确时间保持绝对时刻。相关有效期会推进版本并取消未完成提醒任务。",
+		w.reply(ctx, fmt.Sprintf("请确认修改时区：\n旧时区：%s\n新时区：%s\n\n仅日期截止会按新时区重算当日结束；精确时间保持绝对时刻。未发送的提醒会取消。",
 			w.user.Timezone, w.dr.Values["tz"]), []models.InlineKeyboardButton{button("确认修改", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
-		w.abort(ctx, "时区流程状态无效")
+		w.abort(ctx, "该流程已失效")
 	}
 }
 
 func (w *wizard) textTimezone(ctx context.Context, text string) {
 	if w.d.Step != "tz_value" {
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
+		w.stepError(ctx, "请用下方按钮选择。", false, false)
 		return
 	}
 	zone := trimmed(text)
@@ -1247,7 +1257,7 @@ func (w *wizard) confirmTimezone(ctx context.Context) {
 	zone := w.dr.Values["tz"]
 	user, err := w.h.svc.SetTimezone(ctx, w.user.ID, zone)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "修改时区失败："+serviceMessage(err)+"\n草稿仍保留，可返回修改或取消。")
+		w.h.send(ctx, w.b, w.resp, "修改时区失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {

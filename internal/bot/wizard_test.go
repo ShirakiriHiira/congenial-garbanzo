@@ -74,7 +74,7 @@ func TestButtonStartedFlowsHonorReplacementIntent(t *testing.T) {
 	f.callback(userA, cb("period", "renew", id(p.ID)), nil)
 
 	f.callback(userA, cb("settings", "timezone"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "继续当前") {
+	if text := f.stub.lastText(); !strings.Contains(text, "继续不会丢失草稿") {
 		t.Fatalf("timezone did not prompt: %q", text)
 	}
 	f.callback(userA, cb("dialog", "replace"), nil)
@@ -83,7 +83,7 @@ func TestButtonStartedFlowsHonorReplacementIntent(t *testing.T) {
 	}
 
 	f.callback(userA, cb("dialog", "new_service"), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "继续当前") {
+	if text := f.stub.lastText(); !strings.Contains(text, "继续不会丢失草稿") {
 		t.Fatalf("new service did not prompt: %q", text)
 	}
 	f.callback(userA, cb("dialog", "replace"), nil)

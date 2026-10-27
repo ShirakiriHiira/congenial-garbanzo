@@ -75,7 +75,7 @@ func periodDetail(p service.Period, rules int) string {
 	b.WriteString(termsText(p.Terms) + "\n")
 	switch rules {
 	case 0:
-		b.WriteString("提醒：未配置提醒规则，不会发送通知。")
+		b.WriteString("提醒：未配置。")
 	default:
 		fmt.Fprintf(&b, "提醒：%d 条规则。", rules)
 	}
@@ -95,7 +95,7 @@ func renewalText(ctx context.Context, svc *service.Service, user service.User, r
 		fmt.Fprintf(&b, "备注：%s\n", *r.Notes)
 	}
 	if r.Replayed {
-		b.WriteString("（该续期此前已完成，显示历史记录。）\n")
+		b.WriteString("（该续期已完成过，显示原记录。）\n")
 	}
 	if p, err := svc.GetPeriod(ctx, user.ID, r.PeriodID); err == nil {
 		fmt.Fprintf(&b, "当前状态：%s\n", statusLabel(p.Status))
@@ -104,30 +104,19 @@ func renewalText(ctx context.Context, svc *service.Service, user service.User, r
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// shortHelp is the terse pointer shown after a dialog ends.
-const shortHelp = "常用入口：/services、/add、/reminders、/settings、/help。"
-
 // cancelDialogText is the shared reply for a cancelled wizard.
-const cancelDialogText = "已取消当前流程，未写入任何修改。\n\n" + shortHelp
+const cancelDialogText = "已取消当前流程。"
 
 // otherChatMessage is the shared reply for a dialog that another session owns.
-const otherChatMessage = "当前流程已在其他会话中开始；请先发送 /cancel 取消。"
+const otherChatMessage = "当前流程已在其他会话中进行，请先发送 /cancel 取消。"
 
-func helpText(zone string) string {
-	return `服务与订阅有效期提醒机器人
+func helpText() string {
+	return `服务与订阅提醒
 
-当前时区：` + zone + `
-
-全部操作均在私聊中通过按钮与分步向导完成：
-/services — 我的服务：搜索、状态与类别筛选、分页
-/add — 分步添加服务
-/reminders — 提醒任务，可取消未发送任务
+/services — 我的服务
+/add — 添加服务
+/reminders — 提醒任务
 /settings — 时区与私聊绑定
-/cancel — 取消当前未完成流程
-/help — 本帮助
-
-所有对象都从列表或详情按钮进入，不需要输入任何内部编号。每一步都可返回、跳过可选资料或取消；发起另一个写流程前会确认是否丢弃草稿。
-
-date 精度格式 YYYY-MM-DD；datetime 直接发送本地时间，例如 2027-02-28 23:59（按当前时区），也接受带 offset 的 RFC3339。约定费用只作记录，不代表已付款。
-备注只存普通说明，不要保存密码、API Token 或私钥。`
+/cancel — 取消当前流程
+/help — 帮助`
 }

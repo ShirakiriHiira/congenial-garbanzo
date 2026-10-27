@@ -25,7 +25,7 @@
 
   const copy = {
     clear: '清除筛选',
-    incomplete: '列表加载不完整，已保留已加载的服务。',
+    incomplete: '列表加载不完整，已保留已加载的部分。',
   } as const;
 
   const displayUser = parseDisplayUser(getInitData());

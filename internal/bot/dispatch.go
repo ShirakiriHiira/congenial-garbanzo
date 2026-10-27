@@ -47,7 +47,7 @@ func (h *Handler) conflictTarget(ctx context.Context, b *telegram.Bot, user serv
 func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, text string, fromReplace bool) {
 	name, target, rest, ok := splitCommand(text)
 	if !ok {
-		h.send(ctx, b, resp, "未知命令。\n\n"+helpText(user.Timezone))
+		h.send(ctx, b, resp, "未知命令，发送 /help 查看。")
 		return
 	}
 	if target != "" {
@@ -59,7 +59,7 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 	if !fromReplace && name == "add" {
 		if existing, err := h.svc.GetDialog(ctx, user.ID); err == nil {
 			if existing.ChatID != resp.chatID {
-				h.send(ctx, b, resp, "当前流程已在其他会话中开始；请先发送 /cancel 取消。")
+				h.send(ctx, b, resp, otherChatMessage)
 				return
 			}
 			w := h.wizard(ctx, b, user, existing, resp)
@@ -75,7 +75,7 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 		h.helpMessage(ctx, b, user, resp)
 	case "add":
 		if strings.TrimSpace(rest) != "" {
-			h.send(ctx, b, resp, "用法：/add（直接进入新建服务向导）")
+			h.send(ctx, b, resp, "用法：/add")
 			return
 		}
 		h.startServiceAdd(ctx, b, user, resp)
@@ -88,7 +88,7 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 		h.showOverview(ctx, b, user.ID, resp, service.ServiceFilter{Status: "active", Query: query}, 0)
 	case "reminders":
 		if strings.TrimSpace(rest) != "" {
-			h.send(ctx, b, resp, "用法：/reminders（在消息按钮中切换筛选）")
+			h.send(ctx, b, resp, "用法：/reminders")
 			return
 		}
 		h.showJobs(ctx, b, user, resp, "pending", 0)
@@ -100,14 +100,14 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 		h.showSettings(ctx, b, user, resp)
 	case "cancel":
 		if strings.TrimSpace(rest) != "" {
-			h.send(ctx, b, resp, "用法：/cancel（取消当前未完成流程）")
+			h.send(ctx, b, resp, "用法：/cancel")
 			return
 		}
 		h.cancelDialog(ctx, b, user, resp, "当前没有进行中的对话。")
 	default:
 		// Unknown commands, including the removed ID-based forms, are
 		// read-only help responses.
-		h.send(ctx, b, resp, "未知命令。\n\n"+helpText(user.Timezone))
+		h.send(ctx, b, resp, "未知命令，发送 /help 查看。")
 	}
 }
 
@@ -119,7 +119,7 @@ func (h *Handler) helpMessage(ctx context.Context, b *telegram.Bot, user service
 	if d, err := h.svc.GetDialog(ctx, user.ID); err == nil && d.ChatID == resp.chatID {
 		rows = append(rows, []models.InlineKeyboardButton{button("继续当前流程", cb("dialog", "resume"))})
 	}
-	h.sendMarkup(ctx, b, resp, helpText(user.Timezone), markup(rows...))
+	h.sendMarkup(ctx, b, resp, helpText(), markup(rows...))
 }
 
 // startIntent runs a wizard start encoded in a replacement prompt. The intent
@@ -148,6 +148,6 @@ func (h *Handler) startIntent(ctx context.Context, b *telegram.Bot, user service
 	case service.DialogRenew:
 		h.startRenewWizard(ctx, b, user, resp, target)
 	default:
-		h.send(ctx, b, resp, "该流程已失效，请重新打开对应详情。")
+		h.send(ctx, b, resp, expiredButtonMessage)
 	}
 }

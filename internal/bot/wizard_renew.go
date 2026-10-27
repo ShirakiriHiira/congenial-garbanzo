@@ -50,7 +50,7 @@ func (w *wizard) renderRenew(ctx context.Context) {
 		w.abort(ctx, "有效期已被其他操作更新")
 		return
 	}
-	head := fmt.Sprintf("续期「%s」/「%s」\n当前截止：%s\n约定（仅参考，不会自动填入本次金额）：%s",
+	head := fmt.Sprintf("续期「%s」/「%s」\n当前截止：%s\n约定（仅供参考）：%s",
 		item.Name, periodName(p), periodExpiry(p), termsText(p.Terms))
 	switch w.d.Step {
 	case "renew_precision":
@@ -66,16 +66,16 @@ func (w *wizard) renderRenew(ctx context.Context) {
 			rows = append(rows, []models.InlineKeyboardButton{button("使用约定金额", cb("dialog", "use_convention"))})
 		}
 		rows = append(rows, navRows(true, true)...)
-		w.reply(ctx, "本次实际续期金额（可选）：发送“金额 币种”，例如 10.30 CNY 或 1200 JPY。\n小数位按币种；不会自动采用约定金额。", rows...)
+		w.reply(ctx, "本次实际续期金额（可选）：发送“金额 币种”，例如 10.30 CNY。", rows...)
 	case "renew_notes":
-		w.reply(ctx, "续期备注（普通说明，不要填写密码或 Token）。可跳过。", navRows(true, true)...)
+		w.reply(ctx, "续期备注（可选）。", navRows(true, true)...)
 	case "renew_preview":
 		w.reply(ctx, renewPreviewText(p, item, w.dr), []models.InlineKeyboardButton{
 			button("确认续期", cb("dialog", "confirm")),
 			button("返回修改", cb("dialog", "back")),
 		}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
-		w.abort(ctx, "续期流程状态无效")
+		w.abort(ctx, "该流程已失效")
 	}
 }
 
@@ -93,7 +93,7 @@ func renewPreviewText(p service.Period, item service.ServiceItem, d draft) strin
 	if notes == "" {
 		notes = "（无）"
 	}
-	return fmt.Sprintf("请确认续期：\n服务：%s\n有效期：%s\n当前截止：%s\n新截止：%s（%s）\n实际续期金额：%s\n备注：%s\n\n提交时会按当前版本重新校验；若已被其他操作推进，会拒绝写入并保留本对话。",
+	return fmt.Sprintf("请确认续期：\n服务：%s\n有效期：%s\n当前截止：%s\n新截止：%s（%s）\n实际续期金额：%s\n备注：%s",
 		item.Name, periodName(p), periodExpiry(p), expires, precision, money, notes)
 }
 
@@ -106,7 +106,7 @@ func (w *wizard) textRenew(ctx context.Context, text string) {
 			return
 		}
 		if w.d.PeriodID == nil {
-			w.abort(ctx, "续期流程缺少有效期")
+			w.abort(ctx, "该流程已失效")
 			return
 		}
 		p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
@@ -149,7 +149,7 @@ func (w *wizard) textRenew(ctx context.Context, text string) {
 		}
 		w.render(ctx)
 	default:
-		w.stepError(ctx, "当前步骤不接受文本输入，请使用下方按钮。", false, false)
+		w.stepError(ctx, "请用下方按钮选择。", false, false)
 	}
 }
 
@@ -158,7 +158,7 @@ func (w *wizard) textRenew(ctx context.Context, text string) {
 // confirmation.
 func (w *wizard) useConvention(ctx context.Context) {
 	if w.d.Action != service.DialogRenew || w.d.Step != "renew_amount" || w.d.PeriodID == nil {
-		w.failure(ctx, "该按钮无效，请重新打开流程。", false, false)
+		w.failure(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
@@ -178,14 +178,14 @@ func (w *wizard) useConvention(ctx context.Context) {
 // ownership, status, and the captured cycle.
 func (w *wizard) confirmRenew(ctx context.Context) {
 	if w.dr.Values["expires_at"] == "" {
-		w.stepError(ctx, "续期信息未完成，请返回修改。", false, false)
+		w.stepError(ctx, expiredButtonMessage, false, false)
 		return
 	}
 	in := service.RenewInput{DatePrecision: w.dr.Values["precision"], ExpiresAt: w.dr.Values["expires_at"]}
 	if amount, ok := w.dr.get("amount"); ok {
 		var value int64
 		if _, err := fmt.Sscan(amount, &value); err != nil {
-			w.stepError(ctx, "金额已损坏，请返回修改。", false, false)
+			w.stepError(ctx, expiredButtonMessage, false, false)
 			return
 		}
 		currency := w.dr.Values["currency"]
@@ -197,9 +197,9 @@ func (w *wizard) confirmRenew(ctx context.Context) {
 	}
 	renewal, err := w.h.svc.RenewFromDialog(ctx, w.user.ID, in)
 	if err != nil {
-		hint := "续期失败：" + serviceMessage(err) + "\n草稿仍保留，可返回修改或取消。"
+		hint := "续期失败：" + serviceMessage(err) + "\n草稿已保留。"
 		if service.Code(err) == "conflict" {
-			hint = "续期失败：有效期已被其他操作更新，本次未写入。\n草稿仍保留；请取消后重新打开有效期详情查看最新状态。"
+			hint = "续期失败：数据已更新，本次未写入。\n草稿已保留。"
 		}
 		w.h.send(ctx, w.b, w.resp, hint)
 		return
