@@ -68,6 +68,7 @@ var wizardSequences = map[string][]stepSpec{
 		{key: "period_precision"},
 		{key: "period_expires"},
 		{key: "period_starts", optional: true},
+		{key: "period_days"},
 		{key: "terms_mode"},
 		{key: "terms_interval"},
 		{key: "terms_amount", optional: true},
@@ -177,6 +178,10 @@ func applies(d draft, step string) bool {
 		return d.Values["kind"] != "sim"
 	case "terms_interval", "terms_amount":
 		return d.Values["mode"] == "recurring"
+	case "period_expires":
+		return d.Values["expiry_mode"] != "duration"
+	case "period_days":
+		return d.Values["expiry_mode"] == "duration"
 	}
 	return true
 }
@@ -332,7 +337,7 @@ func parseSpaceMoney(text string) (*int64, *string, error) {
 // choiceValues maps a stable decimal callback code to its enum value. The
 // reverse map keeps callback payloads free of labels and user input.
 var choiceValues = map[string]map[string]string{
-	"precision": {"1": "date", "2": "datetime"},
+	"precision": {"1": "date", "2": "datetime", "3": "duration_date", "4": "duration_datetime"},
 	"card_type": {"1": "physical_sim", "2": "esim"},
 	"mode":      {"1": "once", "2": "recurring", "3": "custom"},
 }
@@ -508,15 +513,32 @@ func (w *wizard) setChoice(ctx context.Context, key, value string) {
 			return
 		}
 	}
+	if draftKey == "precision" {
+		switch value {
+		case "date", "datetime":
+			w.dr.del("expiry_mode")
+			w.dr.del("duration_days")
+		case "duration_date", "duration_datetime":
+			if w.d.Action != service.DialogPeriodAdd || w.d.Step != "period_precision" {
+				w.failure(ctx, expiredButtonMessage, false, false)
+				return
+			}
+			w.dr.set("expiry_mode", "duration")
+			w.dr.del("expires_at")
+			if value == "duration_date" {
+				value = "date"
+			} else {
+				value = "datetime"
+			}
+		default:
+			w.failure(ctx, expiredButtonMessage, false, false)
+			return
+		}
+	}
 	w.dr.set(draftKey, value)
 
 	next := nextStep(w.d.Action, w.dr, w.d.Step)
 	switch draftKey {
-	case "precision":
-		if value != "date" && value != "datetime" {
-			w.failure(ctx, "精度只能是 date 或 datetime。", false, false)
-			return
-		}
 	case "card_type":
 		if value != "esim" && value != "physical_sim" {
 			w.failure(ctx, expiredButtonMessage, false, false)

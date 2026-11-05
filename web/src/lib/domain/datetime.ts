@@ -80,3 +80,21 @@ export function formatDateTime(value: string, zone: string): string {
 export function calendarDaysBetween(from: string, to: string): number {
   return Temporal.PlainDate.from(from).until(Temporal.PlainDate.from(to), { largestUnit: 'day' }).days;
 }
+
+/**
+ * Adds whole calendar days to a local date or wall time. A wall time keeps its
+ * clock reading across a DST transition; callers resolve the zone afterward.
+ */
+export function addCalendarDays(value: string, days: number): string {
+  if (!Number.isSafeInteger(days) || days < 1) throw new DateTimeError('invalid', '有效天数必须是正整数');
+  try {
+    const added = value.includes('T')
+      ? Temporal.PlainDateTime.from(value, { overflow: 'reject' }).add({ days })
+      : Temporal.PlainDate.from(value, { overflow: 'reject' }).add({ days });
+    if (added.year < 1 || added.year > 9999) throw new DateTimeError('invalid', '有效天数超出支持范围');
+    return added.toString();
+  } catch (error) {
+    if (error instanceof DateTimeError) throw error;
+    throw new DateTimeError('invalid', '有效天数超出支持范围');
+  }
+}

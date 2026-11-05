@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"telegram.bot.remind/internal/domain"
 	"telegram.bot.remind/internal/service"
 
 	telegram "github.com/go-telegram/bot"
@@ -548,14 +549,23 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	case "period_name":
 		w.reply(ctx, fmt.Sprintf("添加有效期到「%s」· 第 1 步，有效期名称（可选）。", item.Name), optionalNav(true)...)
 	case "period_precision":
-		w.reply(ctx, "第 2 步，截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。", []models.InlineKeyboardButton{
+		w.reply(ctx, "第 2 步，截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。\n不知道截止？可选按开始时间加有效天数推算。", []models.InlineKeyboardButton{
 			button("仅日期", choiceCallback("precision", "date")),
 			button("精确时间", choiceCallback("precision", "datetime")),
+		}, []models.InlineKeyboardButton{
+			button("按天数·日期", choiceCallback("precision", "duration_date")),
+			button("按天数·时间", choiceCallback("precision", "duration_datetime")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "period_expires":
 		w.reply(ctx, "第 3 步，输入截止（"+precisionLabel(w.dr.Values["precision"])+"，时区 "+w.user.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
 	case "period_starts":
-		w.reply(ctx, "第 4 步，开始时间（可选，按你的时区，必须早于截止）。\n示例：2027-01-01 00:00", optionalNav(true)...)
+		if w.dr.Values["expiry_mode"] == "duration" {
+			w.reply(ctx, "第 3 步，开始时间（必填，按你的时区，有效天数从这一天起算）。\n示例：2027-01-01 00:00", navRows(true, false)...)
+		} else {
+			w.reply(ctx, "第 4 步，开始时间（可选，按你的时区，必须早于截止）。\n示例：2027-01-01 00:00", optionalNav(true)...)
+		}
+	case "period_days":
+		w.reply(ctx, "第 4 步，有效天数（正整数，例如 180）。\n截止将按开始时间与你所在时区的日历日推算。", navRows(true, false)...)
 	case "terms_mode":
 		w.reply(ctx, "第 5 步，续费约定（可选，只作记录，不影响提醒日期）。", []models.InlineKeyboardButton{
 			button("一次性", choiceCallback("mode", "once")),
@@ -610,8 +620,13 @@ func periodAddPreviewText(item service.ServiceItem, d draft, zone string) string
 	if value := d.Values["starts_at"]; strings.TrimSpace(value) != "" {
 		starts = wallClockDisplay(value, zone)
 	}
-	return fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n约定：%s",
+	text := fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n约定：%s",
 		item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), expires, starts, termsText(termsDraft(d)))
+	if d.Values["expiry_mode"] == "duration" {
+		text = fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s（按开始与有效天数推算）\n有效天数：%s 天\n截止：%s\n开始：%s\n约定：%s",
+			item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), d.Values["duration_days"], expires, starts, termsText(termsDraft(d)))
+	}
+	return text
 }
 
 func precisionLabel(value string) string {
@@ -641,21 +656,46 @@ func (w *wizard) textPeriodAdd(ctx context.Context, text string) {
 		}
 		w.dr.set("expires_at", normalized)
 	case "period_starts":
+		duration := w.dr.Values["expiry_mode"] == "duration"
+		if value == "" && duration {
+			w.stepError(ctx, "按天数推算时必须填写开始时间。", true, true)
+			return
+		}
 		if value != "" {
 			normalized, err := normalizeDateTime(value, w.user.Timezone)
 			if err != nil {
 				w.stepError(ctx, err.Error(), true, true)
 				return
 			}
-			at, _ := time.Parse(time.RFC3339, normalized)
-			expires, err := parseExpiryForStarts(w.dr.Values["precision"], w.dr.Values["expires_at"], w.user.Timezone)
-			if err != nil || !at.Before(expires) {
-				w.stepError(ctx, "开始时间必须早于截止时间。", true, true)
-				return
+			if !duration {
+				at, _ := time.Parse(time.RFC3339, normalized)
+				expires, err := parseExpiryForStarts(w.dr.Values["precision"], w.dr.Values["expires_at"], w.user.Timezone)
+				if err != nil || !at.Before(expires) {
+					w.stepError(ctx, "开始时间必须早于截止时间。", true, true)
+					return
+				}
 			}
 			value = normalized
 		}
 		w.dr.set("starts_at", value)
+	case "period_days":
+		days, err := parseDurationDays(value)
+		if err != nil {
+			w.stepError(ctx, err.Error(), true, false)
+			return
+		}
+		starts := w.dr.Values["starts_at"]
+		if strings.TrimSpace(starts) == "" {
+			w.stepError(ctx, "缺少开始时间，请返回上一步填写。", true, false)
+			return
+		}
+		expires, err := expiryAfterDays(w.dr.Values["precision"], starts, w.user.Timezone, days)
+		if err != nil {
+			w.stepError(ctx, err.Error(), true, false)
+			return
+		}
+		w.dr.set("duration_days", strconv.FormatInt(days, 10))
+		w.dr.set("expires_at", expires)
 	case "terms_interval":
 		count, unit, err := parseInterval(value)
 		if err != nil {
@@ -703,6 +743,44 @@ func parseExpiryForStarts(precision, value, zone string) (time.Time, error) {
 	return time.Parse(time.RFC3339, value)
 }
 
+// parseDurationDays accepts a positive whole number of days for an expiry
+// derived from the start. The upper bound keeps calendar arithmetic in range.
+func parseDurationDays(value string) (int64, error) {
+	days, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || days < 1 || days > 36600 {
+		return 0, fail("有效天数必须是 1 到 36600 之间的整数。")
+	}
+	return days, nil
+}
+
+// expiryAfterDays adds calendar days to the start's local date. Datetime
+// precision keeps the start's wall clock and rejects a target skipped by DST;
+// an overlap selects the earlier instant.
+func expiryAfterDays(precision, startsAt, zone string, days int64) (string, error) {
+	loc, err := time.LoadLocation(zone)
+	if err != nil || zone == "" || zone == "Local" {
+		return "", fail("时区无效，请先在设置中重新选择时区。")
+	}
+	start, err := time.Parse(time.RFC3339, startsAt)
+	if err != nil {
+		return "", fail("开始时间无效。")
+	}
+	local := start.In(loc)
+	targetDate := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, int(days))
+	if targetDate.Year() > 9999 {
+		return "", fail("有效天数超出支持范围。")
+	}
+	if precision == "date" {
+		return targetDate.Format("2006-01-02"), nil
+	}
+	wall := targetDate.Add(time.Duration(local.Hour())*time.Hour + time.Duration(local.Minute())*time.Minute + time.Duration(local.Second())*time.Second)
+	at, err := domain.ParseLocalDateTime(wall.Format("2006-01-02 15:04:05"), zone)
+	if err != nil {
+		return "", fail("推算出的截止时间在时区中不存在（夏令时跳过），请改用直接填写。")
+	}
+	return at.In(loc).Format(time.RFC3339), nil
+}
+
 func parseInterval(value string) (int64, string, error) {
 	fields := strings.Fields(value)
 	if len(fields) != 2 {
@@ -721,6 +799,10 @@ func parseInterval(value string) (int64, string, error) {
 }
 
 func (w *wizard) confirmPeriodAdd(ctx context.Context) {
+	if w.dr.Values["expires_at"] == "" {
+		w.stepError(ctx, expiredButtonMessage, false, false)
+		return
+	}
 	in := service.PeriodInput{Name: w.dr.Values["name"],
 		DatePrecision: w.dr.Values["precision"], ExpiresAt: w.dr.Values["expires_at"]}
 	if starts := strings.TrimSpace(w.dr.Values["starts_at"]); starts != "" {

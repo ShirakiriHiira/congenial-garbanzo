@@ -11,7 +11,7 @@
   import ConflictBody from '../components/ConflictBody.svelte';
   import { navigate } from '../lib/router';
   import { getInitData } from '../lib/telegram/sdk';
-  import { instantToWallTime, isValidDate, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
+  import { addCalendarDays, instantToWallTime, isValidDate, wallTimeCandidates, wallTimeToRFC3339, type Occurrence } from '../lib/domain/datetime';
   import { formatExpiry } from '../lib/domain/expiry';
   import { formatMoneyInput, parseMoney } from '../lib/domain/money';
   import { errorMessage, intervalUnitLabels, periodLabel, labels, termsModeLabels } from '../lib/domain/labels';
@@ -38,6 +38,9 @@
   let termsError = $state('');
   let intervalError = $state('');
   let precision = $state<DatePrecision>('date');
+  let expiresMode = $state<'direct' | 'duration'>('direct');
+  let durationDays = $state('');
+  let durationError = $state('');
   let expires = $state('');
   let occurrence = $state<Occurrence | undefined>();
   let starts = $state('');
@@ -80,11 +83,11 @@
   const submitter = new Submitter();
   const conflict = new ConflictFlow<Period>(() => api.period(id, controller.signal));
   const dirty = $derived(baseline
-    ? name !== baseline.name || precision !== baseline.precision || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence || !sameTerms(readTerms(), baseline.terms)
-    : name !== '' || expires !== '' || starts !== '' || precision !== 'date' || termsMode !== 'custom' || amount !== '' || currency !== '');
+    ? name !== baseline.name || precision !== baseline.precision || expiresMode !== 'direct' || expires !== baseline.expires || occurrence !== baseline.occurrence || starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence || !sameTerms(readTerms(), baseline.terms)
+    : name !== '' || expires !== '' || starts !== '' || durationDays !== '' || precision !== 'date' || termsMode !== 'custom' || amount !== '' || currency !== '');
   $effect(() => { session.dirty = dirty; });
   $effect(() => { expires; precision; occurrence; expiresError = ''; });
-  $effect(() => { starts; startsOccurrence; startsError = ''; });
+  $effect(() => { starts; startsOccurrence; durationDays; expiresMode; startsError = ''; durationError = ''; });
 
   function snapshotOf(current: Period): Snapshot {
     const resolvedPrecision = current.date_precision;
@@ -102,6 +105,9 @@
     zone = current.timezone;
     name = current.name;
     precision = current.date_precision;
+    expiresMode = 'direct';
+    durationDays = '';
+    durationError = '';
     const resolved = snapshotOf(current);
     expires = resolved.expires;
     fillTerms(resolved.terms);
@@ -128,9 +134,28 @@
   onMount(() => { void load(); });
   onDestroy(() => { alive = false; controller.abort(); session.dirty = false; });
 
+  function computeDurationExpiry(): { value: string; label: string; note: string } {
+    if (!starts) throw new Error('按天数推算时需要填写开始时间');
+    if (!/^\d+$/.test(durationDays) || !Number.isSafeInteger(Number(durationDays)) || Number(durationDays) < 1 || Number(durationDays) > 36600) throw new Error('有效天数必须是 1 到 36600 之间的整数');
+    const days = Number(durationDays);
+    if (precision === 'date') {
+      const date = addCalendarDays(starts.slice(0, 10), days);
+      return { value: date, label: date, note: '' };
+    }
+    const wall = addCalendarDays(starts, days);
+    const candidates = wallTimeCandidates(wall, zone);
+    const chosen = candidates.find((candidate) => candidate.occurrence === 'earlier');
+    if (!chosen) throw new Error('无法推算截止时间');
+    return { value: chosen.value, label: `${wall.replace('T', ' ')}（UTC${chosen.offset}）`, note: candidates.length > 1 ? '该时间在夏令时重叠处，按较早一次处理' : '' };
+  }
+  const durationPreview = $derived.by(() => {
+    if (expiresMode !== 'duration') return null;
+    try { return { ...computeDurationExpiry(), error: '' }; }
+    catch (cause) { return { value: '', label: '', note: '', error: cause instanceof Error ? cause.message : '无法推算截止日期' }; }
+  });
   function prepare(): { expiresValue: string; startsValue?: string } | null {
     nameError = Array.from(name).length > 200 ? '名称最多 200 个字符' : '';
-    expiresError = startsError = termsError = '';
+    expiresError = startsError = termsError = durationError = '';
     intervalError = termsMode === 'recurring' && (!/^\d+$/.test(intervalCount) || !Number.isSafeInteger(Number(intervalCount)) || Number(intervalCount) <= 0) ? '周期次数必须是正整数' : '';
     let expiresValue = '';
     let startsValue: string | undefined;
@@ -138,18 +163,23 @@
       parseMoney(amount, currency);
       if (unsafeMoney && baseline && amount === '' && !isExplicitUnsafeReset(readTerms()) && !sameTerms(readTerms(), baseline.terms)) throw new Error('原约定费用无法精确显示，请重新填写金额和币种后再修改条款');
     } catch (cause) { termsError = cause instanceof Error ? cause.message : '条款无效'; }
-    try {
-      if (!expires) throw new Error(entity && precision !== entity.date_precision ? '切换精度后，请重新填写截止日期或时间' : '请填写截止日期或时间');
-      if (precision === 'date') {
-        if (!isValidDate(expires)) throw new Error('请输入有效的截止日期');
-        expiresValue = expires;
-      } else expiresValue = wallTimeToRFC3339(expires, zone, occurrence);
-    } catch (cause) { expiresError = cause instanceof Error ? cause.message : '截止日期或时间无效'; }
+    if (expiresMode === 'duration') {
+      try { expiresValue = computeDurationExpiry().value; }
+      catch (cause) { durationError = cause instanceof Error ? cause.message : '无法推算截止日期'; }
+    } else {
+      try {
+        if (!expires) throw new Error(entity && precision !== entity.date_precision ? '切换精度后，请重新填写截止日期或时间' : '请填写截止日期或时间');
+        if (precision === 'date') {
+          if (!isValidDate(expires)) throw new Error('请输入有效的截止日期');
+          expiresValue = expires;
+        } else expiresValue = wallTimeToRFC3339(expires, zone, occurrence);
+      } catch (cause) { expiresError = cause instanceof Error ? cause.message : '截止日期或时间无效'; }
+    }
     if (starts) {
       try { startsValue = wallTimeToRFC3339(starts, zone, startsOccurrence); }
       catch (cause) { startsError = cause instanceof Error ? cause.message : '开始时间无效'; }
     }
-    if (nameError || expiresError || startsError || termsError || intervalError) return null;
+    if (nameError || expiresError || startsError || termsError || intervalError || durationError) return null;
     return { expiresValue, startsValue };
   }
   async function submit(event: SubmitEvent) {
@@ -170,7 +200,7 @@
           if (!sameTerms(readTerms(), baseline.terms)) { body.terms = readTerms(); body.expected_terms_revision = entity.terms.revision; }
           if (name !== baseline.name) body.name = name;
           if (precision !== baseline.precision) { body.date_precision = precision; body.expires_at = prepared.expiresValue; }
-          else if (expires !== baseline.expires || occurrence !== baseline.occurrence) body.expires_at = prepared.expiresValue;
+          else if (expiresMode !== 'direct' || expires !== baseline.expires || occurrence !== baseline.occurrence) body.expires_at = prepared.expiresValue;
           if (starts !== baseline.starts || startsOccurrence !== baseline.startsOccurrence) body.starts_at = prepared.startsValue ?? null;
           saved = await api.updatePeriod(id, body, controller.signal);
         }
@@ -220,8 +250,19 @@
       <FormField id="period-name" label="有效期名称" error={nameError}>
         {#snippet children(field)}<input id={field.id} bind:value={name} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
       </FormField>
-      <DatePrecisionInput id="period-expires" bind:precision bind:expires bind:occurrence {zone} disabled={!canWrite() || submitter.busy} error={expiresError} />
-      <DateTimeInput id="period-starts" label="开始时间" bind:value={starts} bind:occurrence={startsOccurrence} {zone} disabled={!canWrite() || submitter.busy} error={startsError} />
+      <fieldset class="expiry-mode stack">
+        <legend>截止填写方式</legend>
+        <label class="choice"><input type="radio" name="period-expiry-mode" value="direct" bind:group={expiresMode} disabled={!canWrite() || submitter.busy} />直接填写截止</label>
+        <label class="choice"><input type="radio" name="period-expiry-mode" value="duration" bind:group={expiresMode} disabled={!canWrite() || submitter.busy} />按开始时间与有效天数推算</label>
+      </fieldset>
+      <DatePrecisionInput id="period-expires" bind:precision bind:expires bind:occurrence {zone} disabled={!canWrite() || submitter.busy} error={expiresError} showExpiry={expiresMode === 'direct'} />
+      <DateTimeInput id="period-starts" label="开始时间" bind:value={starts} bind:occurrence={startsOccurrence} {zone} disabled={!canWrite() || submitter.busy} error={startsError} required={expiresMode === 'duration'} />
+      {#if expiresMode === 'duration'}
+        <FormField id="period-duration-days" label="有效天数" required error={durationError}>
+          {#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={durationDays} disabled={!canWrite() || submitter.busy} aria-invalid={field.invalid} aria-describedby={field.describedby} />{/snippet}
+        </FormField>
+        {#if durationPreview?.value}<p class="muted">推算截止：{durationPreview.label}{durationPreview.note ? `（${durationPreview.note}）` : ''}</p>{/if}
+      {/if}
       <fieldset class="terms stack"><legend>约定条款</legend>
         <FormField id="terms-mode" label="条款类型" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
         {#if termsMode === 'recurring'}<FormField id="terms-count" label="周期次数" required error={intervalError}>{#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={intervalCount} disabled={!canWrite() || submitter.busy} />{/snippet}</FormField><FormField id="terms-unit" label="周期单位" required>{#snippet children(field)}<select id={field.id} bind:value={intervalUnit} disabled={!canWrite() || submitter.busy}>{#each Object.entries(intervalUnitLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>{/if}
@@ -240,4 +281,4 @@
     {#if conflict.current}<p>服务端名称：{periodLabel(conflict.current)}</p><p>服务端截止：{formatExpiry(conflict.current)}</p>{/if}
   </ConflictBody>
 </ConfirmDialog>
-<style>.muted{color:var(--text-secondary);margin:0}.terms{min-width:0;margin:0;padding:12px;border:1px solid var(--border);border-radius:8px}.terms legend{padding:0 4px;font-weight:600}.unsafe-money{display:grid;justify-items:start;gap:4px}.unsafe-money .text-button{margin-block:0}</style>
+<style>.muted{color:var(--text-secondary);margin:0}.expiry-mode{min-width:0;margin:0;padding:0;border:0}.expiry-mode legend{padding:0;font-weight:600}.expiry-mode .choice{display:flex;align-items:center;gap:8px;min-height:44px}.expiry-mode .choice input{width:auto;min-height:auto}.terms{min-width:0;margin:0;padding:12px;border:1px solid var(--border);border-radius:8px}.terms legend{padding:0 4px;font-weight:600}.unsafe-money{display:grid;justify-items:start;gap:4px}.unsafe-money .text-button{margin-block:0}</style>

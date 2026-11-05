@@ -60,7 +60,7 @@ User 1─0..1 BotDialog
 
 **并发**：有效期 PATCH/DELETE 用 `expected_cycle`，条款用 `expected_terms_revision`，规则用 `expected_revision`；冲突返回 409 或 Bot 提示并保留草稿，不自动重试。
 
-**时间**：内部 UTC。`date` 是用户时区当地日历日结束的排他截止，`datetime` 是带 offset 的 RFC3339。Bot 向导接受本地 `YYYY-MM-DD HH:MM`（`domain.ParseLocalDateTime`），也接受 RFC3339；DST 跳过的时间拒绝，重复取较早。改时区时 `date` 重算、`datetime` 保持绝对时刻。
+**时间**：内部 UTC。`date` 是用户时区当地日历日结束的排他截止，`datetime` 是带 offset 的 RFC3339。Bot 向导接受本地 `YYYY-MM-DD HH:MM`（`domain.ParseLocalDateTime`），也接受 RFC3339；DST 跳过的时间拒绝，重复取较早。改时区时 `date` 重算、`datetime` 保持绝对时刻。Mini App 与 Bot 都支持已知开始时间与有效天数时推算截止：按用户时区的日历日相加，`datetime` 保持当地墙上时间，结果仍以 `expires_at` 提交，不新增 API 字段。
 
 **金额**：金额与币种必须成对；API 金额为非负整数最小货币单位，Bot 与 Mini App 都输入小数并按 ISO 4217 小数位换算，超出币种小数位的输入直接拒绝而非四舍五入；展示时用 `domain.FormatMoney` 还原为小数，不再显示最小单位整数；币种为三位大写字母。提醒规则必须早于截止。
 

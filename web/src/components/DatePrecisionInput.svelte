@@ -3,9 +3,9 @@
   import type { Occurrence } from '../lib/domain/datetime';
   import DateTimeInput from './DateTimeInput.svelte';
   import FormField from './FormField.svelte';
-  let { id, precision = $bindable<DatePrecision>('date'), expires = $bindable(''), occurrence = $bindable<Occurrence | undefined>(), zone, disabled = false, error }: {
+  let { id, precision = $bindable<DatePrecision>('date'), expires = $bindable(''), occurrence = $bindable<Occurrence | undefined>(), zone, disabled = false, error, showExpiry = true }: {
     id: string; precision?: DatePrecision; expires?: string; occurrence?: Occurrence;
-    zone: string; disabled?: boolean; error?: string;
+    zone: string; disabled?: boolean; error?: string; showExpiry?: boolean;
   } = $props();
   function changePrecision(next: DatePrecision) {
     if (next === precision) return;
@@ -21,14 +21,16 @@
     <label class="choice"><input type="radio" name={`${id}-precision`} value="date" checked={precision === 'date'} onchange={() => changePrecision('date')} />日期</label>
     <label class="choice"><input type="radio" name={`${id}-precision`} value="datetime" checked={precision === 'datetime'} onchange={() => changePrecision('datetime')} />精确时间</label>
   </fieldset>
-  {#if precision === 'date'}
-    <FormField {id} label="截止日期" required {error}>
-      {#snippet children(field)}
-        <input {id} type="date" bind:value={expires} required {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid} />
-      {/snippet}
-    </FormField>
-  {:else}
-    <DateTimeInput {id} bind:value={expires} bind:occurrence {zone} {disabled} {error} required label="截止时间" />
+  {#if showExpiry}
+    {#if precision === 'date'}
+      <FormField {id} label="截止日期" required {error}>
+        {#snippet children(field)}
+          <input {id} type="date" bind:value={expires} required {disabled} aria-describedby={field.describedby} aria-invalid={field.invalid} />
+        {/snippet}
+      </FormField>
+    {:else}
+      <DateTimeInput {id} bind:value={expires} bind:occurrence {zone} {disabled} {error} required label="截止时间" />
+    {/if}
   {/if}
 </div>
 

@@ -103,6 +103,35 @@ func TestWizardFlowsStoreTheExpectedResult(t *testing.T) {
 		}
 	})
 
+	t.Run("add a period from a start and its duration", func(t *testing.T) {
+		f := newFixture(t)
+		f.start(userA)
+		item := f.createService("Host", "vps")
+		f.callback(userA, cb("period", "add", id(item.ID)), nil)
+		f.send(userA, "半年套餐")
+		f.callback(userA, choiceCallback("precision", "duration_date"), nil)
+		if text := f.stub.lastText(); !strings.Contains(text, "开始时间") {
+			t.Fatalf("duration start prompt: %q", text)
+		}
+		f.send(userA, "2026-11-05 10:00")
+		if text := f.stub.lastText(); !strings.Contains(text, "有效天数") {
+			t.Fatalf("duration days prompt: %q", text)
+		}
+		f.send(userA, "180")
+		f.callback(userA, choiceCallback("mode", "custom"), nil)
+		if text := f.stub.lastText(); !strings.Contains(text, "有效天数：180 天") || !strings.Contains(text, "截止：2027-05-04") {
+			t.Fatalf("duration preview: %q", text)
+		}
+		f.callback(userA, cb("dialog", "confirm"), nil)
+
+		if got := serviceLookupString(t, f, "SELECT local_expires_date FROM service_periods WHERE id=1"); got != "2027-05-04" {
+			t.Fatalf("derived expiry=%q", got)
+		}
+		if got := serviceLookupString(t, f, "SELECT datetime(starts_at, 'unixepoch') FROM service_periods WHERE id=1"); got != "2026-11-05 02:00:00" {
+			t.Fatalf("stored start=%q", got)
+		}
+	})
+
 	t.Run("the SIM and generic flows ask different questions", func(t *testing.T) {
 		f := newFixture(t)
 		f.start(userA)

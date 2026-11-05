@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Period } from '../src/lib/api/types';
-import { calendarDaysBetween, DateTimeError, formatDateTime, instantToWallTime, isValidDate, isValidTimeZone, wallTimeCandidates, wallTimeToRFC3339 } from '../src/lib/domain/datetime';
+import { addCalendarDays, calendarDaysBetween, DateTimeError, formatDateTime, instantToWallTime, isValidDate, isValidTimeZone, wallTimeCandidates, wallTimeToRFC3339 } from '../src/lib/domain/datetime';
 import { expiryDisplay, formatExpiry } from '../src/lib/domain/expiry';
 import { maskPhone } from '../src/lib/domain/mask';
 import { formatMoney, parseMoney } from '../src/lib/domain/money';
@@ -60,6 +60,15 @@ describe('服务端状态与日历有效期', () => {
     expect(calendarDaysBetween('2028-02-28', '2028-03-01')).toBe(2);
     expect(calendarDaysBetween('2027-03-13', '2027-03-15')).toBe(2);
     expect(calendarDaysBetween('2027-11-06', '2027-11-08')).toBe(2);
+  });
+  it('按开始时间加整数天数推算截止', () => {
+    expect(addCalendarDays('2026-11-05', 180)).toBe('2027-05-04');
+    expect(addCalendarDays('2028-02-28', 1)).toBe('2028-02-29');
+    expect(addCalendarDays('2027-01-31T18:00', 1)).toBe('2027-02-01T18:00:00');
+    expect(addCalendarDays('2027-01-31T18:00:45', 1)).toBe('2027-02-01T18:00:45');
+    expect(() => addCalendarDays('2026-11-05', 0)).toThrow(DateTimeError);
+    expect(() => addCalendarDays('2026-11-05', 1.5)).toThrow(DateTimeError);
+    expect(() => addCalendarDays('9999-12-31', 1)).toThrow(DateTimeError);
   });
   it('日期精度直接使用本地截止日', () => {
     expect(formatExpiry(period)).toBe('2027-01-08');

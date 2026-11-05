@@ -197,6 +197,25 @@ describe('period form', () => {
     await waitFor(() => expect(location.pathname).toBe('/app/services/2'));
   });
 
+  it('derives a date expiry from a start and whole days', async () => {
+    const fetcher = transport((path, init) => init.method === 'POST' ? json(vpsPeriod, 201) : json(user));
+    render(PeriodForm, { props: { id: '2', mode: 'new' } });
+    await screen.findByText('时区：Asia/Taipei');
+    await fireEvent.click(screen.getByRole('radio', { name: '按开始时间与有效天数推算' }));
+    expect(screen.queryByLabelText(/^截止日期/)).not.toBeInTheDocument();
+    await fireEvent.input(screen.getByLabelText(/^开始时间/), { target: { value: '2026-11-05T10:00' } });
+    await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
+    expect(await screen.findByText('有效天数必须是 1 到 36600 之间的整数')).toBeInTheDocument();
+    expect(writeOf(fetcher, 'POST')).toBeUndefined();
+    await fireEvent.input(screen.getByLabelText(/^有效天数/), { target: { value: '180' } });
+    expect(await screen.findByText('推算截止：2027-05-04')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: '保存有效期' }));
+    await waitFor(() => expect(writeOf(fetcher, 'POST')).toBeDefined());
+    expect(JSON.parse(String(writeOf(fetcher, 'POST')?.[1].body))).toMatchObject({
+      date_precision: 'date', expires_at: '2027-05-04', starts_at: '2026-11-05T10:00:00+08:00',
+    });
+  });
+
   it('rejects a non-positive recurring count and unpaired money without a write', async () => {
     const fetcher = transport((path) => path === '/api/v1/services/2' ? json(vpsService) : json(user));
     render(PeriodForm, { props: { id: '2', mode: 'new' } });

@@ -109,6 +109,21 @@ func TestWizardStepGraph(t *testing.T) {
 			},
 		},
 		{
+			name:   "period add from a start and duration",
+			action: service.DialogPeriodAdd,
+			d:      draftOf(map[string]string{"mode": "custom", "expiry_mode": "duration"}),
+			next: map[string]string{
+				"period_name": "period_precision", "period_precision": "period_starts",
+				"period_starts": "period_days", "period_days": "terms_mode",
+				"terms_mode": "period_preview",
+			},
+			prev: map[string]string{
+				"period_precision": "period_name", "period_starts": "period_precision",
+				"period_days": "period_starts", "terms_mode": "period_days",
+				"period_preview": "terms_mode",
+			},
+		},
+		{
 			name:   "renew",
 			action: service.DialogRenew,
 			d:      generic,
