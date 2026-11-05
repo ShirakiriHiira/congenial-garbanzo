@@ -264,7 +264,7 @@
         {#if durationPreview?.value}<p class="muted">推算截止：{durationPreview.label}{durationPreview.note ? `（${durationPreview.note}）` : ''}</p>{/if}
       {/if}
       <fieldset class="terms stack"><legend>续费信息</legend>
-        <FormField id="terms-mode" label="计费方式" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
+        <FormField id="terms-mode" label="计费方式">{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
         {#if termsMode === 'recurring'}<FormField id="terms-count" label="周期次数" required error={intervalError}>{#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={intervalCount} disabled={!canWrite() || submitter.busy} />{/snippet}</FormField><FormField id="terms-unit" label="周期单位" required>{#snippet children(field)}<select id={field.id} bind:value={intervalUnit} disabled={!canWrite() || submitter.busy}>{#each Object.entries(intervalUnitLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>{/if}
         <MoneyInput id="period-terms-money" label="费用" bind:amount bind:currency disabled={!canWrite() || submitter.busy} error={termsError} />
         {#if unsafeMoney && isExplicitUnsafeReset(readTerms())}<p class="notice">保存后续费信息将重置为不记录且无费用。</p>
