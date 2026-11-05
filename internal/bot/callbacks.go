@@ -131,9 +131,12 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 }
 
 func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, v3 callbackV3) string {
+	if v3.action == "noop" {
+		return silentAnswer
+	}
 	switch v3.action {
 	case "list":
-		code, category, after := "1", int64(0), int64(0)
+		code, category, page := "1", int64(0), int64(0)
 		if len(v3.args) > 0 {
 			code = v3.args[0]
 			if _, ok := serviceFilterFromCode(code); !ok {
@@ -148,7 +151,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		}
 		if len(v3.args) > 2 {
 			var ok bool
-			if after, ok = callbackID(v3.args, 2); !ok {
+			if page, ok = callbackID(v3.args, 2); !ok {
 				return "未知操作"
 			}
 		}
@@ -157,7 +160,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		if category > 0 {
 			filter.CategoryID = &category
 		}
-		h.showOverview(ctx, b, user.ID, resp, filter, after)
+		h.showOverview(ctx, b, user.ID, resp, filter, page)
 		return silentAnswer
 	case "cats":
 		code := "1"
@@ -177,13 +180,25 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 	}
 	switch v3.action {
 	case "view":
+		state := defaultListState()
 		after := int64(0)
 		if len(v3.args) > 1 {
-			if after, ok = callbackID(v3.args, 1); !ok {
-				return "未知操作"
+			if parsed, ok := parseListState(v3.args[1]); ok {
+				state = parsed
+				if len(v3.args) > 2 {
+					if after, ok = parseBase36(v3.args[2]); !ok {
+						return "未知操作"
+					}
+				}
+			} else {
+				// Pages created before the list context existed carry the
+				// period cursor directly.
+				if after, ok = callbackID(v3.args, 1); !ok {
+					return "未知操作"
+				}
 			}
 		}
-		h.showServiceDetail(ctx, b, user, resp, serviceID, after)
+		h.showServiceDetail(ctx, b, user, resp, serviceID, state, after)
 		return silentAnswer
 	case "edit":
 		h.startServiceEdit(ctx, b, user, resp, serviceID)
@@ -202,7 +217,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 				return h.replyState(ctx, b, resp, objectStateMessage(err))
 			}
 		}
-		h.showServiceDetail(ctx, b, user, resp, serviceID, 0)
+		h.showServiceDetail(ctx, b, user, resp, serviceID, defaultListState(), 0)
 		return silentAnswer
 	case "restore_ask":
 		if item.Status == "active" {
@@ -218,7 +233,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 				return h.replyState(ctx, b, resp, objectStateMessage(err))
 			}
 		}
-		h.showServiceDetail(ctx, b, user, resp, serviceID, 0)
+		h.showServiceDetail(ctx, b, user, resp, serviceID, defaultListState(), 0)
 		return silentAnswer
 	case "delete_ask":
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除服务「%s」？\n有效期、提醒规则、提醒任务与续期记录会一并删除，无法恢复。", item.Name),

@@ -504,12 +504,12 @@ func TestServicesFilteringBeforePaginationAndOverviewCounts(t *testing.T) {
 		ids                []string
 		due, expired, bare int
 	}{
-		{"active", []string{dueID, expiredID, bareID, futureID}, 1, 1, 1},
+		{"active", []string{expiredID, dueID, futureID, bareID}, 1, 1, 1},
 		{"due_soon", []string{dueID}, 1, 0, 0},
 		{"expired", []string{expiredID}, 0, 1, 0},
 		{"no_period", []string{bareID}, 0, 0, 1},
 		{"archived", []string{archivedID}, 0, 0, 1},
-		{"all", vpsIDs, 1, 1, 2},
+		{"all", []string{expiredID, dueID, futureID, bareID, archivedID}, 1, 1, 2},
 	} {
 		t.Run(tc.status, func(t *testing.T) {
 			query := "?category_id=" + categories["vps"] + "&status=" + tc.status
@@ -526,7 +526,7 @@ func TestServicesFilteringBeforePaginationAndOverviewCounts(t *testing.T) {
 				t.Fatalf("first overview=%+v", first)
 			}
 			if len(tc.ids) > 1 {
-				if first.Next == nil || *first.Next != resourceTestID(t, first.Data.Items[0].Service) {
+				if first.Next == nil || *first.Next != "1" {
 					t.Fatalf("first cursor=%v items=%v", first.Next, first.Data.Items)
 				}
 				second := resourceTestSummary(t, h, query+"&limit=1&after_id="+*first.Next, 101)
@@ -544,7 +544,7 @@ func TestServicesFilteringBeforePaginationAndOverviewCounts(t *testing.T) {
 			}
 		})
 	}
-	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?category_id="+categories["vps"], 101), dueID, expiredID, bareID, futureID)
+	resourceTestIDs(t, resourceTestOverviewRows(t, h, "?category_id="+categories["vps"], 101), expiredID, dueID, futureID, bareID)
 }
 
 func TestServicesSearchFindsLaterRowsAndTreatsWildcardsLiterally(t *testing.T) {

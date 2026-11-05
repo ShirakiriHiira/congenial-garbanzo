@@ -39,27 +39,68 @@ func categoryName(ctx context.Context, h *Handler, uid, categoryID int64) string
 	return "类别"
 }
 
-func expiryBadge(p service.Period, now time.Time, loc *time.Location) string {
-	if p.Status != "active" {
-		return statusLabel(p.Status)
+// listState is the short filter/page context attached to a detail page so the
+// back button restores the exact list view. The token stays well under the
+// 64-byte callback limit by encoding numeric fields in base 36.
+type listState struct {
+	code     string
+	category int64
+	page     int64
+}
+
+func defaultListState() listState { return listState{code: "1", page: 1} }
+
+func listStateFor(filter service.ServiceFilter, page int64) listState {
+	state := listState{code: "1", page: page}
+	for key, value := range serviceFilterCodes {
+		if value == filter.Status {
+			state.code = key
+		}
 	}
-	var local *string
-	if p.LocalExpiresDate != nil {
-		local = p.LocalExpiresDate
+	if filter.CategoryID != nil {
+		state.category = *filter.CategoryID
 	}
-	days, err := domain.CalendarDaysUntil(domain.Expiration{ExpiresAt: time.Unix(p.ExpiresAt, 0).UTC(), DatePrecision: p.DatePrecision, LocalExpiresDate: local}, now, loc)
-	if err != nil {
-		return "有效"
+	if state.page < 1 {
+		state.page = 1
 	}
-	switch {
-	case days < 0:
-		return "已过期"
-	case days == 0:
-		return "今天到期"
-	case days <= service.DueSoonDays:
-		return fmt.Sprintf("%d 天后到期", days)
+	return state
+}
+
+func (s listState) token() string {
+	return s.code + "." + base36(s.category) + "." + base36(s.page)
+}
+
+func (s listState) listCallback() string {
+	return cb("service", "list", s.code, id(s.category), id(s.page))
+}
+
+func parseListState(token string) (listState, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return listState{}, false
 	}
-	return "有效"
+	if _, ok := serviceFilterFromCode(parts[0]); !ok {
+		return listState{}, false
+	}
+	category, ok := parseBase36(parts[1])
+	if !ok {
+		return listState{}, false
+	}
+	page, ok := parseBase36(parts[2])
+	if !ok || page < 1 {
+		return listState{}, false
+	}
+	return listState{code: parts[0], category: category, page: page}, true
+}
+
+// visibleProvider drops missing providers and names that only repeat the
+// service title.
+func visibleProvider(s service.ServiceItem) string {
+	v := visibleText(s.Provider)
+	if v == "" || strings.EqualFold(strings.TrimSpace(v), strings.TrimSpace(s.Name)) {
+		return ""
+	}
+	return v
 }
 
 func (h *Handler) userLocation(user service.User) *time.Location {
@@ -70,19 +111,31 @@ func (h *Handler) userLocation(user service.User) *time.Location {
 	return loc
 }
 
-func (h *Handler) showOverview(ctx context.Context, b *telegram.Bot, uid int64, resp *responder, filter service.ServiceFilter, after int64) {
-	text, overview, err := h.overviewPage(ctx, uid, filter, after)
+func (h *Handler) showOverview(ctx context.Context, b *telegram.Bot, uid int64, resp *responder, filter service.ServiceFilter, page int64) {
+	text, overview, err := h.overviewPage(ctx, uid, filter, page)
 	if err != nil {
 		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendMarkup(ctx, b, resp, text, h.overviewKeyboard(ctx, uid, filter, overview, after))
+	h.sendHTML(ctx, b, resp, text, h.overviewKeyboard(filter, overview))
 }
 
-func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.ServiceFilter, after int64) (string, service.ServiceOverview, error) {
-	overview, err := h.svc.ServiceOverview(ctx, uid, after, pageSize, filter)
+func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.ServiceFilter, page int64) (string, service.ServiceOverview, error) {
+	if page < 1 || page > 1<<40 {
+		page = 1
+	}
+	overview, err := h.svc.ServiceOverview(ctx, uid, (page-1)*servicePageSize, servicePageSize, filter)
 	if err != nil {
 		return "", overview, err
+	}
+	// A shrink between renders can strand the callback on a page that no
+	// longer exists; fall back to the last page.
+	if len(overview.Items.Data) == 0 && page > 1 && overview.Pages > 0 && page > int64(overview.Pages) {
+		page = int64(overview.Pages)
+		overview, err = h.svc.ServiceOverview(ctx, uid, (page-1)*servicePageSize, servicePageSize, filter)
+		if err != nil {
+			return "", overview, err
+		}
 	}
 	user, err := h.svc.Me(ctx, uid)
 	if err != nil {
@@ -91,67 +144,68 @@ func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.Se
 	loc := h.userLocation(user)
 	now := time.Now()
 	var b strings.Builder
-	b.WriteString("我的服务\n")
+	fmt.Fprintf(&b, "<b>全部 %d</b> · 即将到期 %d · 已过期 %d", overview.Counts.Total, overview.Counts.DueSoon, overview.Counts.Expired)
 	if filter.Query != "" {
-		fmt.Fprintf(&b, "搜索：%s\n", filter.Query)
+		fmt.Fprintf(&b, "\n搜索：%s", htmlEscape(filter.Query))
 	}
-	fmt.Fprintf(&b, "全部 %d · 即将到期 %d · 已过期 %d\n", overview.Counts.Total, overview.Counts.DueSoon, overview.Counts.Expired)
 	if len(overview.Items.Data) == 0 {
-		b.WriteString("\n没有符合条件的服务。\n")
+		b.WriteString("\n\n没有符合条件的服务。")
+		return b.String(), overview, nil
 	}
 	for i, item := range overview.Items.Data {
 		s := item.Service
-		state := "有效"
-		if s.Status == "archived" {
-			state = "已归档"
+		n := (overview.Page-1)*servicePageSize + i + 1
+		fmt.Fprintf(&b, "\n\n<b>%d. %s</b> [%s]", n, htmlEscape(s.Name), serviceStatusBadge(s.Status, item.PrimaryPeriod, now, loc))
+		meta := htmlEscape(categoryName(ctx, h, uid, s.CategoryID))
+		if provider := visibleProvider(s); provider != "" {
+			meta += " · " + htmlEscape(provider)
 		}
-		fmt.Fprintf(&b, "\n%d. %s [%s]\n", i+1, s.Name, state)
-		provider := "未填写服务商"
-		if s.Provider != nil && *s.Provider != "" {
-			provider = *s.Provider
-		}
-		fmt.Fprintf(&b, "   %s · %s\n", categoryName(ctx, h, uid, s.CategoryID), provider)
+		b.WriteString("\n" + meta)
 		if item.PrimaryPeriod == nil {
-			b.WriteString("   未设置有效期\n")
+			b.WriteString("\n未设置有效期")
 		} else {
-			p := item.PrimaryPeriod
-			fmt.Fprintf(&b, "   %s · %s · %s\n", periodName(*p), periodExpiry(*p), expiryBadge(*p, now, loc))
+			b.WriteString("\n" + expiryLine(*item.PrimaryPeriod, now, loc))
 		}
 	}
-	return strings.TrimRight(b.String(), "\n"), overview, nil
+	return b.String(), overview, nil
 }
 
-func (h *Handler) overviewKeyboard(ctx context.Context, uid int64, filter service.ServiceFilter, overview service.ServiceOverview, after int64) *models.InlineKeyboardMarkup {
-	code := "1"
-	for key, value := range serviceFilterCodes {
-		if value == filter.Status {
-			code = key
+func (h *Handler) overviewKeyboard(filter service.ServiceFilter, overview service.ServiceOverview) *models.InlineKeyboardMarkup {
+	state := listStateFor(filter, int64(overview.Page))
+	category := state.category
+	filterButton := func(code, label string) models.InlineKeyboardButton {
+		text := label
+		if code == state.code {
+			text = "• " + label + " •"
 		}
-	}
-	category := int64(0)
-	if filter.CategoryID != nil {
-		category = *filter.CategoryID
+		return button(text, cb("service", "list", code, id(category), "1"))
 	}
 	rows := [][]models.InlineKeyboardButton{
-		[]models.InlineKeyboardButton{button("当前服务", cb("service", "list", "1", id(category), "0")), button("即将到期", cb("service", "list", "2", id(category), "0")), button("已过期", cb("service", "list", "3", id(category), "0"))},
-		[]models.InlineKeyboardButton{button("未设置有效期", cb("service", "list", "4", id(category), "0")), button("已归档", cb("service", "list", "5", id(category), "0")), button("全部（含归档）", cb("service", "list", "6", id(category), "0"))},
+		[]models.InlineKeyboardButton{filterButton("1", "当前服务"), filterButton("2", "即将到期"), filterButton("3", "已过期")},
+		[]models.InlineKeyboardButton{filterButton("4", "未设置有效期"), filterButton("5", "已归档"), filterButton("6", "全部服务")},
 	}
 	for _, item := range overview.Items.Data {
-		label := item.Service.Name
-		if item.PrimaryPeriod != nil {
-			if item.Service.Name != "" {
-				label += " · " + periodExpiry(*item.PrimaryPeriod)
-			}
+		rows = append(rows, []models.InlineKeyboardButton{button(item.Service.Name, cb("service", "view", id(item.Service.ID), state.token()))})
+	}
+	if overview.Pages > 1 {
+		prev, next := button("-", cb("service", "noop")), button("-", cb("service", "noop"))
+		if state.page > 1 {
+			prev = button("< 上一页", cb("service", "list", state.code, id(category), id(state.page-1)))
 		}
-		rows = append(rows, []models.InlineKeyboardButton{button(label, cb("service", "view", id(item.Service.ID), "0"))})
+		if state.page < int64(overview.Pages) {
+			next = button("下一页 >", cb("service", "list", state.code, id(category), id(state.page+1)))
+		}
+		rows = append(rows, []models.InlineKeyboardButton{
+			prev,
+			button(fmt.Sprintf("%d / %d 页", state.page, overview.Pages), cb("service", "noop")),
+			next,
+		})
 	}
-	if overview.Items.NextCursor != nil {
-		rows = append(rows, []models.InlineKeyboardButton{button("下一页", cb("service", "list", code, id(category), id(*overview.Items.NextCursor)))})
-	}
-	rows = append(rows,
-		[]models.InlineKeyboardButton{button("按类别", cb("service", "cats", code, id(category))), button("添加服务", cb("dialog", "new_service"))},
-		[]models.InlineKeyboardButton{button("设置", cb("settings", "view"))},
-	)
+	rows = append(rows, []models.InlineKeyboardButton{
+		button("添加服务", cb("dialog", "new_service")),
+		button("按类别", cb("service", "cats", state.code, id(category))),
+		button("设置", cb("settings", "view")),
+	})
 	return markup(rows...)
 }
 
@@ -163,11 +217,11 @@ func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid int64
 	}
 	categories := mustCategories(ctx, h, uid)
 	rows := [][]models.InlineKeyboardButton{
-		[]models.InlineKeyboardButton{button("全部类别", cb("service", "list", code, "0", "0"))},
+		[]models.InlineKeyboardButton{button("全部类别", cb("service", "list", code, "0", "1"))},
 	}
 	row := []models.InlineKeyboardButton{}
 	for _, c := range categories {
-		row = append(row, button(c.Name, cb("service", "list", code, id(c.ID), "0")))
+		row = append(row, button(c.Name, cb("service", "list", code, id(c.ID), "1")))
 		if len(row) == 2 {
 			rows = append(rows, row)
 			row = []models.InlineKeyboardButton{}
@@ -176,11 +230,11 @@ func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid int64
 	if len(row) > 0 {
 		rows = append(rows, row)
 	}
-	rows = append(rows, []models.InlineKeyboardButton{button("返回服务列表", cb("service", "list", code, "0", "0"))})
+	rows = append(rows, []models.InlineKeyboardButton{button("返回服务列表", cb("service", "list", code, "0", "1"))})
 	h.sendMarkup(ctx, b, resp, "按类别筛选（当前状态："+statusLabel(status)+"）", markup(rows...))
 }
 
-func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, serviceID, after int64) {
+func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, serviceID int64, state listState, after int64) {
 	item, err := h.svc.GetService(ctx, user.ID, serviceID)
 	if err != nil {
 		h.send(ctx, b, resp, objectStateMessage(err))
@@ -191,50 +245,95 @@ func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user s
 		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendMarkup(ctx, b, resp, text, h.serviceKeyboard(item, &page))
+	h.sendHTML(ctx, b, resp, text, h.serviceKeyboard(item, &page, state))
 }
 
 func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item service.ServiceItem, after int64) (string, service.Page[service.Period], error) {
 	category := categoryName(ctx, h, user.ID, item.CategoryID)
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n类别：%s\n状态：%s\n服务商：%s\n", item.Name, category, statusLabel(item.Status), textOrDash(item.Provider))
-	if item.SIMDetails == nil {
-		fmt.Fprintf(&b, "公开标识：%s\n", textOrDash(item.Identifier))
-	}
-	fmt.Fprintf(&b, "管理链接：%s\n", textOrDash(item.ManagementURL))
-	if d := item.SIMDetails; d != nil {
-		fmt.Fprintf(&b, "卡类型：%s\n号码：%s\n国家/地区：%s\nICCID：%s\n", cardTypeLabel(d.CardType), textOrDash(d.PhoneNumber), textOrDash(d.CountryOrRegion), textOrDash(d.ICCID))
-	}
-	if item.Notes != nil {
-		fmt.Fprintf(&b, "备注：%s\n", *item.Notes)
-	}
 	page, err := h.svc.ListPeriods(ctx, user.ID, item.ID, after, pageSize)
 	if err != nil {
 		return "", page, err
 	}
 	loc := h.userLocation(user)
 	now := time.Now()
-	b.WriteString("\n有效期：\n")
-	if after == 0 && len(page.Data) == 0 {
-		b.WriteString("（未设置有效期）\n")
-	}
-	for _, p := range page.Data {
-		fmt.Fprintf(&b, "· %s\n  截止 %s · %s\n  %s\n", periodName(p), periodExpiry(p), expiryBadge(p, now, loc), termsText(p.Terms))
-	}
-	if page.NextCursor != nil {
+	var b strings.Builder
+	badge := serviceStatusBadge(item.Status, primaryPeriodOf(page.Data, now), now, loc)
+	fmt.Fprintf(&b, "<b>%s</b> [%s]\n", htmlEscape(item.Name), badge)
 
+	base := "类别：" + htmlEscape(category)
+	if provider := visibleProvider(item); provider != "" {
+		base += " | 服务商：" + htmlEscape(provider)
+	}
+	if item.SIMDetails == nil {
+		if v := visibleText(item.Identifier); v != "" {
+			base += " | 标识：" + htmlEscape(v)
+		}
+	}
+	b.WriteString(base + "\n")
+	if d := item.SIMDetails; d != nil {
+		var parts []string
+		if v := visibleText(d.CountryOrRegion); v != "" {
+			parts = append(parts, "地区："+htmlEscape(v))
+		}
+		if d.CardType != "" {
+			parts = append(parts, "卡类型："+cardTypeLabel(d.CardType))
+		}
+		if v := visibleText(d.PhoneNumber); v != "" {
+			parts = append(parts, "号码：<code>"+htmlEscape(v)+"</code>")
+		}
+		if v := visibleText(d.ICCID); v != "" {
+			parts = append(parts, "ICCID：<code>"+htmlEscape(v)+"</code>")
+		}
+		if len(parts) > 0 {
+			b.WriteString(strings.Join(parts, " | ") + "\n")
+		}
+	}
+	if v := visibleText(item.ManagementURL); v != "" {
+		fmt.Fprintf(&b, "管理：<a href=\"%s\">打开管理后台</a>\n", htmlEscape(v))
+	}
+	if v := visibleText(item.Notes); v != "" {
+		fmt.Fprintf(&b, "备注：%s\n", htmlEscape(v))
+	}
+	b.WriteString("\n")
+	if len(page.Data) == 0 {
+		b.WriteString("有效期：未设置")
+	} else if len(page.Data) == 1 && strings.TrimSpace(page.Data[0].Name) == "" {
+		p := page.Data[0]
+		fmt.Fprintf(&b, "有效期：<code>%s</code>", htmlEscape(expiryDate(p, loc)))
+		if days, ok := expiryCountdown(p, now, loc); ok {
+			b.WriteString(countdownLabel(days))
+		}
+		if terms := termsCompact(p.Terms); terms != "" {
+			b.WriteString("\n" + terms)
+		}
+	} else {
+		for i, p := range page.Data {
+			fmt.Fprintf(&b, "%d. %s · <code>%s</code>", i+1, htmlEscape(periodName(p)), htmlEscape(expiryDate(p, loc)))
+			if days, ok := expiryCountdown(p, now, loc); ok {
+				b.WriteString(countdownLabel(days))
+			}
+			if terms := termsCompact(p.Terms); terms != "" {
+				b.WriteString(" · " + terms)
+			}
+			b.WriteString("\n")
+		}
 	}
 	return strings.TrimRight(b.String(), "\n"), page, nil
 }
 
-func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[service.Period]) *models.InlineKeyboardMarkup {
+func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[service.Period], state listState) *models.InlineKeyboardMarkup {
 	rows := [][]models.InlineKeyboardButton{}
 	if page != nil {
+		singleDefault := len(page.Data) == 1 && strings.TrimSpace(page.Data[0].Name) == ""
 		for _, p := range page.Data {
-			rows = append(rows, []models.InlineKeyboardButton{button(periodName(p)+" · "+periodExpiry(p), cb("period", "view", id(p.ID)))})
+			label := "修改: " + periodName(p) + " · " + expiryShort(p)
+			if singleDefault {
+				label = "修改有效期 · " + expiryShort(p)
+			}
+			rows = append(rows, []models.InlineKeyboardButton{button(label, cb("period", "view", id(p.ID)))})
 		}
 		if page.NextCursor != nil {
-			rows = append(rows, []models.InlineKeyboardButton{button("下一页有效期", cb("service", "view", id(item.ID), id(*page.NextCursor)))})
+			rows = append(rows, []models.InlineKeyboardButton{button("下一页有效期", cb("service", "view", id(item.ID), state.token(), base36(*page.NextCursor)))})
 		}
 	}
 	if item.Status == "active" {
@@ -252,7 +351,7 @@ func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[s
 			button("删除服务", cb("service", "delete_ask", id(item.ID))),
 		})
 	}
-	rows = append(rows, []models.InlineKeyboardButton{button("返回服务列表", cb("service", "list", "1", "0", "0"))})
+	rows = append(rows, []models.InlineKeyboardButton{button("返回服务列表", state.listCallback())})
 	return markup(rows...)
 }
 

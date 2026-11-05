@@ -160,6 +160,9 @@ func (p primaryState) matches(filter string) bool {
 const servicePrimaryColumns = serviceColumns + `,p.id,p.expires_at,p.date_precision,p.local_expires_date`
 const servicePrimaryJoins = ` FROM service_items s LEFT JOIN sim_details d ON d.service_id=s.id LEFT JOIN service_periods p ON p.id=` + primaryPeriodSQL
 
+// ServiceOverview lists one page ordered by the primary period's cutoff, so the
+// nearest expiry comes first and services without a period come last. after is
+// the offset of the first item; the next cursor advances by the page size.
 func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit int, filter ServiceFilter) (ServiceOverview, error) {
 	out := ServiceOverview{Items: Page[ServiceOverviewItem]{Data: []ServiceOverviewItem{}}}
 	if err := pageArgs(after, limit); err != nil {
@@ -180,8 +183,13 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 	if err != nil {
 		return out, dbError(err)
 	}
-	serviceIDs := make([]any, 0, limit+1)
-	primaryIDs := make(map[int64]int64, limit+1)
+	type candidate struct {
+		item      ServiceOverviewItem
+		primaryID int64
+		expiry    int64
+		hasPeriod bool
+	}
+	matched := make([]candidate, 0, limit+1)
 	for rows.Next() {
 		var sr serviceRow
 		var p primarySummary
@@ -206,18 +214,56 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 		case state.dueSoon:
 			out.Counts.DueSoon++
 		}
-		if sr.item.ID > after && len(out.Items.Data) < limit+1 {
-			out.Items.Data = append(out.Items.Data, ServiceOverviewItem{Service: sr.value()})
-			serviceIDs = append(serviceIDs, sr.item.ID)
-			if p.id.Valid {
-				primaryIDs[sr.item.ID] = p.id.Int64
+		c := candidate{item: ServiceOverviewItem{Service: sr.value()}, hasPeriod: p.id.Valid}
+		if c.hasPeriod {
+			c.primaryID = p.id.Int64
+			if p.expires.Valid {
+				c.expiry = p.expires.Int64
 			}
 		}
+		matched = append(matched, c)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return out, dbError(err)
+	}
+	sort.SliceStable(matched, func(i, j int) bool {
+		a, b := matched[i], matched[j]
+		if a.hasPeriod != b.hasPeriod {
+			return a.hasPeriod
+		}
+		if a.hasPeriod && a.expiry != b.expiry {
+			return a.expiry < b.expiry
+		}
+		return a.item.Service.ID < b.item.Service.ID
+	})
+	start := after
+	if out.Counts.Total > 0 {
+		out.Pages = (out.Counts.Total + limit - 1) / limit
+	}
+	page := int(start/int64(limit) + 1)
+	out.Page = page
+	if page > out.Pages && out.Pages > 0 {
+		out.Page = out.Pages
+	}
+	if start > int64(len(matched)) {
+		start = int64(len(matched))
+	}
+	finish := start + int64(limit)
+	if finish > int64(len(matched)) {
+		finish = int64(len(matched))
+	}
+	selected := matched[start:finish]
+	serviceIDs := make([]any, 0, len(selected))
+	primaryIDs := make(map[int64]int64, len(selected))
+	out.Items.Data = make([]ServiceOverviewItem, 0, len(selected))
+	for _, c := range selected {
+		out.Items.Data = append(out.Items.Data, c.item)
+		serviceIDs = append(serviceIDs, c.item.Service.ID)
+		if c.hasPeriod {
+			primaryIDs[c.item.Service.ID] = c.primaryID
+		}
 	}
 	// Fetch every period for the selected rows in one batch after closing the
 	// count cursor. Both queries use the same read snapshot and clock.
@@ -255,6 +301,10 @@ func (s *Service) ServiceOverview(ctx context.Context, uid, after int64, limit i
 			sortPeriods(out.Items.Data[i].Periods, now.Unix())
 		}
 	}
-	out.Items = finishPage(out.Items.Data, limit, func(v ServiceOverviewItem) int64 { return v.Service.ID })
+	out.Items = Page[ServiceOverviewItem]{Data: out.Items.Data}
+	if int(finish) < len(matched) {
+		next := finish
+		out.Items.NextCursor = &next
+	}
 	return out, nil
 }

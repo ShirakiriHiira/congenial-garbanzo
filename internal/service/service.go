@@ -292,6 +292,10 @@ type ServiceOverviewItem struct {
 type ServiceOverview struct {
 	Counts OverviewCounts
 	Items  Page[ServiceOverviewItem]
+	// Page and Pages describe the requested page. Pages is zero when the
+	// filter matched nothing.
+	Page  int
+	Pages int
 }
 
 type Page[T any] struct {

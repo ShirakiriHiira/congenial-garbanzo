@@ -66,8 +66,8 @@ func TestGenericServicesMixedCategoriesAndFilters(t *testing.T) {
 		status string
 		want   []int64
 	}{
-		{"", []int64{sim.ID, vps.ID, sub.ID, dom.ID, own.ID}},
-		{"active", []int64{sim.ID, vps.ID, sub.ID, dom.ID, own.ID}},
+		{"", []int64{sub.ID, dom.ID, sim.ID, own.ID, vps.ID}},
+		{"active", []int64{sub.ID, dom.ID, sim.ID, own.ID, vps.ID}},
 		{"due_soon", []int64{dom.ID}},
 		{"expired", []int64{sub.ID}},
 		{"no_period", []int64{vps.ID}},
@@ -155,14 +155,17 @@ func TestServiceSearchEscapingAndFilterPagination(t *testing.T) {
 		}
 	}
 	first, err := s.ServiceOverview(ctx, a.ID, 0, 3, ServiceFilter{Query: "filler", CategoryID: &category})
-	if err != nil || len(first.Items.Data) != 3 || first.Items.NextCursor == nil {
+	if err != nil || len(first.Items.Data) != 3 || first.Items.NextCursor == nil || *first.Items.NextCursor != 3 || first.Page != 1 {
 		t.Fatalf("first %+v %v", first, err)
 	}
 	second, err := s.ServiceOverview(ctx, a.ID, *first.Items.NextCursor, 3, ServiceFilter{Query: "filler", CategoryID: &category})
-	if err != nil || len(second.Items.Data) != 3 || second.Items.Data[0].Service.ID <= *first.Items.NextCursor {
+	if err != nil || len(second.Items.Data) != 3 || second.Items.NextCursor == nil || *second.Items.NextCursor != 6 || second.Page != 2 {
 		t.Fatalf("second %+v %v", second, err)
 	}
-	for _, after := range []int64{0, *first.Items.NextCursor, needle.ID} {
+	if second.Items.Data[0].Service.ID == first.Items.Data[0].Service.ID {
+		t.Fatalf("pages overlap: %+v %+v", first.Items.Data, second.Items.Data)
+	}
+	for _, after := range []int64{0, 3, 9} {
 		overview, err := s.ServiceOverview(ctx, a.ID, after, 1, ServiceFilter{Query: "filler", CategoryID: &category})
 		if err != nil || overview.Counts != (OverviewCounts{Total: 12, NoPeriod: 12}) {
 			t.Fatalf("full filtered counts after=%d %+v %v", after, overview, err)

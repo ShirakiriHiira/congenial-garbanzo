@@ -505,7 +505,7 @@ func TestOverviewFiltersAndCategories(t *testing.T) {
 		t.Fatalf("overview answered with a toast: %q", got)
 	}
 	text := f.stub.lastText()
-	for _, want := range []string{"我的服务", "DueSvc", "ExpiredSvc", "BareSvc"} {
+	for _, want := range []string{"全部 3", "DueSvc", "ExpiredSvc", "BareSvc"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("overview missing %q: %q", want, text)
 		}

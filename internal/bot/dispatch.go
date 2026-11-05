@@ -85,7 +85,7 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 			h.send(ctx, b, resp, "关键词最多 200 字。")
 			return
 		}
-		h.showOverview(ctx, b, user.ID, resp, service.ServiceFilter{Status: "active", Query: query}, 0)
+		h.showOverview(ctx, b, user.ID, resp, service.ServiceFilter{Status: "active", Query: query}, 1)
 	case "reminders":
 		if strings.TrimSpace(rest) != "" {
 			h.send(ctx, b, resp, "用法：/reminders")

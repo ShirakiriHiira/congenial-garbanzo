@@ -652,7 +652,7 @@ func TestCallbackEditsSourceMessage(t *testing.T) {
 	if got := edits[0].form.Get("chat_id"); got != strconv.FormatInt(userA, 10) {
 		t.Fatalf("edited chat %q", got)
 	}
-	if text := edits[0].form.Get("text"); !strings.Contains(text, "我的服务") {
+	if text := edits[0].form.Get("text"); !strings.Contains(text, "全部 1") {
 		t.Fatalf("edited text %q", text)
 	}
 	if markup := edits[0].form.Get("reply_markup"); !strings.Contains(markup, "v3:service:view") {
@@ -717,7 +717,7 @@ func TestEditFallsBackWhenTargetGone(t *testing.T) {
 	if n := len(f.stub.callsOf("sendMessage")); n != sends+1 {
 		t.Fatalf("fallback sends = %d", n-sends)
 	}
-	if text := f.stub.lastText(); !strings.Contains(text, "我的服务") {
+	if text := f.stub.lastText(); !strings.Contains(text, "全部 1") {
 		t.Fatalf("fallback text %q", text)
 	}
 }

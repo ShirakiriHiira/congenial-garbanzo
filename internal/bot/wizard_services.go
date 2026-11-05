@@ -183,7 +183,7 @@ func (w *wizard) confirmServiceAdd(ctx context.Context) {
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.showServiceDetail(ctx, w.b, w.user, w.resp, item.ID, 0)
+	w.h.showServiceDetail(ctx, w.b, w.user, w.resp, item.ID, defaultListState(), 0)
 }
 
 func opt(d draft, key string) *string {
@@ -511,7 +511,7 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.showServiceDetail(ctx, w.b, w.user, w.resp, item.ID, 0)
+	w.h.showServiceDetail(ctx, w.b, w.user, w.resp, item.ID, defaultListState(), 0)
 }
 
 // ---- period add -----------------------------------------------------------

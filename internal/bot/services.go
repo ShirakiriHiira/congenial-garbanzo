@@ -27,6 +27,26 @@ func termsText(t service.PeriodTerms) string {
 	return b.String()
 }
 
+// termsCompact describes renewal terms only when the user recorded them.
+func termsCompact(t service.PeriodTerms) string {
+	var label string
+	switch t.Mode {
+	case "once":
+		label = "一次性续费"
+	case "recurring":
+		label = "按周期续费"
+		if t.IntervalCount != nil && t.IntervalUnit != nil {
+			label = fmt.Sprintf("每 %d %s续费", *t.IntervalCount, intervalUnitLabel(*t.IntervalUnit))
+		}
+	default:
+		return ""
+	}
+	if t.Amount != nil && t.Currency != nil {
+		label += " · " + domain.FormatMoney(*t.Amount, *t.Currency) + " " + *t.Currency
+	}
+	return label
+}
+
 func intervalUnitLabel(unit string) string {
 	switch unit {
 	case "day":

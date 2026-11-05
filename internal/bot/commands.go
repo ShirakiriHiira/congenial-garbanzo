@@ -13,7 +13,39 @@ import (
 
 const pageSize = 10
 
+// servicePageSize keeps one service page compact on mobile keyboards.
+const servicePageSize = 5
+
+// htmlEscaper protects user-supplied text inside Telegram HTML. Attribute
+// values are escaped too, so the same replacer serves links.
+var htmlEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
+
+func htmlEscape(s string) string { return htmlEscaper.Replace(s) }
+
+// visibleText hides empty placeholders so callers can drop the whole line.
+func visibleText(v *string) string {
+	if v == nil {
+		return ""
+	}
+	s := strings.TrimSpace(*v)
+	switch s {
+	case "", "未填写", "不记录":
+		return ""
+	}
+	return s
+}
+
 func id(v int64) string { return strconv.FormatInt(v, 10) }
+
+func base36(v int64) string { return strconv.FormatInt(v, 36) }
+
+func parseBase36(s string) (int64, bool) {
+	n, err := strconv.ParseInt(s, 36, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
 
 func textOrDash(v *string) string {
 	if v == nil || *v == "" {
@@ -64,6 +96,101 @@ func periodExpiry(p service.Period) string {
 		return *p.LocalExpiresDate + "（" + p.Timezone + "，当日结束前有效）"
 	}
 	return stamp(p.ExpiresAt, p.Timezone) + "（" + p.Timezone + "）"
+}
+
+func expiryCountdown(p service.Period, now time.Time, loc *time.Location) (int, bool) {
+	exp := domain.Expiration{ExpiresAt: time.Unix(p.ExpiresAt, 0).UTC(), DatePrecision: p.DatePrecision, LocalExpiresDate: p.LocalExpiresDate}
+	days, err := domain.CalendarDaysUntil(exp, now, loc)
+	return days, err == nil
+}
+
+func countdownLabel(days int) string {
+	switch {
+	case days > 0:
+		return fmt.Sprintf("（剩 %d 天）", days)
+	case days == 0:
+		return "（今日到期）"
+	default:
+		return fmt.Sprintf("（已过期 %d 天）", -days)
+	}
+}
+
+// expiryValue renders the stored cutoff as a local wall clock without seconds.
+func expiryValue(p service.Period) string {
+	if p.DatePrecision == domain.PrecisionDate && p.LocalExpiresDate != nil {
+		return *p.LocalExpiresDate
+	}
+	loc, err := time.LoadLocation(p.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	return time.Unix(p.ExpiresAt, 0).In(loc).Format("2006-01-02 15:04")
+}
+
+// expiryDate adds the zone only when the period overrides the user's default.
+func expiryDate(p service.Period, userLoc *time.Location) string {
+	text := expiryValue(p)
+	if p.Timezone != "" && (userLoc == nil || p.Timezone != userLoc.String()) {
+		text += "（" + p.Timezone + "）"
+	}
+	return text
+}
+
+// expiryShort is the button label form: no zone suffix and no countdown.
+func expiryShort(p service.Period) string { return expiryValue(p) }
+
+func expiryLine(p service.Period, now time.Time, userLoc *time.Location) string {
+	line := periodName(p) + " · <code>" + htmlEscape(expiryDate(p, userLoc)) + "</code>"
+	if days, ok := expiryCountdown(p, now, userLoc); ok {
+		line += countdownLabel(days)
+	}
+	return line
+}
+
+// serviceStatusBadge derives the single status label shown in headings.
+func serviceStatusBadge(status string, p *service.Period, now time.Time, loc *time.Location) string {
+	if status == "archived" {
+		return "已归档"
+	}
+	if p == nil {
+		return "未设置"
+	}
+	days, ok := expiryCountdown(*p, now, loc)
+	if !ok {
+		return statusLabel(p.Status)
+	}
+	switch {
+	case days < 0 || p.Status == "expired":
+		return "已过期"
+	case days <= service.DueSoonDays:
+		return "即将到期"
+	}
+	return "有效"
+}
+
+// primaryPeriodOf mirrors the overview rule for a detail page that already
+// loaded its periods: the earliest unexpired cutoff, else the latest expired.
+func primaryPeriodOf(periods []service.Period, now time.Time) *service.Period {
+	var best *service.Period
+	for i := range periods {
+		p := &periods[i]
+		active := p.ExpiresAt > now.Unix()
+		if best == nil {
+			best = p
+			continue
+		}
+		bestActive := best.ExpiresAt > now.Unix()
+		if active != bestActive {
+			if active {
+				best = p
+			}
+			continue
+		}
+		if active && p.ExpiresAt < best.ExpiresAt || !active && p.ExpiresAt > best.ExpiresAt {
+			best = p
+		}
+	}
+	return best
 }
 
 func periodDetail(p service.Period, rules int) string {

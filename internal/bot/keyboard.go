@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -98,15 +99,28 @@ func editNotModified(err error) bool {
 // omitted reply_markup as "keep the current keyboard", so clearing is explicit.
 var noKeyboard = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}
 
-// sendMarkup sends the text (splitting oversized bodies) with the keyboard
-// attached to the final chunk so Telegram always renders it with the body. When
-// the responder still owes the callback message and the text fits in one chunk,
-// the message is rewritten instead of adding another bubble.
+// sendMarkup sends plain text with an inline keyboard. HTML pages use sendHTML
+// so user content never reaches Telegram as markup.
 func (h *Handler) sendMarkup(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup) {
+	h.sendMarkupMode(ctx, b, resp, text, keyboard, "", false)
+}
+
+// sendHTML sends Telegram HTML with web page previews disabled so link cards
+// cannot break the compact layout.
+func (h *Handler) sendHTML(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup) {
+	h.sendMarkupMode(ctx, b, resp, text, keyboard, models.ParseModeHTML, true)
+}
+
+func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup, parseMode models.ParseMode, disablePreview bool) {
 	if text == "" && keyboard == nil {
 		return
 	}
-	parts := chunks(text, 3800)
+	var parts []string
+	if parseMode == models.ParseModeHTML {
+		parts = htmlChunks(text, 3800)
+	} else {
+		parts = chunks(text, 3800)
+	}
 	if len(parts) == 0 {
 		parts = []string{""}
 	}
@@ -120,13 +134,22 @@ func (h *Handler) sendMarkup(ctx context.Context, b *telegram.Bot, resp *respond
 		if keyboard != nil {
 			replyMarkup = keyboard
 		}
-		if _, err := b.EditMessageText(ctx, &telegram.EditMessageTextParams{ChatID: chatID, MessageID: editID, Text: body, ReplyMarkup: replyMarkup}); err == nil || editNotModified(err) {
+		params := &telegram.EditMessageTextParams{ChatID: chatID, MessageID: editID, Text: body, ParseMode: parseMode, ReplyMarkup: replyMarkup}
+		if disablePreview {
+			disabled := true
+			params.LinkPreviewOptions = &models.LinkPreviewOptions{IsDisabled: &disabled}
+		}
+		if _, err := b.EditMessageText(ctx, params); err == nil || editNotModified(err) {
 			return
 		}
 		h.logger.Warn("telegram edit failed", "code", "telegram_error")
 	}
 	for i, chunk := range parts {
-		params := &telegram.SendMessageParams{ChatID: chatID, Text: chunk}
+		params := &telegram.SendMessageParams{ChatID: chatID, Text: chunk, ParseMode: parseMode}
+		if disablePreview {
+			disabled := true
+			params.LinkPreviewOptions = &models.LinkPreviewOptions{IsDisabled: &disabled}
+		}
 		if i == len(parts)-1 && keyboard != nil {
 			params.ReplyMarkup = *keyboard
 		}
@@ -138,4 +161,50 @@ func (h *Handler) sendMarkup(ctx context.Context, b *telegram.Bot, resp *respond
 			return
 		}
 	}
+}
+
+// htmlChunks splits rendered HTML at line boundaries so tags stay balanced.
+// Lines that already exceed the budget and contain tags are kept whole; the
+// page builders keep such lines far below Telegram's hard limit.
+func htmlChunks(text string, size int) []string {
+	if size <= 0 || utf8.RuneCountInString(text) <= size {
+		return []string{text}
+	}
+	var out []string
+	var current strings.Builder
+	count := 0
+	flush := func() {
+		if current.Len() > 0 {
+			out = append(out, strings.TrimSuffix(current.String(), "\n"))
+			current.Reset()
+			count = 0
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		lineLen := utf8.RuneCountInString(line)
+		if lineLen > size && !strings.ContainsAny(line, "<>") {
+			flush()
+			for len(line) > 0 {
+				runes := []rune(line)
+				n := size
+				if len(runes) < n {
+					n = len(runes)
+				}
+				out = append(out, string(runes[:n]))
+				line = string(runes[n:])
+			}
+			continue
+		}
+		if count > 0 && count+1+lineLen > size {
+			flush()
+		}
+		if count > 0 {
+			current.WriteByte('\n')
+			count++
+		}
+		current.WriteString(line)
+		count += lineLen
+	}
+	flush()
+	return out
 }
