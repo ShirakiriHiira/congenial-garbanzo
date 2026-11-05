@@ -134,7 +134,7 @@ func TestWizardAcceptsLocalWallClockTimes(t *testing.T) {
 	}
 	f.send(userA, "2027-03-31 23:59")
 	f.send(userA, "2027-03-01 00:00")
-	if text := f.stub.lastText(); !strings.Contains(text, "续费约定") {
+	if text := f.stub.lastText(); !strings.Contains(text, "续费信息") {
 		t.Fatalf("starts accepted but flow stopped: %q", text)
 	}
 	f.callback(userA, choiceCallback("mode", "custom"), nil)

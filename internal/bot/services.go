@@ -12,17 +12,17 @@ func termsText(t service.PeriodTerms) string {
 	var b strings.Builder
 	switch t.Mode {
 	case "once":
-		b.WriteString("约定条款：一次性")
+		b.WriteString("续费信息：一次性")
 	case "recurring":
-		b.WriteString("约定条款：周期性")
+		b.WriteString("续费信息：按周期")
 		if t.IntervalCount != nil && t.IntervalUnit != nil {
 			fmt.Fprintf(&b, "，每 %d %s", *t.IntervalCount, intervalUnitLabel(*t.IntervalUnit))
 		}
 	default:
-		b.WriteString("约定条款：暂未设置")
+		b.WriteString("续费信息：不记录")
 	}
 	if t.Amount != nil && t.Currency != nil {
-		fmt.Fprintf(&b, "，约定费用 %s %s", domain.FormatMoney(*t.Amount, *t.Currency), *t.Currency)
+		fmt.Fprintf(&b, "，费用 %s %s", domain.FormatMoney(*t.Amount, *t.Currency), *t.Currency)
 	}
 	return b.String()
 }

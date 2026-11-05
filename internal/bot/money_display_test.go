@@ -25,12 +25,12 @@ func TestRenewalShowsDecimalAmount(t *testing.T) {
 	}
 
 	f.callback(userA, cb("period", "view", id(p.ID)), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "约定费用 10.3 CNY") {
+	if text := f.stub.lastText(); !strings.Contains(text, "费用 10.3 CNY") {
 		t.Fatalf("period detail: %q", text)
 	}
 
 	f.callback(userA, cb("period", "renew", id(p.ID)), nil)
-	if text := f.stub.lastText(); !strings.Contains(text, "约定费用 10.3 CNY") {
+	if text := f.stub.lastText(); !strings.Contains(text, "费用 10.3 CNY") {
 		t.Fatalf("renew head: %q", text)
 	}
 	f.callback(userA, choiceCallback("precision", "date"), nil)

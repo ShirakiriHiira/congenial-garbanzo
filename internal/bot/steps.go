@@ -392,7 +392,7 @@ var periodEditFields = []periodEditField{
 	{key: "name", label: "名称"},
 	{key: "expires", label: "截止"},
 	{key: "starts", label: "开始时间"},
-	{key: "terms", label: "约定条款"},
+	{key: "terms", label: "续费信息"},
 }
 
 // serviceEditFieldKeys returns the field keys in callback order.

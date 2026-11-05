@@ -7,5 +7,5 @@ export function formatTermsCycle(terms: PeriodTermsInput): string {
     if (terms.interval_count === null || terms.interval_unit === null) return termsModeLabels.recurring;
     return `每 ${terms.interval_count} ${intervalUnitLabels[terms.interval_unit]}`;
   }
-  return terms.mode === 'once' ? termsModeLabels.once : '自定义周期';
+  return termsModeLabels[terms.mode];
 }

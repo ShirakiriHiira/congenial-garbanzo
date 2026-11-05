@@ -50,7 +50,7 @@ func (w *wizard) renderRenew(ctx context.Context) {
 		w.abort(ctx, "有效期已被其他操作更新")
 		return
 	}
-	head := fmt.Sprintf("续期「%s」/「%s」\n当前截止：%s\n约定（仅供参考）：%s",
+	head := fmt.Sprintf("续期「%s」/「%s」\n当前截止：%s\n续费信息（仅供参考）：%s",
 		item.Name, periodName(p), periodExpiry(p), termsText(p.Terms))
 	switch w.d.Step {
 	case "renew_precision":
@@ -63,7 +63,7 @@ func (w *wizard) renderRenew(ctx context.Context) {
 	case "renew_amount":
 		rows := [][]models.InlineKeyboardButton{}
 		if p.Terms.Amount != nil && p.Terms.Currency != nil {
-			rows = append(rows, []models.InlineKeyboardButton{button("使用约定金额", cb("dialog", "use_convention"))})
+			rows = append(rows, []models.InlineKeyboardButton{button("使用记录的费用", cb("dialog", "use_convention"))})
 		}
 		rows = append(rows, navRows(true, true)...)
 		w.reply(ctx, "本次实际续期金额（可选）：发送“金额 币种”，例如 10.30 CNY。", rows...)
@@ -163,7 +163,7 @@ func (w *wizard) useConvention(ctx context.Context) {
 	}
 	p, err := w.h.svc.GetPeriod(ctx, w.user.ID, *w.d.PeriodID)
 	if err != nil || p.Terms.Amount == nil || p.Terms.Currency == nil {
-		w.failure(ctx, "没有可用的约定金额。", true, true)
+		w.failure(ctx, "没有可用的记录费用。", true, true)
 		return
 	}
 	w.dr.set("amount", strconv.FormatInt(*p.Terms.Amount, 10))

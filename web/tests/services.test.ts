@@ -193,8 +193,8 @@ describe('service detail', () => {
     expect(screen.queryByText('8988600000000000000')).not.toBeInTheDocument();
     expect(screen.queryByText('公开标识')).not.toBeInTheDocument();
     expect(screen.queryByText('host.example')).not.toBeInTheDocument();
-    expect(await screen.findByText('约定周期：每 1 月')).toBeInTheDocument();
-    expect(await screen.findByText('约定费用：12.99 USD')).toBeInTheDocument();
+    expect(await screen.findByText('计费周期：每 1 月')).toBeInTheDocument();
+    expect(await screen.findByText('费用：12.99 USD')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'https://manage.example/' });
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');

@@ -161,8 +161,8 @@
     let startsValue: string | undefined;
     try {
       parseMoney(amount, currency);
-      if (unsafeMoney && baseline && amount === '' && !isExplicitUnsafeReset(readTerms()) && !sameTerms(readTerms(), baseline.terms)) throw new Error('原约定费用无法精确显示，请重新填写金额和币种后再修改条款');
-    } catch (cause) { termsError = cause instanceof Error ? cause.message : '条款无效'; }
+      if (unsafeMoney && baseline && amount === '' && !isExplicitUnsafeReset(readTerms()) && !sameTerms(readTerms(), baseline.terms)) throw new Error('原费用无法精确显示，请重新填写金额和币种后再修改续费信息');
+    } catch (cause) { termsError = cause instanceof Error ? cause.message : '续费信息无效'; }
     if (expiresMode === 'duration') {
       try { expiresValue = computeDurationExpiry().value; }
       catch (cause) { durationError = cause instanceof Error ? cause.message : '无法推算截止日期'; }
@@ -263,12 +263,12 @@
         </FormField>
         {#if durationPreview?.value}<p class="muted">推算截止：{durationPreview.label}{durationPreview.note ? `（${durationPreview.note}）` : ''}</p>{/if}
       {/if}
-      <fieldset class="terms stack"><legend>约定条款</legend>
-        <FormField id="terms-mode" label="条款类型" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
+      <fieldset class="terms stack"><legend>续费信息</legend>
+        <FormField id="terms-mode" label="计费方式" required>{#snippet children(field)}<select id={field.id} bind:value={termsMode} disabled={!canWrite() || submitter.busy}>{#each Object.entries(termsModeLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>
         {#if termsMode === 'recurring'}<FormField id="terms-count" label="周期次数" required error={intervalError}>{#snippet children(field)}<input id={field.id} type="text" inputmode="numeric" pattern="[0-9]*" bind:value={intervalCount} disabled={!canWrite() || submitter.busy} />{/snippet}</FormField><FormField id="terms-unit" label="周期单位" required>{#snippet children(field)}<select id={field.id} bind:value={intervalUnit} disabled={!canWrite() || submitter.busy}>{#each Object.entries(intervalUnitLabels) as [value, label]}<option {value}>{label}</option>{/each}</select>{/snippet}</FormField>{/if}
-        <MoneyInput id="period-terms-money" label="约定费用" bind:amount bind:currency disabled={!canWrite() || submitter.busy} error={termsError} />
-        {#if unsafeMoney && isExplicitUnsafeReset(readTerms())}<p class="notice">保存后条款将重置为自定义且无费用。</p>
-        {:else if unsafeMoney}<div class="unsafe-money"><p class="notice">{"已保存的约定费用无法精确编辑，请重新填写金额和币种，或重置条款。"}</p><button class="text-button" type="button" onclick={() => { termsMode = 'custom'; intervalCount = ''; intervalUnit = 'month'; amount = ''; currency = ''; termsError = ''; unsafeTermsReset = true; }} disabled={!canWrite() || submitter.busy}>重置约定条款</button></div>{/if}
+        <MoneyInput id="period-terms-money" label="费用" bind:amount bind:currency disabled={!canWrite() || submitter.busy} error={termsError} />
+        {#if unsafeMoney && isExplicitUnsafeReset(readTerms())}<p class="notice">保存后续费信息将重置为不记录且无费用。</p>
+        {:else if unsafeMoney}<div class="unsafe-money"><p class="notice">{"已保存的费用无法精确编辑，请重新填写金额和币种，或重置续费信息。"}</p><button class="text-button" type="button" onclick={() => { termsMode = 'custom'; intervalCount = ''; intervalUnit = 'month'; amount = ''; currency = ''; termsError = ''; unsafeTermsReset = true; }} disabled={!canWrite() || submitter.busy}>重置续费信息</button></div>{/if}
       </fieldset>
       {#if submitter.error && !conflict.open}<ErrorBanner message={errorMessage(submitter.error)} />{/if}
       {#if stale && !conflict.open}<ErrorBanner message="请先读取最新值后再编辑。" onretry={() => { void conflict.retry(); }} />{/if}

@@ -567,15 +567,15 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	case "period_days":
 		w.reply(ctx, "第 4 步，有效天数（正整数，例如 180）。\n截止将按开始时间与你所在时区的日历日推算。", navRows(true, false)...)
 	case "terms_mode":
-		w.reply(ctx, "第 5 步，续费约定（可选，只作记录，不影响提醒日期）。", []models.InlineKeyboardButton{
+		w.reply(ctx, "第 5 步，续费信息（可选，只作记录，不影响提醒日期）。", []models.InlineKeyboardButton{
 			button("一次性", choiceCallback("mode", "once")),
-			button("周期性", choiceCallback("mode", "recurring")),
-			button("暂不设置", choiceCallback("mode", "custom")),
+			button("按周期", choiceCallback("mode", "recurring")),
+			button("不记录", choiceCallback("mode", "custom")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
+		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
 	case "period_preview":
 		w.reply(ctx, periodAddPreviewText(item, w.dr, w.user.Timezone), []models.InlineKeyboardButton{button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
@@ -620,10 +620,10 @@ func periodAddPreviewText(item service.ServiceItem, d draft, zone string) string
 	if value := d.Values["starts_at"]; strings.TrimSpace(value) != "" {
 		starts = wallClockDisplay(value, zone)
 	}
-	text := fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n约定：%s",
+	text := fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s\n截止：%s\n开始：%s\n续费信息：%s",
 		item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), expires, starts, termsText(termsDraft(d)))
 	if d.Values["expiry_mode"] == "duration" {
-		text = fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s（按开始与有效天数推算）\n有效天数：%s 天\n截止：%s\n开始：%s\n约定：%s",
+		text = fmt.Sprintf("请确认新建有效期：\n服务：%s\n名称：%s\n截止方式：%s（按开始与有效天数推算）\n有效天数：%s 天\n截止：%s\n开始：%s\n续费信息：%s",
 			item.Name, shown(d, "name"), precisionLabel(d.Values["precision"]), d.Values["duration_days"], expires, starts, termsText(termsDraft(d)))
 	}
 	return text
@@ -893,15 +893,15 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 	case "period_expires":
 		w.reply(ctx, "当前截止："+periodExpiry(p)+"\n\n新截止（"+precisionLabel(w.dr.Values["precision"])+"，时区 "+p.Timezone+"）。\n"+expirationHint(w.dr.Values["precision"]), navRows(true, false)...)
 	case "terms_mode":
-		w.reply(ctx, "当前约定："+termsText(p.Terms)+"\n\n选择新的条款模式。", []models.InlineKeyboardButton{
+		w.reply(ctx, "当前续费信息："+termsText(p.Terms)+"\n\n选择新的计费方式。", []models.InlineKeyboardButton{
 			button("一次性", choiceCallback("mode", "once")),
-			button("周期性", choiceCallback("mode", "recurring")),
-			button("暂不设置", choiceCallback("mode", "custom")),
+			button("按周期", choiceCallback("mode", "recurring")),
+			button("不记录", choiceCallback("mode", "custom")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "约定金额（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
+		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
 	case "edit_preview":
 		w.reply(ctx, periodEditPreviewText(p, w.dr), []models.InlineKeyboardButton{button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:

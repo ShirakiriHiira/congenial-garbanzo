@@ -197,8 +197,8 @@
                   <p class="period-name">{periodLabel(period)}</p>
                   <p class="muted">{formatExpiry(period)}</p>
                   <div class="badges"><ExpiryBadge {period} /></div>
-                  {#if period.terms.mode !== 'custom'}<p class="muted">约定周期：{formatTermsCycle(period.terms)}</p>{/if}
-                  {#if period.terms.amount !== null && period.terms.currency !== null}<p class="muted">约定费用：{formatMoney(period.terms.amount, period.terms.currency)}</p>{/if}
+                  {#if period.terms.mode !== 'custom'}<p class="muted">计费周期：{formatTermsCycle(period.terms)}</p>{/if}
+                  {#if period.terms.amount !== null && period.terms.currency !== null}<p class="muted">费用：{formatMoney(period.terms.amount, period.terms.currency)}</p>{/if}
                 </div>
                 <button type="button" class="toggle" aria-expanded={Boolean(expanded[period.id])} onclick={() => toggle(period)}>{expanded[period.id] ? '收起' : '详情'}</button>
               </div>

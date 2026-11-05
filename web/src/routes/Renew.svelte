@@ -250,7 +250,7 @@
         <form class="stack" onsubmit={submit} oninput={() => { dirty = true; }}>
           <DatePrecisionInput id="renew-expires" bind:precision bind:expires bind:occurrence zone={period.timezone} disabled={!writable} error={fieldError} />
           <MoneyInput id="renew-amount" bind:amount bind:currency disabled={!writable} />
-          {#if period.terms.amount !== null && period.terms.currency !== null}<div class="actions"><button type="button" onclick={() => { amount = formatMoneyInput(period!.terms.amount, period!.terms.currency); currency = period!.terms.currency ?? ''; dirty = true; }} disabled={!writable}>使用约定金额</button></div>{/if}
+          {#if period.terms.amount !== null && period.terms.currency !== null}<div class="actions"><button type="button" onclick={() => { amount = formatMoneyInput(period!.terms.amount, period!.terms.currency); currency = period!.terms.currency ?? ''; dirty = true; }} disabled={!writable}>使用记录的费用</button></div>{/if}
           <FormField id="renew-notes" label={text.notes} error={notesError}>
             {#snippet action()}
               {#if notes}<button type="button" class="text-button" aria-label={text.clearNotes} disabled={!writable} onclick={() => { notes = ''; dirty = true; }}>清除</button>{/if}
