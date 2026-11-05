@@ -95,7 +95,7 @@ func validPeriodTerms(t PeriodTerms) bool {
 			return false
 		}
 		switch *t.IntervalUnit {
-		case "day", "week", "month", "year":
+		case "day", "week", "month", "quarter", "year":
 		default:
 			return false
 		}

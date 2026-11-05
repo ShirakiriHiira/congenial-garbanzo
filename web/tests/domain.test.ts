@@ -145,5 +145,6 @@ describe('通用条款与默认有效期名称', () => {
     expect(formatTermsCycle({ mode: 'recurring', interval_count: 3, interval_unit: 'month', amount: 0, currency: 'CNY' })).toBe('每 3 月');
     expect(formatTermsCycle({ mode: 'recurring', interval_count: 1, interval_unit: 'year', amount: null, currency: null })).toBe(`每 1 ${intervalUnitLabels.year}`);
     expect(formatTermsCycle({ mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null })).toBe(termsModeLabels.custom);
+    expect(formatTermsCycle({ mode: 'recurring', interval_count: 1, interval_unit: 'quarter', amount: null, currency: null })).toBe(`每 1 ${intervalUnitLabels.quarter}`);
   });
 });

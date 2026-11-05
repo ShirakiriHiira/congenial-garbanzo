@@ -318,6 +318,7 @@ describe('decoder boundaries', () => {
     expect(decode(terms).terms.revision).toBe(1);
     expect(decode({ ...terms, mode: 'custom', interval_count: null, interval_unit: null, amount: null, currency: null })).toBeTruthy();
     expect(decode({ ...terms, mode: 'once', interval_count: null, interval_unit: null })).toBeTruthy();
+    expect(decode({ ...terms, interval_unit: 'quarter' })).toBeTruthy();
     expect(() => decode({ ...terms, revision: 0 })).toThrow(TypeError);
     expect(() => decode({ ...terms, interval_count: 0 })).toThrow(TypeError);
     expect(() => decode({ ...terms, interval_count: 1.5 })).toThrow(TypeError);

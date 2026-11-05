@@ -52,7 +52,7 @@ export const labels = {
 export const cardTypeLabels: Record<CardType, string> = { physical_sim: '实体 SIM', esim: 'eSIM' };
 export const serviceStatusLabels: Record<ServiceStatus, string> = { active: '使用中', archived: '已归档' };
 export const termsModeLabels: Record<TermsMode, string> = { once: '一次性', recurring: '按周期', custom: '不记录' };
-export const intervalUnitLabels: Record<IntervalUnit, string> = { day: '天', week: '周', month: '月', year: '年' };
+export const intervalUnitLabels: Record<IntervalUnit, string> = { day: '天', week: '周', month: '月', quarter: '季', year: '年' };
 export const periodStatusLabels: Record<PeriodStatus, string> = { active: '有效', expired: '已过期' };
 // SIM services have no generic identifier: their public facts live in
 // sim_details, so the map covers the remaining categories only.

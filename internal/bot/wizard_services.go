@@ -573,7 +573,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 			button("不记录", choiceCallback("mode", "custom")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "terms_interval":
-		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
+		w.reply(ctx, "周期长度，例如：1 month、2 quarter。单位可为 day/week/month/quarter/year。", navRows(true, false)...)
 	case "terms_amount":
 		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
 	case "period_preview":
@@ -791,9 +791,9 @@ func parseInterval(value string) (int64, string, error) {
 		return 0, "", fail("数量必须是正整数。")
 	}
 	switch fields[1] {
-	case "day", "week", "month", "year":
+	case "day", "week", "month", "quarter", "year":
 	default:
-		return 0, "", fail("单位必须是 day、week、month 或 year。")
+		return 0, "", fail("单位必须是 day、week、month、quarter 或 year。")
 	}
 	return n, fields[1], nil
 }
@@ -899,7 +899,7 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 			button("不记录", choiceCallback("mode", "custom")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "terms_interval":
-		w.reply(ctx, "周期长度，例如：1 month、2 week。单位可为 day/week/month/year。", navRows(true, false)...)
+		w.reply(ctx, "周期长度，例如：1 month、2 quarter。单位可为 day/week/month/quarter/year。", navRows(true, false)...)
 	case "terms_amount":
 		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
 	case "edit_preview":

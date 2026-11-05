@@ -190,7 +190,7 @@ function decodeTerms(value: unknown, path: string): PeriodTerms {
   const rawAmount = field(source, "amount", path);
   const rawCurrency = field(source, "currency", path);
   const interval_count = rawCount === null ? null : nonNegativeInteger(rawCount, `${path}.interval_count`);
-  const interval_unit = rawUnit === null ? null : oneOf(rawUnit, ["day", "week", "month", "year"], `${path}.interval_unit`);
+  const interval_unit = rawUnit === null ? null : oneOf(rawUnit, ["day", "week", "month", "quarter", "year"], `${path}.interval_unit`);
   const amount = rawAmount === null ? null : nonNegativeWholeNumber(rawAmount, `${path}.amount`);
   const currency = nullableText(rawCurrency, `${path}.currency`);
   const revision = nonNegativeInteger(field(source, "revision", path), `${path}.revision`);

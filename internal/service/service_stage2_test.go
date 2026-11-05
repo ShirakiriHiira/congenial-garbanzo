@@ -391,4 +391,8 @@ func TestPeriodTermsAtomicityValidationAndLifecycle(t *testing.T) {
 	if _, err = s.GetPeriod(ctx, a.ID, preserved.ID); err != ErrNotFound {
 		t.Fatalf("deleted period remains: %v", err)
 	}
+	quarter := "quarter"
+	if _, err = s.CreatePeriod(ctx, a.ID, parent.ID, PeriodInput{DatePrecision: "date", ExpiresAt: "2027-02-15", Terms: &TermsInput{Mode: "recurring", IntervalCount: &one, IntervalUnit: &quarter}}); err != nil {
+		t.Fatalf("quarter interval: %v", err)
+	}
 }

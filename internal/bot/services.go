@@ -35,6 +35,8 @@ func intervalUnitLabel(unit string) string {
 		return "周"
 	case "month":
 		return "个月"
+	case "quarter":
+		return "季"
 	case "year":
 		return "年"
 	}
