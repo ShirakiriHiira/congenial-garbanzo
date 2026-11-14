@@ -518,7 +518,7 @@ func TestOverviewFiltersAndCategories(t *testing.T) {
 	if text := f.stub.lastText(); !strings.Contains(text, "ArchivedSvc") || strings.Contains(text, "DueSvc") {
 		t.Fatalf("archived filter: %q", text)
 	}
-	f.callback(userA, cb("service", "cats", "1", "0"), nil)
+	f.callback(userA, cb("service", "cats", defaultListState().token()), nil)
 	if got := serviceLastAnswer(t, f); got != "" {
 		t.Fatalf("cats answered with a toast: %q", got)
 	}

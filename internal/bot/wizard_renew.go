@@ -205,7 +205,7 @@ func (w *wizard) confirmRenew(ctx context.Context) {
 		return
 	}
 	w.h.sendMarkup(ctx, w.b, w.resp, renewalText(ctx, w.h.svc, w.user, renewal, "续期完成"), markup(
-		[]models.InlineKeyboardButton{button("查看续期历史", cb("period", "renewals", id(renewal.PeriodID), "0")), button("再次续期", cb("period", "renew", id(renewal.PeriodID)))},
-		[]models.InlineKeyboardButton{button("返回服务", cb("service", "view", id(renewal.PeriodID), "0"))},
+		[]models.InlineKeyboardButton{button("查看续期历史", cb("period", "renewals", id(renewal.PeriodID), "0", defaultListState().token())), button("再次续期", cb("period", "renew", id(renewal.PeriodID)))},
+		navRow(periodRef(renewal.PeriodID, defaultListState())),
 	))
 }

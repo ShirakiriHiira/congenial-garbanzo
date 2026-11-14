@@ -86,9 +86,12 @@ func TestOverviewPageUsesHTMLFiveRowsAndPagination(t *testing.T) {
 	if pager[0].Text != "-" || pager[1].Text != "1 / 2 页" || pager[2].Text != "下一页 >" {
 		t.Fatalf("pager %+v", pager)
 	}
-	bottom := keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-1]
+	bottom := keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-2]
 	if len(bottom) != 3 || bottom[0].Text != "添加服务" || bottom[1].Text != "按类别" || bottom[2].Text != "设置" {
 		t.Fatalf("bottom row %+v", bottom)
+	}
+	if menu := keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-1]; len(menu) != 1 || menu[0].Text != "主菜单" {
+		t.Fatalf("menu row %+v", menu)
 	}
 
 	f.callback(userA, cb("service", "list", "1", "0", "2"), nil)
@@ -99,7 +102,7 @@ func TestOverviewPageUsesHTMLFiveRowsAndPagination(t *testing.T) {
 	if err := json.Unmarshal([]byte(f.stub.lastMarkup()), &keyboard); err != nil {
 		t.Fatal(err)
 	}
-	pager = keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-2]
+	pager = keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-3]
 	if pager[0].Text != "< 上一页" || pager[1].Text != "2 / 2 页" || pager[2].Text != "-" {
 		t.Fatalf("last pager %+v", pager)
 	}
@@ -113,7 +116,7 @@ func TestOverviewPageUsesHTMLFiveRowsAndPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-1][0]
-	if back.Text != "返回服务列表" {
+	if back.Text != "← 返回" || back.CallbackData != cb("nav", "go", serviceList(listState{code: "1", page: 2}).token()) {
 		t.Fatalf("back row %+v", back)
 	}
 	f.callback(userA, back.CallbackData, nil)
@@ -123,7 +126,7 @@ func TestOverviewPageUsesHTMLFiveRowsAndPagination(t *testing.T) {
 	if err := json.Unmarshal([]byte(f.stub.lastMarkup()), &keyboard); err != nil {
 		t.Fatal(err)
 	}
-	pager = keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-2]
+	pager = keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-3]
 	if pager[1].Text != "2 / 2 页" {
 		t.Fatalf("returned pager %+v", pager)
 	}
@@ -201,7 +204,7 @@ func TestServiceDetailCompactsFieldsAndKeepsListContext(t *testing.T) {
 		t.Fatalf("period button %q", got)
 	}
 	last := keyboard.InlineKeyboard[len(keyboard.InlineKeyboard)-1][0]
-	if last.Text != "返回服务列表" || last.CallbackData != cb("service", "list", "2", "0", "1") {
+	if last.Text != "← 返回" || last.CallbackData != cb("nav", "go", serviceList(state).token()) {
 		t.Fatalf("back button %+v", last)
 	}
 }

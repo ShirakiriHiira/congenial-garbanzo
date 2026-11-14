@@ -85,6 +85,8 @@ func (h *Handler) handleCallbackV3(ctx context.Context, b *telegram.Bot, cq *mod
 		return h.ruleCallback(ctx, b, user, &responder{chatID: msg.Chat.ID, editID: msg.ID}, v3)
 	case "job":
 		return h.jobCallback(ctx, b, user, &responder{chatID: msg.Chat.ID, editID: msg.ID}, v3)
+	case "nav":
+		return h.navCallback(ctx, b, user, &responder{chatID: msg.Chat.ID, editID: msg.ID}, v3)
 	case "settings":
 		return h.settingsCallback(ctx, b, user, &responder{chatID: msg.Chat.ID, editID: msg.ID}, v3)
 	case "notify":
@@ -163,11 +165,14 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		h.showOverview(ctx, b, user.ID, resp, filter, page)
 		return silentAnswer
 	case "cats":
-		code := "1"
-		if len(v3.args) > 0 {
-			code = v3.args[0]
+		if len(v3.args) != 1 {
+			return "未知操作"
 		}
-		h.showCategories(ctx, b, user.ID, resp, code)
+		state, ok := parseListState(v3.args[0])
+		if !ok {
+			return "未知操作"
+		}
+		h.showCategories(ctx, b, user.ID, resp, state)
 		return silentAnswer
 	}
 	serviceID, ok := callbackID(v3.args, 0)
@@ -207,43 +212,76 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		if item.Status == "archived" {
 			return "服务已归档"
 		}
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("归档服务「%s」？\n未发送的提醒会取消，资料与历史保留，可随时恢复。", item.Name),
-			markup([]models.InlineKeyboardButton{button("确认归档", cb("service", "archive", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
+			markup([]models.InlineKeyboardButton{
+				button("确认归档", cb("service", "archive", id(item.ID), state.token())),
+				button("取消", cb("nav", "go", serviceRef(item.ID, state).token())),
+			}))
 		return silentAnswer
 	case "archive":
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		if item.Status != "archived" {
 			status := "archived"
 			if _, err := h.svc.UpdateService(ctx, user.ID, serviceID, service.ServicePatch{Status: &status}); err != nil {
 				return h.replyState(ctx, b, resp, objectStateMessage(err))
 			}
 		}
-		h.showServiceDetail(ctx, b, user, resp, serviceID, defaultListState(), 0)
+		h.showServiceDetail(ctx, b, user, resp, serviceID, state, 0)
 		return silentAnswer
 	case "restore_ask":
 		if item.Status == "active" {
 			return "服务已是可用状态"
 		}
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("恢复服务「%s」？\n未发送的提醒会取消，旧的按钮与草稿失效。", item.Name),
-			markup([]models.InlineKeyboardButton{button("确认恢复", cb("service", "restore", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
+			markup([]models.InlineKeyboardButton{
+				button("确认恢复", cb("service", "restore", id(item.ID), state.token())),
+				button("取消", cb("nav", "go", serviceRef(item.ID, state).token())),
+			}))
 		return silentAnswer
 	case "restore":
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		if item.Status != "active" {
 			status := "active"
 			if _, err := h.svc.UpdateService(ctx, user.ID, serviceID, service.ServicePatch{Status: &status}); err != nil {
 				return h.replyState(ctx, b, resp, objectStateMessage(err))
 			}
 		}
-		h.showServiceDetail(ctx, b, user, resp, serviceID, defaultListState(), 0)
+		h.showServiceDetail(ctx, b, user, resp, serviceID, state, 0)
 		return silentAnswer
 	case "delete_ask":
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除服务「%s」？\n有效期、提醒规则、提醒任务与续期记录会一并删除，无法恢复。", item.Name),
-			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("service", "delete", id(item.ID))), button("取消", cb("service", "view", id(item.ID), "0"))}))
+			markup([]models.InlineKeyboardButton{
+				button("确认永久删除", cb("service", "delete", id(item.ID), state.token())),
+				button("取消", cb("nav", "go", serviceRef(item.ID, state).token())),
+			}))
 		return silentAnswer
 	case "delete":
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		if err := h.svc.DeleteService(ctx, user.ID, serviceID); err != nil {
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("服务「%s」已永久删除。", item.Name), markup([]models.InlineKeyboardButton{button("返回服务列表", cb("service", "list", "1", "0", "0"))}))
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("服务「%s」已永久删除。", item.Name), markup(navRow(serviceList(state))))
 		return silentAnswer
 	default:
 		return "未知操作"
@@ -265,7 +303,11 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 	}
 	switch v3.action {
 	case "view":
-		h.showPeriodDetail(ctx, b, user, resp, p.ID)
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
+		h.showPeriodDetail(ctx, b, user, resp, p.ID, state)
 		return silentAnswer
 	case "renew":
 		h.startRenewWizard(ctx, b, user, resp, p.ID)
@@ -277,7 +319,11 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 				return "未知操作"
 			}
 		}
-		h.showRules(ctx, b, user, resp, p.ID, after)
+		state, ok := callbackState(v3, 2)
+		if !ok {
+			return "未知操作"
+		}
+		h.showRules(ctx, b, user, resp, p.ID, after, state)
 		return silentAnswer
 	case "renewals":
 		after := int64(0)
@@ -286,20 +332,36 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 				return "未知操作"
 			}
 		}
-		h.showRenewals(ctx, b, user, resp, p.ID, after)
+		state, ok := callbackState(v3, 2)
+		if !ok {
+			return "未知操作"
+		}
+		h.showRenewals(ctx, b, user, resp, p.ID, after, state)
 		return silentAnswer
 	case "edit":
 		h.startPeriodEdit(ctx, b, user, resp, p.ID)
 		return silentAnswer
 	case "delete_ask":
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除有效期「%s」？\n提醒规则、提醒任务与续期记录会一并删除，无法恢复。", periodName(p)),
-			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("period", "delete", id(p.ID))), button("取消", cb("period", "view", id(p.ID)))}))
+			markup([]models.InlineKeyboardButton{
+				button("确认永久删除", cb("period", "delete", id(p.ID), state.token())),
+				button("取消", cb("nav", "go", periodRef(p.ID, state).token())),
+			}))
 		return silentAnswer
 	case "delete":
+		state, ok := callbackState(v3, 1)
+		if !ok {
+			return "未知操作"
+		}
 		if err := h.svc.DeletePeriod(ctx, user.ID, p.ID, p.Cycle); err != nil {
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("有效期「%s」已永久删除。", periodName(p)), markup([]models.InlineKeyboardButton{button("返回服务", cb("service", "view", id(p.ServiceID), "0"))}))
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("有效期「%s」已永久删除。", periodName(p)),
+			markup(navRow(serviceRef(p.ServiceID, state))))
 		return silentAnswer
 	default:
 		return "未知操作"
@@ -319,9 +381,19 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 	if err != nil {
 		return h.replyState(ctx, b, resp, objectStateMessage(err))
 	}
+	after := int64(0)
+	if len(v3.args) > 1 {
+		if after, ok = callbackID(v3.args, 1); !ok {
+			return "未知操作"
+		}
+	}
+	state, ok := callbackState(v3, 2)
+	if !ok {
+		return "未知操作"
+	}
 	switch v3.action {
 	case "view":
-		h.showRuleDetail(ctx, b, user, resp, r.ID)
+		h.showRuleDetail(ctx, b, user, resp, r.ID, after, state)
 		return silentAnswer
 	case "edit":
 		h.startRuleEdit(ctx, b, user, resp, r.ID)
@@ -337,7 +409,10 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 			verb = "启用"
 		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("%s这条规则？\n提前 %d 天 · %s\n%s", verb, r.DaysBefore, r.ReminderTime, ruleToggleEffect(desired)),
-			markup([]models.InlineKeyboardButton{button("确认"+verb, cb("rule", v3.action[:len(v3.action)-4], id(r.ID))), button("取消", cb("rule", "view", id(r.ID)))}))
+			markup([]models.InlineKeyboardButton{
+				button("确认"+verb, cb("rule", v3.action[:len(v3.action)-4], id(r.ID), id(after), state.token())),
+				button("取消", cb("nav", "go", ruleRef(r.ID, after, state).token())),
+			}))
 		return silentAnswer
 	case "enable", "disable":
 		enabled := v3.action == "enable"
@@ -349,17 +424,21 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 				return h.replyState(ctx, b, resp, objectStateMessage(err))
 			}
 		}
-		h.showRuleDetail(ctx, b, user, resp, r.ID)
+		h.showRuleDetail(ctx, b, user, resp, r.ID, after, state)
 		return silentAnswer
 	case "delete_ask":
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("永久删除规则（提前 %d 天 %s）？\n任务记录会一并删除，无法恢复。", r.DaysBefore, r.ReminderTime),
-			markup([]models.InlineKeyboardButton{button("确认永久删除", cb("rule", "delete", id(r.ID))), button("取消", cb("rule", "view", id(r.ID)))}))
+			markup([]models.InlineKeyboardButton{
+				button("确认永久删除", cb("rule", "delete", id(r.ID), id(after), state.token())),
+				button("取消", cb("nav", "go", ruleRef(r.ID, after, state).token())),
+			}))
 		return silentAnswer
 	case "delete":
 		if err := h.svc.DeleteRule(ctx, user.ID, r.ID, r.Revision); err != nil {
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, "提醒规则已永久删除。", markup([]models.InlineKeyboardButton{button("返回规则列表", cb("period", "rules", id(r.PeriodID), "0"))}))
+		h.sendMarkup(ctx, b, resp, "提醒规则已永久删除。",
+			markup(navRow(rulesRef(r.PeriodID, after, state))))
 		return silentAnswer
 	default:
 		return "未知操作"
@@ -392,6 +471,11 @@ func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service
 	if err != nil {
 		return h.replyState(ctx, b, resp, objectStateMessage(err))
 	}
+	code, after, ok := jobListContext(v3)
+	if !ok {
+		return "未知操作"
+	}
+	back := navRow(jobsPage(code, after))
 	switch v3.action {
 	case "cancel_ask":
 		if job.Status == "sent" {
@@ -401,7 +485,7 @@ func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service
 			return "任务已取消"
 		}
 		h.sendMarkup(ctx, b, resp, "取消该提醒任务？\n发送中的提醒可能仍会送达。",
-			markup([]models.InlineKeyboardButton{button("确认取消", cb("job", "cancel", id(job.ID))), button("返回提醒列表", cb("job", "list", "1", "0"))}))
+			markup([]models.InlineKeyboardButton{button("确认取消", cb("job", "cancel", id(job.ID), code, id(after)))}, back))
 		return silentAnswer
 	case "cancel":
 		if err := h.svc.CancelJob(ctx, user.ID, job.ID); err != nil {
@@ -410,20 +494,45 @@ func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service
 			}
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, "任务已取消。", markup([]models.InlineKeyboardButton{button("返回提醒列表", cb("job", "list", "1", "0"))}))
+		h.sendMarkup(ctx, b, resp, "任务已取消。", markup(back))
 		return silentAnswer
 	default:
 		return "未知操作"
 	}
 }
 
+// jobListContext reads the filter and cursor a task card carries so its buttons
+// return to the list the user was reading.
+func jobListContext(v3 callbackV3) (string, int64, bool) {
+	if len(v3.args) == 1 {
+		return "1", 0, true
+	}
+	if len(v3.args) != 3 {
+		return "", 0, false
+	}
+	if _, ok := jobFilterFromCode(v3.args[1]); !ok {
+		return "", 0, false
+	}
+	after, ok := callbackID(v3.args, 2)
+	if !ok {
+		return "", 0, false
+	}
+	return v3.args[1], after, true
+}
+
+// callbackState reads the list context an action carries in one argument;
+// pages without a list behind them fall back to the default list.
+func callbackState(v3 callbackV3, index int) (listState, bool) {
+	if len(v3.args) <= index {
+		return defaultListState(), true
+	}
+	return parseListState(v3.args[index])
+}
+
 func (h *Handler) settingsCallback(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, v3 callbackV3) string {
 	switch v3.action {
 	case "timezone":
 		h.startTimezone(ctx, b, user, resp)
-		return silentAnswer
-	case "help":
-		h.helpMessage(ctx, b, user, resp)
 		return silentAnswer
 	case "view":
 	default:
@@ -447,7 +556,7 @@ func (h *Handler) notifyCallback(ctx context.Context, b *telegram.Bot, user serv
 	}
 	switch v3.action {
 	case "view":
-		h.showPeriodDetail(ctx, b, user, resp, p.ID)
+		h.showPeriodDetail(ctx, b, user, resp, p.ID, defaultListState())
 		return silentAnswer
 	case "renew":
 		h.startRenewWizard(ctx, b, user, resp, p.ID)
