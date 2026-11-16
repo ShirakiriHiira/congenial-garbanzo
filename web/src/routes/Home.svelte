@@ -29,6 +29,10 @@
   } as const;
 
   const displayUser = parseDisplayUser(getInitData());
+  if (import.meta.env.VITE_DEBUG_USER === 'true') {
+    console.log("DEBUG: Raw initData:", getInitData());
+    console.log("DEBUG: Parsed DisplayUser:", displayUser);
+  }
   let collection = $state<ServiceOverviewResponse | null>(null);
   let categories = $state<Category[]>([]);
   let categoriesError = $state('');
