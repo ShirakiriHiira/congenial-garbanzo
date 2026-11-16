@@ -77,6 +77,12 @@ func (w *wizard) persist(ctx context.Context, step string) bool {
 }
 
 func (w *wizard) reply(ctx context.Context, text string, kbRows ...[]models.InlineKeyboardButton) {
+	if w.dr.MessageID > 0 {
+		_, _ = w.b.EditMessageReplyMarkup(ctx, &telegram.EditMessageReplyMarkupParams{
+			ChatID:    w.resp.chatID,
+			MessageID: int(w.dr.MessageID),
+		})
+	}
 	w.h.sendMarkup(ctx, w.b, w.resp, text, markup(kbRows...))
 }
 
