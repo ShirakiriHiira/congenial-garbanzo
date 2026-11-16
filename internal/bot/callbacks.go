@@ -570,7 +570,7 @@ func (h *Handler) notifyCallback(ctx context.Context, b *telegram.Bot, user serv
 // message so an edit replaces the stale keyboard; the chat already shows the
 // reason, so the callback answer stays silent.
 func (h *Handler) replyState(ctx context.Context, b *telegram.Bot, resp *responder, message string) string {
-	h.send(ctx, b, resp, message)
+	h.sendMarkup(ctx, b, resp, message, markup(navRow(homePage())))
 	return silentAnswer
 }
 
