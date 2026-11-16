@@ -350,10 +350,17 @@ func navRows(canBack, canSkip bool) [][]models.InlineKeyboardButton {
 	return [][]models.InlineKeyboardButton{row}
 }
 
-func optionalNav(canBack bool) [][]models.InlineKeyboardButton {
-	return [][]models.InlineKeyboardButton{
-		[]models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("跳过", cb("dialog", "skip")), button("跳过剩余", cb("dialog", "skip_rest")), button("取消", cb("dialog", "cancel"))},
+func optionalNav(canBack, canSkipRest bool) [][]models.InlineKeyboardButton {
+	row := []models.InlineKeyboardButton{}
+	if canBack {
+		row = append(row, button("上一步", cb("dialog", "back")))
 	}
+	row = append(row, button("跳过", cb("dialog", "skip")))
+	if canSkipRest {
+		row = append(row, button("跳过剩余", cb("dialog", "skip_rest")))
+	}
+	row = append(row, button("取消", cb("dialog", "cancel")))
+	return [][]models.InlineKeyboardButton{row}
 }
 
 func (w *wizard) clearValue(ctx context.Context) {
