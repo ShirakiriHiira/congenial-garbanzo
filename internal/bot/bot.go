@@ -208,14 +208,14 @@ func (h *Handler) handleDialogInput(ctx context.Context, b *telegram.Bot, user s
 func (h *Handler) cancelDialog(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, emptyText string) {
 	removed, err := h.svc.CancelDialog(ctx, user.ID)
 	if err != nil {
-		h.send(ctx, b, resp, serviceMessage(err))
+		h.sendMarkup(ctx, b, resp, serviceMessage(err), markup(navRow(homePage())))
 		return
 	}
 	if emptyText != "" && !removed {
-		h.send(ctx, b, resp, emptyText)
+		h.sendMarkup(ctx, b, resp, emptyText, markup(navRow(homePage())))
 		return
 	}
-	h.send(ctx, b, resp, cancelDialogText)
+	h.sendMarkup(ctx, b, resp, cancelDialogText, markup(navRow(homePage())))
 }
 
 // splitCommand parses "/name@bot rest". It returns the lowercase command name,
