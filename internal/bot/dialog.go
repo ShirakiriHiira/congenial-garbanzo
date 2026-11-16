@@ -87,7 +87,7 @@ func (w *wizard) failure(ctx context.Context, text string, canBack, canSkip bool
 func (w *wizard) cancel(ctx context.Context) {
 	// A cancel button only exists while a flow is running, so an absent flow
 	// is still reported as cancelled.
-	w.h.cancelDialog(ctx, w.b, w.user, w.resp, "")
+	w.h.cancelDialog(ctx, w.b, w.user, w.resp, "已取消当前流程。")
 }
 
 func (w *wizard) skip(ctx context.Context) {
@@ -220,7 +220,7 @@ func (w *wizard) render(ctx context.Context) {
 
 func (w *wizard) abort(ctx context.Context, reason string) {
 	_, _ = w.h.svc.CancelDialog(ctx, w.user.ID)
-	w.h.send(ctx, w.b, w.resp, reason+"，请重新打开。")
+	w.h.sendMarkup(ctx, w.b, w.resp, reason+"，请重新打开。", markup(navRow(homePage())))
 }
 
 func (w *wizard) text(ctx context.Context, text string) {
