@@ -15,9 +15,11 @@ import (
 // user supplied; an empty string is a deliberate clear for edit flows. The
 // dict is bounded by service.validDialogDraft and is never logged.
 type draft struct {
-	Values  map[string]string `json:"v,omitempty"`
-	Pending string            `json:"pending,omitempty"`
-	Resume  string            `json:"resume,omitempty"`
+	Values    map[string]string `json:"v,omitempty"`
+	Pending   string            `json:"pending,omitempty"`
+	Resume    string            `json:"resume,omitempty"`
+	History   []string          `json:"history,omitempty"`
+	MessageID int64             `json:"message_id,omitempty"`
 }
 
 func parseDraft(raw string) draft {
@@ -64,6 +66,16 @@ func (h *Handler) wizard(ctx context.Context, b *telegram.Bot, user service.User
 // persist writes the draft (and optionally a new step) without extending the
 // dialog TTL.
 func (w *wizard) persist(ctx context.Context, step string) bool {
+	return w.persistStep(ctx, step, true)
+}
+
+func (w *wizard) persistStep(ctx context.Context, step string, record bool) bool {
+	if record && step != "" && step != w.d.Step && w.d.Step != "" {
+		w.dr.History = append(w.dr.History, w.d.Step)
+		if len(w.dr.History) > 32 {
+			w.dr.History = w.dr.History[len(w.dr.History)-32:]
+		}
+	}
 	if step != "" {
 		w.d.Step = step
 	}
@@ -77,13 +89,31 @@ func (w *wizard) persist(ctx context.Context, step string) bool {
 }
 
 func (w *wizard) reply(ctx context.Context, text string, kbRows ...[]models.InlineKeyboardButton) {
+	w.archive(ctx)
+	msg := w.h.sendMarkupMessage(ctx, w.b, w.resp, text, markup(kbRows...))
+	if msg != nil && msg.ID > 0 {
+		w.dr.MessageID = int64(msg.ID)
+		_ = w.persistStep(ctx, "", false)
+	}
+}
+
+func (w *wizard) archive(ctx context.Context) {
 	if w.dr.MessageID > 0 {
 		_, _ = w.b.EditMessageReplyMarkup(ctx, &telegram.EditMessageReplyMarkupParams{
 			ChatID:    w.resp.chatID,
 			MessageID: int(w.dr.MessageID),
 		})
 	}
-	w.h.sendMarkup(ctx, w.b, w.resp, text, markup(kbRows...))
+}
+
+func (w *wizard) send(ctx context.Context, text string) {
+	w.archive(ctx)
+	w.h.send(ctx, w.b, w.resp, text)
+}
+
+func (w *wizard) sendMarkup(ctx context.Context, text string, keyboard *models.InlineKeyboardMarkup) {
+	w.archive(ctx)
+	w.h.sendMarkup(ctx, w.b, w.resp, text, keyboard)
 }
 
 func (w *wizard) failure(ctx context.Context, text string, canBack, canSkip bool) {
@@ -94,6 +124,7 @@ func (w *wizard) cancel(ctx context.Context) {
 	// A cancel button only exists while a flow is running, so an absent flow
 	// is still reported as cancelled.
 	_, _ = w.h.svc.CancelDialog(ctx, w.user.ID)
+	w.archive(ctx)
 	w.h.sendMarkup(ctx, w.b, w.resp, "已取消当前流程。", markup(navRow(homePage())))
 }
 
@@ -134,19 +165,19 @@ func (w *wizard) stepError(ctx context.Context, format string, canBack, canSkip 
 const replaceStep = "confirm_replace"
 
 func (w *wizard) back(ctx context.Context) {
-	if w.d.Action == service.DialogServiceAdd && w.d.Step == "add_category_name" {
-		if !w.persist(ctx, "add_category") {
-			return
-		}
-		w.render(ctx)
-		return
+	prev := ""
+	if n := len(w.dr.History); n > 0 {
+		prev = w.dr.History[n-1]
+		w.dr.History = w.dr.History[:n-1]
 	}
-	prev := previousStep(w.d.Action, w.dr, w.d.Step)
+	if prev == "" {
+		prev = previousStep(w.d.Action, w.dr, w.d.Step)
+	}
 	if prev == "" {
 		w.failure(ctx, "已经是第一步。", false, false)
 		return
 	}
-	if !w.persist(ctx, prev) {
+	if !w.persistStep(ctx, prev, false) {
 		return
 	}
 	w.render(ctx)
@@ -227,6 +258,7 @@ func (w *wizard) render(ctx context.Context) {
 
 func (w *wizard) abort(ctx context.Context, reason string) {
 	_, _ = w.h.svc.CancelDialog(ctx, w.user.ID)
+	w.archive(ctx)
 	w.h.sendMarkup(ctx, w.b, w.resp, reason+"，请重新打开。", markup(navRow(homePage())))
 }
 

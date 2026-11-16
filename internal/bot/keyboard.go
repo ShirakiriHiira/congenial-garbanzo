@@ -105,15 +105,21 @@ func (h *Handler) sendMarkup(ctx context.Context, b *telegram.Bot, resp *respond
 	h.sendMarkupMode(ctx, b, resp, text, keyboard, "", false)
 }
 
+// sendMarkupMessage is the message-aware form used by wizards to remember
+// which prompt should have its keyboard archived on the next step.
+func (h *Handler) sendMarkupMessage(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup) *models.Message {
+	return h.sendMarkupMode(ctx, b, resp, text, keyboard, "", false)
+}
+
 // sendHTML sends Telegram HTML with web page previews disabled so link cards
 // cannot break the compact layout.
 func (h *Handler) sendHTML(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup) {
 	h.sendMarkupMode(ctx, b, resp, text, keyboard, models.ParseModeHTML, true)
 }
 
-func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup, parseMode models.ParseMode, disablePreview bool) {
+func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *responder, text string, keyboard *models.InlineKeyboardMarkup, parseMode models.ParseMode, disablePreview bool) *models.Message {
 	if text == "" && keyboard == nil {
-		return
+		return nil
 	}
 	var parts []string
 	if parseMode == models.ParseModeHTML {
@@ -142,6 +148,7 @@ func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *res
 		if _, err := b.EditMessageText(ctx, params); err == nil || editNotModified(err) {
 			// If we had more chunks, the original message was edited to the first
 			// one. Send the rest as new messages.
+			var last *models.Message
 			for i := 1; i < len(parts); i++ {
 				p := &telegram.SendMessageParams{ChatID: chatID, Text: parts[i], ParseMode: parseMode}
 				if disablePreview {
@@ -151,12 +158,16 @@ func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *res
 				if i == len(parts)-1 && keyboard != nil {
 					p.ReplyMarkup = *keyboard
 				}
-				_, _ = b.SendMessage(ctx, p)
+				last, _ = b.SendMessage(ctx, p)
 			}
-			return
+			if last != nil {
+				return last
+			}
+			return &models.Message{ID: editID}
 		}
 		h.logger.Warn("telegram edit failed", "code", "telegram_error")
 	}
+	var last *models.Message
 	for i, chunk := range parts {
 
 		params := &telegram.SendMessageParams{ChatID: chatID, Text: chunk, ParseMode: parseMode}
@@ -170,11 +181,14 @@ func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *res
 		if chunk == "" {
 			params.Text = "请选择："
 		}
-		if _, err := b.SendMessage(ctx, params); err != nil {
+		msg, err := b.SendMessage(ctx, params)
+		if err != nil {
 			h.logger.Warn("telegram reply failed", "code", "telegram_error")
-			return
+			return last
 		}
+		last = msg
 	}
+	return last
 }
 
 // htmlChunks splits rendered HTML at line boundaries so tags stay balanced.

@@ -201,10 +201,10 @@ func (w *wizard) confirmRenew(ctx context.Context) {
 		if service.Code(err) == "conflict" {
 			hint = "续期失败：数据已更新，本次未写入。\n草稿已保留。"
 		}
-		w.h.send(ctx, w.b, w.resp, hint)
+		w.send(ctx, hint)
 		return
 	}
-	w.h.sendMarkup(ctx, w.b, w.resp, renewalText(ctx, w.h.svc, w.user, renewal, "续期完成"), markup(
+	w.sendMarkup(ctx, renewalText(ctx, w.h.svc, w.user, renewal, "续期完成"), markup(
 		[]models.InlineKeyboardButton{button("查看续期历史", cb("period", "renewals", id(renewal.PeriodID), "0", defaultListState().token())), button("再次续期", cb("period", "renew", id(renewal.PeriodID)))},
 		navRow(periodRef(renewal.PeriodID, defaultListState())),
 	))

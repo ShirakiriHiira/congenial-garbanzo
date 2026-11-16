@@ -49,19 +49,19 @@ func (w *wizard) renderServiceAdd(ctx context.Context) {
 			button("eSIM", choiceCallback("card_type", "esim")),
 		}, []models.InlineKeyboardButton{button("上一步", cb("dialog", "back")), button("取消", cb("dialog", "cancel"))})
 	case "add_provider":
-		w.reply(ctx, "可选：服务商/运营商。", optionalNav(true)...)
+		w.reply(ctx, "可选：服务商/运营商。", optionalNav(true, true)...)
 	case "add_identifier":
-		w.reply(ctx, "可选：公开标识（主机名、域名或账号标识）。", optionalNav(true)...)
+		w.reply(ctx, "可选：公开标识（主机名、域名或账号标识）。", optionalNav(true, true)...)
 	case "add_management_url":
-		w.reply(ctx, "可选：管理链接（http(s) 绝对地址，不能带账号密码）。", optionalNav(true)...)
+		w.reply(ctx, "可选：管理链接（http(s) 绝对地址，不能带账号密码）。", optionalNav(true, true)...)
 	case "add_phone":
-		w.reply(ctx, "可选：号码。", optionalNav(true)...)
+		w.reply(ctx, "可选：号码。", optionalNav(true, true)...)
 	case "add_region":
-		w.reply(ctx, "可选：国家或地区。", optionalNav(true)...)
+		w.reply(ctx, "可选：国家或地区。", optionalNav(true, true)...)
 	case "add_iccid":
-		w.reply(ctx, "可选：ICCID。", optionalNav(true)...)
+		w.reply(ctx, "可选：ICCID。", optionalNav(true, true)...)
 	case "add_notes":
-		w.reply(ctx, "可选：备注（最多 4000 字）。", optionalNav(true)...)
+		w.reply(ctx, "可选：备注（最多 4000 字）。", optionalNav(true, true)...)
 	case "add_preview":
 		w.renderServiceAddPreview(ctx)
 	default:
@@ -177,7 +177,7 @@ func (w *wizard) confirmServiceAdd(ctx context.Context) {
 	}
 	item, err := w.h.svc.CreateService(ctx, w.user.ID, in)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "创建失败："+serviceMessage(err)+"\n草稿已保留。")
+		w.send(ctx, "创建失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
@@ -505,7 +505,7 @@ func (w *wizard) confirmServiceEdit(ctx context.Context) {
 	}
 	item, err := w.h.svc.UpdateService(ctx, w.user.ID, *w.d.ServiceID, patch)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "修改失败："+serviceMessage(err)+"\n草稿已保留。")
+		w.send(ctx, "修改失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
@@ -547,7 +547,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	}
 	switch w.d.Step {
 	case "period_name":
-		w.reply(ctx, fmt.Sprintf("添加有效期到「%s」· 第 1 步，有效期名称（可选）。", item.Name), optionalNav(true)...)
+		w.reply(ctx, fmt.Sprintf("添加有效期到「%s」· 第 1 步，有效期名称（可选）。", item.Name), optionalNav(true, false)...)
 	case "period_precision":
 		w.reply(ctx, "第 2 步，截止方式。\n仅日期表示当日结束前有效；精确时间保持绝对时刻。\n不知道截止？可选按开始时间加有效天数推算。", []models.InlineKeyboardButton{
 			button("仅日期", choiceCallback("precision", "date")),
@@ -562,7 +562,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 		if w.dr.Values["expiry_mode"] == "duration" {
 			w.reply(ctx, "第 3 步，开始时间（必填，按你的时区，有效天数从这一天起算）。\n示例：2027-01-01 00:00", navRows(true, false)...)
 		} else {
-			w.reply(ctx, "第 4 步，开始时间（可选，按你的时区，必须早于截止）。\n示例：2027-01-01 00:00", optionalNav(true)...)
+			w.reply(ctx, "第 4 步，开始时间（可选，按你的时区，必须早于截止）。\n示例：2027-01-01 00:00", optionalNav(true, false)...)
 		}
 	case "period_days":
 		w.reply(ctx, "第 4 步，有效天数（正整数，例如 180）。\n截止将按开始时间与你所在时区的日历日推算。", navRows(true, false)...)
@@ -575,7 +575,7 @@ func (w *wizard) renderPeriodAdd(ctx context.Context) {
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 quarter。单位可为 day/week/month/quarter/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
+		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true, false)...)
 	case "period_preview":
 		w.reply(ctx, periodAddPreviewText(item, w.dr, w.user.Timezone), []models.InlineKeyboardButton{button("确认创建", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
@@ -811,14 +811,14 @@ func (w *wizard) confirmPeriodAdd(ctx context.Context) {
 	in.Terms = termsFromDraft(w.dr)
 	p, err := w.h.svc.CreatePeriod(ctx, w.user.ID, *w.d.ServiceID, in)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "创建有效期失败："+serviceMessage(err)+"\n草稿已保留。")
+		w.send(ctx, "创建有效期失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
 	rules, _ := w.h.svc.ListRules(ctx, w.user.ID, p.ID, 0, 1)
-	w.h.sendMarkup(ctx, w.b, w.resp, periodDetail(p, len(rules.Data)), markup(
+	w.sendMarkup(ctx, periodDetail(p, len(rules.Data)), markup(
 		[]models.InlineKeyboardButton{button("设置提醒", cb("rule", "add", id(p.ID))), button("立即续期", cb("period", "renew", id(p.ID)))},
 		[]models.InlineKeyboardButton{button("查看有效期", cb("period", "view", id(p.ID)))},
 		navRow(serviceRef(p.ServiceID, defaultListState())),
@@ -902,7 +902,7 @@ func (w *wizard) renderPeriodEdit(ctx context.Context) {
 	case "terms_interval":
 		w.reply(ctx, "周期长度，例如：1 month、2 quarter。单位可为 day/week/month/quarter/year。", navRows(true, false)...)
 	case "terms_amount":
-		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true)...)
+		w.reply(ctx, "费用（可选）：发送“金额 币种”，例如 10.30 CNY。", optionalNav(true, false)...)
 	case "edit_preview":
 		w.reply(ctx, periodEditPreviewText(p, w.dr), []models.InlineKeyboardButton{button("确认保存", cb("dialog", "confirm")), button("返回修改", cb("dialog", "back"))}, []models.InlineKeyboardButton{button("取消", cb("dialog", "cancel"))})
 	default:
@@ -1044,7 +1044,7 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		return
 	}
 	if w.d.ExpectedCycle == nil || p.Cycle != *w.d.ExpectedCycle {
-		w.h.send(ctx, w.b, w.resp, "有效期已被其他操作更新，本次未写入。\n草稿已保留。")
+		w.send(ctx, "有效期已被其他操作更新，本次未写入。\n草稿已保留。")
 		return
 	}
 	field := w.dr.Values["field"]
@@ -1080,14 +1080,14 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		if service.Code(err) == "conflict" {
 			hint = "保存失败：有效期已被其他操作更新，本次未写入。\n草稿已保留。"
 		}
-		w.h.send(ctx, w.b, w.resp, hint)
+		w.send(ctx, hint)
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
 	rules, _ := w.h.svc.ListRules(ctx, w.user.ID, updated.ID, 0, 1)
-	w.h.sendMarkup(ctx, w.b, w.resp, periodDetail(updated, len(rules.Data)), w.h.periodKeyboard(updated, defaultListState()))
+	w.sendMarkup(ctx, periodDetail(updated, len(rules.Data)), w.h.periodKeyboard(updated, defaultListState()))
 }
 
 // ---- reminder rules -------------------------------------------------------
@@ -1239,7 +1239,7 @@ func (w *wizard) confirmRule(ctx context.Context) {
 	if w.d.Action == service.DialogRuleAdd {
 		rule, err := w.h.svc.CreateRule(ctx, w.user.ID, p.ID, service.RuleInput{DaysBefore: days, ReminderTime: w.dr.Values["reminder_time"], Enabled: &enabled})
 		if err != nil {
-			w.h.send(ctx, w.b, w.resp, "创建规则失败："+serviceMessage(err)+"\n草稿已保留。")
+			w.send(ctx, "创建规则失败："+serviceMessage(err)+"\n草稿已保留。")
 			return
 		}
 		w.finishRule(ctx, rule, "提醒规则已创建。")
@@ -1256,7 +1256,7 @@ func (w *wizard) confirmRule(ctx context.Context) {
 		if service.Code(err) == "conflict" {
 			hint = "保存失败：规则已被修改，本次未写入。\n草稿已保留。"
 		}
-		w.h.send(ctx, w.b, w.resp, hint)
+		w.send(ctx, hint)
 		return
 	}
 	w.finishRule(ctx, rule, "提醒规则已更新。")
@@ -1271,7 +1271,7 @@ func (w *wizard) finishRule(ctx context.Context, rule service.Rule, label string
 		[]models.InlineKeyboardButton{button("查看规则", cb("rule", "view", id(rule.ID), "0", defaultListState().token())), button("编辑规则", cb("rule", "edit", id(rule.ID)))},
 		navRow(rulesRef(rule.PeriodID, 0, defaultListState())),
 	}
-	w.h.sendMarkup(ctx, w.b, w.resp, text, markup(rows...))
+	w.sendMarkup(ctx, text, markup(rows...))
 }
 
 func (h *Handler) startTimezone(ctx context.Context, b *telegram.Bot, user service.User, resp *responder) {
@@ -1340,12 +1340,12 @@ func (w *wizard) confirmTimezone(ctx context.Context) {
 	zone := w.dr.Values["tz"]
 	user, err := w.h.svc.SetTimezone(ctx, w.user.ID, zone)
 	if err != nil {
-		w.h.send(ctx, w.b, w.resp, "修改时区失败："+serviceMessage(err)+"\n草稿已保留。")
+		w.send(ctx, "修改时区失败："+serviceMessage(err)+"\n草稿已保留。")
 		return
 	}
 	if _, err := w.h.svc.CancelDialog(ctx, w.user.ID); err != nil {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
-	w.h.sendMarkup(ctx, w.b, w.resp, "时区已更新为 "+user.Timezone+"。\n仅日期截止已按新时区重算，精确时间的绝对时刻不变。",
+	w.sendMarkup(ctx, "时区已更新为 "+user.Timezone+"。\n仅日期截止已按新时区重算，精确时间的绝对时刻不变。",
 		markup(navRow(settingsPage())))
 }
