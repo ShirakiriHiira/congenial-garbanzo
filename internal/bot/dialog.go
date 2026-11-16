@@ -100,8 +100,9 @@ func (w *wizard) reply(ctx context.Context, text string, kbRows ...[]models.Inli
 func (w *wizard) archive(ctx context.Context) {
 	if w.dr.MessageID > 0 {
 		_, _ = w.b.EditMessageReplyMarkup(ctx, &telegram.EditMessageReplyMarkupParams{
-			ChatID:    w.resp.chatID,
-			MessageID: int(w.dr.MessageID),
+			ChatID:      w.resp.chatID,
+			MessageID:   int(w.dr.MessageID),
+			ReplyMarkup: noKeyboard,
 		})
 	}
 }
@@ -116,6 +117,10 @@ func (w *wizard) sendMarkup(ctx context.Context, text string, keyboard *models.I
 	w.h.sendMarkup(ctx, w.b, w.resp, text, keyboard)
 }
 
+func (w *wizard) navRow(fallback ref) []models.InlineKeyboardButton {
+	return w.h.navButtons(w.resp.chatID, fallback)
+}
+
 func (w *wizard) failure(ctx context.Context, text string, canBack, canSkip bool) {
 	w.reply(ctx, text, navRows(canBack, canSkip)...)
 }
@@ -125,7 +130,7 @@ func (w *wizard) cancel(ctx context.Context) {
 	// is still reported as cancelled.
 	_, _ = w.h.svc.CancelDialog(ctx, w.user.ID)
 	w.archive(ctx)
-	w.h.sendMarkup(ctx, w.b, w.resp, "已取消当前流程。", markup(navRow(homePage())))
+	w.h.sendMarkup(ctx, w.b, w.resp, "已取消当前流程。", markup(w.navRow(homePage())))
 }
 
 func (w *wizard) skip(ctx context.Context) {
@@ -259,7 +264,7 @@ func (w *wizard) render(ctx context.Context) {
 func (w *wizard) abort(ctx context.Context, reason string) {
 	_, _ = w.h.svc.CancelDialog(ctx, w.user.ID)
 	w.archive(ctx)
-	w.h.sendMarkup(ctx, w.b, w.resp, reason+"，请重新打开。", markup(navRow(homePage())))
+	w.h.sendMarkup(ctx, w.b, w.resp, reason+"，请重新打开。", markup(w.navRow(homePage())))
 }
 
 func (w *wizard) text(ctx context.Context, text string) {

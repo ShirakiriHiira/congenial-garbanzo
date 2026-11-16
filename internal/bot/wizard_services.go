@@ -821,7 +821,7 @@ func (w *wizard) confirmPeriodAdd(ctx context.Context) {
 	w.sendMarkup(ctx, periodDetail(p, len(rules.Data)), markup(
 		[]models.InlineKeyboardButton{button("设置提醒", cb("rule", "add", id(p.ID))), button("立即续期", cb("period", "renew", id(p.ID)))},
 		[]models.InlineKeyboardButton{button("查看有效期", cb("period", "view", id(p.ID)))},
-		navRow(serviceRef(p.ServiceID, defaultListState())),
+		w.navRow(serviceRef(p.ServiceID, defaultListState())),
 	))
 }
 
@@ -1087,7 +1087,7 @@ func (w *wizard) confirmPeriodEdit(ctx context.Context) {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
 	rules, _ := w.h.svc.ListRules(ctx, w.user.ID, updated.ID, 0, 1)
-	w.sendMarkup(ctx, periodDetail(updated, len(rules.Data)), w.h.periodKeyboard(updated, defaultListState()))
+	w.sendMarkup(ctx, periodDetail(updated, len(rules.Data)), w.h.periodKeyboard(updated, defaultListState(), w.resp.chatID))
 }
 
 // ---- reminder rules -------------------------------------------------------
@@ -1269,7 +1269,7 @@ func (w *wizard) finishRule(ctx context.Context, rule service.Rule, label string
 	text := label + "\n" + ruleLinePlain(rule)
 	rows := [][]models.InlineKeyboardButton{
 		[]models.InlineKeyboardButton{button("查看规则", cb("rule", "view", id(rule.ID), "0", defaultListState().token())), button("编辑规则", cb("rule", "edit", id(rule.ID)))},
-		navRow(rulesRef(rule.PeriodID, 0, defaultListState())),
+		w.navRow(rulesRef(rule.PeriodID, 0, defaultListState())),
 	}
 	w.sendMarkup(ctx, text, markup(rows...))
 }
@@ -1347,5 +1347,5 @@ func (w *wizard) confirmTimezone(ctx context.Context) {
 		w.h.logger.Warn("dialog cleanup failed", "code", "dialog_error")
 	}
 	w.sendMarkup(ctx, "时区已更新为 "+user.Timezone+"。\n仅日期截止已按新时区重算，精确时间的绝对时刻不变。",
-		markup(navRow(settingsPage())))
+		markup(w.navRow(settingsPage())))
 }

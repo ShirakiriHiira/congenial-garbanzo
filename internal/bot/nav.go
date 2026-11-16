@@ -26,14 +26,22 @@ const (
 	refSettings = "g"
 	refJobs     = "j"
 	refServices = "s"
+	refCats     = "c"
 	refService  = "d"
 	refPeriod   = "p"
 	refRules    = "r"
 	refRule     = "u"
 )
 
+type navSession struct {
+	current ref
+	stack   []ref
+}
+
 // serviceList is the overview page a list state stands for.
 func serviceList(state listState) ref { return ref{kind: refServices, state: state} }
+
+func serviceCategories(state listState) ref { return ref{kind: refCats, state: state} }
 
 // homePage is the menu itself.
 func homePage() ref { return ref{kind: refHome} }
@@ -70,6 +78,8 @@ func (r ref) token() string {
 	switch r.kind {
 	case refHome, refSettings:
 		return r.kind
+	case refCats:
+		return r.kind + "." + r.state.token()
 	case refJobs:
 		return r.kind + "." + r.code + "." + base36(r.after)
 	case refServices:
@@ -89,6 +99,16 @@ func parseRef(token string) (ref, bool) {
 	switch r.kind {
 	case refHome, refSettings:
 		return r, len(args) == 0
+	case refCats:
+		if len(args) != 3 {
+			return ref{}, false
+		}
+		state, ok := parseListState(strings.Join(args, "."))
+		if !ok {
+			return ref{}, false
+		}
+		r.state = state
+		return r, true
 	case refJobs:
 		if len(args) != 2 {
 			return ref{}, false
@@ -154,9 +174,94 @@ func navRow(back ref) []models.InlineKeyboardButton {
 	return []models.InlineKeyboardButton{button("← 返回", cb("nav", "go", back.token())), button("主菜单", cb("nav", "home"))}
 }
 
+func (h *Handler) navSet(chatID int64, current ref) {
+	h.navMu.Lock()
+	defer h.navMu.Unlock()
+	if h.nav == nil {
+		h.nav = make(map[int64]navSession)
+	}
+	s := h.nav[chatID]
+	s.current = current
+	h.nav[chatID] = s
+}
+
+func (h *Handler) navReset(chatID int64, current ref) {
+	h.navMu.Lock()
+	defer h.navMu.Unlock()
+	if h.nav == nil {
+		h.nav = make(map[int64]navSession)
+	}
+	h.nav[chatID] = navSession{current: current}
+}
+
+func (h *Handler) navCurrent(chatID int64) (ref, bool) {
+	h.navMu.Lock()
+	defer h.navMu.Unlock()
+	s, ok := h.nav[chatID]
+	if !ok || s.current.kind == "" {
+		return ref{}, false
+	}
+	return s.current, true
+}
+
+func (h *Handler) navPush(chatID int64) {
+	h.navMu.Lock()
+	defer h.navMu.Unlock()
+	if h.nav == nil {
+		h.nav = make(map[int64]navSession)
+	}
+	s := h.nav[chatID]
+	if s.current.kind == "" {
+		return
+	}
+	if n := len(s.stack); n == 0 || s.stack[n-1].token() != s.current.token() {
+		s.stack = append(s.stack, s.current)
+		if len(s.stack) > 16 {
+			s.stack = s.stack[len(s.stack)-16:]
+		}
+	}
+	h.nav[chatID] = s
+}
+
+func (h *Handler) navPushFrom(chatID int64, fallback ref) {
+	if current, ok := h.navCurrent(chatID); !ok || current.kind == refHome {
+		h.navSet(chatID, fallback)
+	}
+	h.navPush(chatID)
+}
+
+func (h *Handler) navPop(chatID int64) (ref, bool) {
+	h.navMu.Lock()
+	defer h.navMu.Unlock()
+	s, ok := h.nav[chatID]
+	if !ok || len(s.stack) == 0 {
+		return ref{}, false
+	}
+	n := len(s.stack) - 1
+	target := s.stack[n]
+	s.stack = s.stack[:n]
+	s.current = target
+	h.nav[chatID] = s
+	return target, true
+}
+
+func (h *Handler) navButtons(chatID int64, fallback ref) []models.InlineKeyboardButton {
+	if current, ok := h.navCurrent(chatID); ok {
+		_ = current
+		h.navMu.Lock()
+		s := h.nav[chatID]
+		h.navMu.Unlock()
+		if len(s.stack) > 0 {
+			return navRow(s.stack[len(s.stack)-1])
+		}
+	}
+	return navRow(fallback)
+}
+
 func (h *Handler) navCallback(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, v3 callbackV3) string {
 	switch v3.action {
 	case "home":
+		h.navReset(resp.chatID, homePage())
 		h.helpMessage(ctx, b, user, resp)
 		return silentAnswer
 	case "go":
@@ -166,6 +271,17 @@ func (h *Handler) navCallback(ctx context.Context, b *telegram.Bot, user service
 		target, ok := parseRef(v3.args[0])
 		if !ok {
 			return "未知操作"
+		}
+		if current, exists := h.navCurrent(resp.chatID); exists {
+			h.navMu.Lock()
+			s := h.nav[resp.chatID]
+			matchesBack := len(s.stack) > 0 && s.stack[len(s.stack)-1].token() == target.token()
+			h.navMu.Unlock()
+			if matchesBack {
+				_, _ = h.navPop(resp.chatID)
+			} else if current.token() != target.token() {
+				h.navSet(resp.chatID, target)
+			}
 		}
 		h.showRef(ctx, b, user, resp, target)
 		return silentAnswer
@@ -186,6 +302,8 @@ func (h *Handler) showRef(ctx context.Context, b *telegram.Bot, user service.Use
 		h.showJobs(ctx, b, user, resp, filter, r.after)
 	case refServices:
 		h.showOverview(ctx, b, user.ID, resp, r.state.filter(), r.state.page)
+	case refCats:
+		h.showCategories(ctx, b, user.ID, resp, r.state)
 	case refService:
 		h.showServiceDetail(ctx, b, user, resp, r.id, r.state, 0)
 	case refPeriod:

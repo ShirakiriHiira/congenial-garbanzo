@@ -9,6 +9,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -28,6 +29,8 @@ type Handler struct {
 	username   atomic.Value // string; the bot's @name without the leading @
 	stopped    atomic.Bool
 	registered atomic.Bool
+	navMu      sync.Mutex
+	nav        map[int64]navSession
 }
 
 // New builds the handler. username may be empty; Register discovers it via getMe
@@ -37,7 +40,7 @@ func New(svc *service.Service, username string, logger *slog.Logger, miniAppURL 
 	if logger == nil {
 		logger = slog.Default()
 	}
-	h := &Handler{svc: svc, logger: logger, miniAppURL: miniAppURL}
+	h := &Handler{svc: svc, logger: logger, miniAppURL: miniAppURL, nav: make(map[int64]navSession)}
 	h.SetUsername(username)
 	return h
 }

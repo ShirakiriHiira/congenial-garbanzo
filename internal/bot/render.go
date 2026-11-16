@@ -124,7 +124,8 @@ func (h *Handler) showOverview(ctx context.Context, b *telegram.Bot, uid int64, 
 		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendHTML(ctx, b, resp, text, h.overviewKeyboard(filter, overview))
+	h.navSet(resp.chatID, serviceList(listStateFor(filter, int64(overview.Page))))
+	h.sendHTML(ctx, b, resp, text, h.overviewKeyboard(filter, overview, resp.chatID))
 }
 
 func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.ServiceFilter, page int64) (string, service.ServiceOverview, error) {
@@ -177,7 +178,7 @@ func (h *Handler) overviewPage(ctx context.Context, uid int64, filter service.Se
 	return b.String(), overview, nil
 }
 
-func (h *Handler) overviewKeyboard(filter service.ServiceFilter, overview service.ServiceOverview) *models.InlineKeyboardMarkup {
+func (h *Handler) overviewKeyboard(filter service.ServiceFilter, overview service.ServiceOverview, chatID int64) *models.InlineKeyboardMarkup {
 	state := listStateFor(filter, int64(overview.Page))
 	category := state.category
 	filterButton := func(code, label string) models.InlineKeyboardButton {
@@ -213,7 +214,7 @@ func (h *Handler) overviewKeyboard(filter service.ServiceFilter, overview servic
 		button("按类别", cb("service", "cats", state.token())),
 		button("设置", cb("settings", "view")),
 	})
-	rows = append(rows, navRow(homePage()))
+	rows = append(rows, h.navButtons(chatID, homePage()))
 	return markup(rows...)
 }
 
@@ -239,7 +240,9 @@ func (h *Handler) showCategories(ctx context.Context, b *telegram.Bot, uid int64
 	if len(row) > 0 {
 		rows = append(rows, row)
 	}
-	rows = append(rows, navRow(serviceList(state)))
+	rows = append(rows, h.navButtons(resp.chatID, serviceList(state)))
+	h.navSet(resp.chatID, serviceCategories(state))
+	rows[len(rows)-1] = h.navButtons(resp.chatID, serviceList(state))
 	h.sendMarkup(ctx, b, resp, "按类别筛选（当前状态："+statusLabel(status)+"）", markup(rows...))
 }
 
@@ -249,12 +252,13 @@ func (h *Handler) showServiceDetail(ctx context.Context, b *telegram.Bot, user s
 		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
+	h.navSet(resp.chatID, serviceRef(serviceID, state))
 	text, page, err := h.serviceDetailPage(ctx, user, item, after)
 	if err != nil {
 		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendHTML(ctx, b, resp, text, h.serviceKeyboard(item, &page, state))
+	h.sendHTML(ctx, b, resp, text, h.serviceKeyboard(item, &page, state, resp.chatID))
 }
 
 func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item service.ServiceItem, after int64) (string, service.Page[service.Period], error) {
@@ -330,7 +334,7 @@ func (h *Handler) serviceDetailPage(ctx context.Context, user service.User, item
 	return strings.TrimRight(b.String(), "\n"), page, nil
 }
 
-func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[service.Period], state listState) *models.InlineKeyboardMarkup {
+func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[service.Period], state listState, chatID int64) *models.InlineKeyboardMarkup {
 	rows := [][]models.InlineKeyboardButton{}
 	if page != nil {
 		singleDefault := len(page.Data) == 1 && strings.TrimSpace(page.Data[0].Name) == ""
@@ -360,7 +364,7 @@ func (h *Handler) serviceKeyboard(item service.ServiceItem, page *service.Page[s
 			button("删除服务", cb("service", "delete_ask", id(item.ID), state.token())),
 		})
 	}
-	rows = append(rows, navRow(serviceList(state)))
+	rows = append(rows, h.navButtons(chatID, serviceList(state)))
 	return markup(rows...)
 }
 
@@ -370,22 +374,23 @@ func (h *Handler) showPeriodDetail(ctx context.Context, b *telegram.Bot, user se
 		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
+	h.navSet(resp.chatID, periodRef(periodID, state))
 	rules, err := h.svc.ListRules(ctx, user.ID, p.ID, 0, 100)
 	if err != nil {
 		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
-	h.sendMarkup(ctx, b, resp, periodDetail(p, len(rules.Data)), h.periodKeyboard(p, state))
+	h.sendMarkup(ctx, b, resp, periodDetail(p, len(rules.Data)), h.periodKeyboard(p, state, resp.chatID))
 }
 
-func (h *Handler) periodKeyboard(p service.Period, state listState) *models.InlineKeyboardMarkup {
+func (h *Handler) periodKeyboard(p service.Period, state listState, chatID int64) *models.InlineKeyboardMarkup {
 	rows := [][]models.InlineKeyboardButton{
 		[]models.InlineKeyboardButton{button("续期", cb("period", "renew", id(p.ID))), button("提醒规则", cb("period", "rules", id(p.ID), "0", state.token()))},
 		[]models.InlineKeyboardButton{button("续期历史", cb("period", "renewals", id(p.ID), "0", state.token())), button("编辑有效期", cb("period", "edit", id(p.ID)))},
 	}
 	rows = append(rows,
 		[]models.InlineKeyboardButton{button("删除有效期", cb("period", "delete_ask", id(p.ID), state.token()))},
-		navRow(serviceRef(p.ServiceID, state)),
+		h.navButtons(chatID, serviceRef(p.ServiceID, state)),
 	)
 	return markup(rows...)
 }
@@ -396,6 +401,7 @@ func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.U
 		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
+	h.navSet(resp.chatID, rulesRef(periodID, after, state))
 	page, err := h.svc.ListRules(ctx, user.ID, periodID, after, pageSize)
 	if err != nil {
 		h.send(ctx, b, resp, serviceMessage(err))
@@ -426,7 +432,7 @@ func (h *Handler) showRules(ctx context.Context, b *telegram.Bot, user service.U
 	}
 	rows = append(rows,
 		[]models.InlineKeyboardButton{button("添加规则", cb("rule", "add", id(p.ID)))},
-		navRow(periodRef(p.ID, state)),
+		h.navButtons(resp.chatID, periodRef(p.ID, state)),
 	)
 	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
@@ -437,6 +443,7 @@ func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user serv
 		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
+	h.navSet(resp.chatID, ruleRef(ruleID, after, state))
 	label := "已启用"
 	if !r.Enabled {
 		label = "已禁用"
@@ -451,7 +458,7 @@ func (h *Handler) showRuleDetail(ctx context.Context, b *telegram.Bot, user serv
 	} else {
 		rows = append(rows, []models.InlineKeyboardButton{button("启用规则", cb("rule", "enable_ask", id(r.ID), id(after), state.token()))})
 	}
-	rows = append(rows, navRow(rulesRef(r.PeriodID, after, state)))
+	rows = append(rows, h.navButtons(resp.chatID, rulesRef(r.PeriodID, after, state)))
 	h.sendMarkup(ctx, b, resp, text, markup(rows...))
 }
 
@@ -461,6 +468,7 @@ func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user servic
 		h.send(ctx, b, resp, objectStateMessage(err))
 		return
 	}
+	h.navSet(resp.chatID, periodRef(periodID, state))
 	page, err := h.svc.ListRenewals(ctx, user.ID, periodID, after, pageSize)
 	if err != nil {
 		h.send(ctx, b, resp, serviceMessage(err))
@@ -485,7 +493,7 @@ func (h *Handler) showRenewals(ctx context.Context, b *telegram.Bot, user servic
 	if page.NextCursor != nil {
 		rows = append(rows, []models.InlineKeyboardButton{button("下一页", cb("period", "renewals", id(p.ID), id(*page.NextCursor), state.token()))})
 	}
-	rows = append(rows, navRow(periodRef(p.ID, state)))
+	rows = append(rows, h.navButtons(resp.chatID, periodRef(p.ID, state)))
 	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
@@ -495,6 +503,7 @@ func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.Us
 		h.send(ctx, b, resp, serviceMessage(err))
 		return
 	}
+	h.navSet(resp.chatID, jobsPage(jobFilterCode(filter), after))
 	var text strings.Builder
 	fmt.Fprintf(&text, "提醒任务（%s）\n", statusLabel(filter))
 	if filter == "all" {
@@ -547,7 +556,7 @@ func (h *Handler) showJobs(ctx context.Context, b *telegram.Bot, user service.Us
 	if page.NextCursor != nil {
 		rows = append(rows, []models.InlineKeyboardButton{button("下一页", cb("job", "list", code, id(*page.NextCursor)))})
 	}
-	rows = append(rows, navRow(settingsPage()))
+	rows = append(rows, h.navButtons(resp.chatID, settingsPage()))
 	h.sendMarkup(ctx, b, resp, strings.TrimRight(text.String(), "\n"), markup(rows...))
 }
 
@@ -563,10 +572,11 @@ func jobFilterCode(filter string) string {
 }
 
 func (h *Handler) showSettings(ctx context.Context, b *telegram.Bot, user service.User, resp *responder) {
+	h.navSet(resp.chatID, settingsPage())
 	h.sendMarkup(ctx, b, resp, h.settingsText(user), markup(
 		[]models.InlineKeyboardButton{button("修改时区", cb("settings", "timezone")), button("提醒任务", cb("job", "list", "1", "0"))},
 		[]models.InlineKeyboardButton{button("我的服务", cb("service", "list", "1", "0", "0"))},
-		navRow(homePage()),
+		h.navButtons(resp.chatID, homePage()),
 	))
 }
 

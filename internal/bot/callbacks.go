@@ -105,6 +105,7 @@ func (h *Handler) dialogCallback(ctx context.Context, b *telegram.Bot, user serv
 		h.cancelDialog(ctx, b, user, resp, "当前没有进行中的对话。")
 		return silentAnswer
 	case "new_service":
+		h.navPush(resp.chatID)
 		h.startServiceAdd(ctx, b, user, resp)
 		return silentAnswer
 	case "resume", "confirm", "keep", "replace", "back", "skip", "skip_rest", "set", "change_field", "new_category", "use_convention", "clear_value", "toggle_enabled":
@@ -162,6 +163,9 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		if category > 0 {
 			filter.CategoryID = &category
 		}
+		if current, ok := h.navCurrent(resp.chatID); ok && current.kind != refHome && current.kind != refServices {
+			h.navPush(resp.chatID)
+		}
 		h.showOverview(ctx, b, user.ID, resp, filter, page)
 		return silentAnswer
 	case "cats":
@@ -172,6 +176,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		if !ok {
 			return "未知操作"
 		}
+		h.navPush(resp.chatID)
 		h.showCategories(ctx, b, user.ID, resp, state)
 		return silentAnswer
 	}
@@ -203,9 +208,11 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 				}
 			}
 		}
+		h.navPushFrom(resp.chatID, serviceList(state))
 		h.showServiceDetail(ctx, b, user, resp, serviceID, state, after)
 		return silentAnswer
 	case "edit":
+		h.navPush(resp.chatID)
 		h.startServiceEdit(ctx, b, user, resp, serviceID)
 		return silentAnswer
 	case "archive_ask":
@@ -281,7 +288,7 @@ func (h *Handler) serviceCallback(ctx context.Context, b *telegram.Bot, user ser
 		if err := h.svc.DeleteService(ctx, user.ID, serviceID); err != nil {
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
-		h.sendMarkup(ctx, b, resp, fmt.Sprintf("服务「%s」已永久删除。", item.Name), markup(navRow(serviceList(state))))
+		h.sendMarkup(ctx, b, resp, fmt.Sprintf("服务「%s」已永久删除。", item.Name), markup(h.navButtons(resp.chatID, serviceList(state))))
 		return silentAnswer
 	default:
 		return "未知操作"
@@ -294,6 +301,7 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 		return "未知操作"
 	}
 	if v3.action == "add" {
+		h.navPush(resp.chatID)
 		h.startPeriodAdd(ctx, b, user, resp, targetID)
 		return silentAnswer
 	}
@@ -307,9 +315,11 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 		if !ok {
 			return "未知操作"
 		}
+		h.navPush(resp.chatID)
 		h.showPeriodDetail(ctx, b, user, resp, p.ID, state)
 		return silentAnswer
 	case "renew":
+		h.navPush(resp.chatID)
 		h.startRenewWizard(ctx, b, user, resp, p.ID)
 		return silentAnswer
 	case "rules":
@@ -323,6 +333,7 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 		if !ok {
 			return "未知操作"
 		}
+		h.navPush(resp.chatID)
 		h.showRules(ctx, b, user, resp, p.ID, after, state)
 		return silentAnswer
 	case "renewals":
@@ -336,9 +347,11 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 		if !ok {
 			return "未知操作"
 		}
+		h.navPush(resp.chatID)
 		h.showRenewals(ctx, b, user, resp, p.ID, after, state)
 		return silentAnswer
 	case "edit":
+		h.navPush(resp.chatID)
 		h.startPeriodEdit(ctx, b, user, resp, p.ID)
 		return silentAnswer
 	case "delete_ask":
@@ -361,7 +374,7 @@ func (h *Handler) periodCallback(ctx context.Context, b *telegram.Bot, user serv
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
 		h.sendMarkup(ctx, b, resp, fmt.Sprintf("有效期「%s」已永久删除。", periodName(p)),
-			markup(navRow(serviceRef(p.ServiceID, state))))
+			markup(h.navButtons(resp.chatID, serviceRef(p.ServiceID, state))))
 		return silentAnswer
 	default:
 		return "未知操作"
@@ -374,6 +387,7 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 		return "未知操作"
 	}
 	if v3.action == "add" {
+		h.navPush(resp.chatID)
 		h.startRuleAdd(ctx, b, user, resp, targetID)
 		return silentAnswer
 	}
@@ -393,9 +407,11 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 	}
 	switch v3.action {
 	case "view":
+		h.navPush(resp.chatID)
 		h.showRuleDetail(ctx, b, user, resp, r.ID, after, state)
 		return silentAnswer
 	case "edit":
+		h.navPush(resp.chatID)
 		h.startRuleEdit(ctx, b, user, resp, r.ID)
 		return silentAnswer
 	case "enable_ask", "disable_ask":
@@ -424,6 +440,7 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 				return h.replyState(ctx, b, resp, objectStateMessage(err))
 			}
 		}
+		h.navPush(resp.chatID)
 		h.showRuleDetail(ctx, b, user, resp, r.ID, after, state)
 		return silentAnswer
 	case "delete_ask":
@@ -438,7 +455,7 @@ func (h *Handler) ruleCallback(ctx context.Context, b *telegram.Bot, user servic
 			return h.replyState(ctx, b, resp, objectStateMessage(err))
 		}
 		h.sendMarkup(ctx, b, resp, "提醒规则已永久删除。",
-			markup(navRow(rulesRef(r.PeriodID, after, state))))
+			markup(h.navButtons(resp.chatID, rulesRef(r.PeriodID, after, state))))
 		return silentAnswer
 	default:
 		return "未知操作"
@@ -475,7 +492,7 @@ func (h *Handler) jobCallback(ctx context.Context, b *telegram.Bot, user service
 	if !ok {
 		return "未知操作"
 	}
-	back := navRow(jobsPage(code, after))
+	back := h.navButtons(resp.chatID, jobsPage(code, after))
 	switch v3.action {
 	case "cancel_ask":
 		if job.Status == "sent" {
@@ -532,6 +549,7 @@ func callbackState(v3 callbackV3, index int) (listState, bool) {
 func (h *Handler) settingsCallback(ctx context.Context, b *telegram.Bot, user service.User, resp *responder, v3 callbackV3) string {
 	switch v3.action {
 	case "timezone":
+		h.navPush(resp.chatID)
 		h.startTimezone(ctx, b, user, resp)
 		return silentAnswer
 	case "view":
@@ -559,6 +577,7 @@ func (h *Handler) notifyCallback(ctx context.Context, b *telegram.Bot, user serv
 		h.showPeriodDetail(ctx, b, user, resp, p.ID, defaultListState())
 		return silentAnswer
 	case "renew":
+		h.navPush(resp.chatID)
 		h.startRenewWizard(ctx, b, user, resp, p.ID)
 		return silentAnswer
 	default:
@@ -570,7 +589,7 @@ func (h *Handler) notifyCallback(ctx context.Context, b *telegram.Bot, user serv
 // message so an edit replaces the stale keyboard; the chat already shows the
 // reason, so the callback answer stays silent.
 func (h *Handler) replyState(ctx context.Context, b *telegram.Bot, resp *responder, message string) string {
-	h.sendMarkup(ctx, b, resp, message, markup(navRow(homePage())))
+	h.sendMarkup(ctx, b, resp, message, markup(h.navButtons(resp.chatID, homePage())))
 	return silentAnswer
 }
 

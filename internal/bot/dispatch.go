@@ -69,9 +69,11 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 	}
 	switch name {
 	case "start":
+		h.navReset(resp.chatID, homePage())
 		h.ensureMenuButton(ctx, b, user, resp.chatID)
 		h.helpMessage(ctx, b, user, resp)
 	case "help":
+		h.navReset(resp.chatID, homePage())
 		h.helpMessage(ctx, b, user, resp)
 	case "add":
 		if strings.TrimSpace(rest) != "" {
@@ -80,6 +82,7 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 		}
 		h.startServiceAdd(ctx, b, user, resp)
 	case "services":
+		h.navReset(resp.chatID, serviceList(defaultListState()))
 		query := strings.TrimSpace(rest)
 		if len([]rune(query)) > 200 {
 			h.send(ctx, b, resp, "关键词最多 200 字。")
@@ -87,12 +90,14 @@ func (h *Handler) dispatchCommand(ctx context.Context, b *telegram.Bot, user ser
 		}
 		h.showOverview(ctx, b, user.ID, resp, service.ServiceFilter{Status: "active", Query: query}, 1)
 	case "reminders":
+		h.navReset(resp.chatID, jobsPage("1", 0))
 		if strings.TrimSpace(rest) != "" {
 			h.send(ctx, b, resp, "用法：/reminders")
 			return
 		}
 		h.showJobs(ctx, b, user, resp, "pending", 0)
 	case "settings":
+		h.navReset(resp.chatID, settingsPage())
 		if strings.TrimSpace(rest) != "" {
 			h.send(ctx, b, resp, "用法：/settings")
 			return
