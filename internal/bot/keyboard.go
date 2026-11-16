@@ -125,7 +125,7 @@ func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *res
 		parts = []string{""}
 	}
 	chatID, editID := resp.next()
-	if editID > 0 && len(parts) == 1 {
+	if editID > 0 {
 		body := parts[0]
 		if body == "" {
 			body = "请选择："
@@ -140,11 +140,25 @@ func (h *Handler) sendMarkupMode(ctx context.Context, b *telegram.Bot, resp *res
 			params.LinkPreviewOptions = &models.LinkPreviewOptions{IsDisabled: &disabled}
 		}
 		if _, err := b.EditMessageText(ctx, params); err == nil || editNotModified(err) {
+			// If we had more chunks, the original message was edited to the first
+			// one. Send the rest as new messages.
+			for i := 1; i < len(parts); i++ {
+				p := &telegram.SendMessageParams{ChatID: chatID, Text: parts[i], ParseMode: parseMode}
+				if disablePreview {
+					disabled := true
+					p.LinkPreviewOptions = &models.LinkPreviewOptions{IsDisabled: &disabled}
+				}
+				if i == len(parts)-1 && keyboard != nil {
+					p.ReplyMarkup = *keyboard
+				}
+				_, _ = b.SendMessage(ctx, p)
+			}
 			return
 		}
 		h.logger.Warn("telegram edit failed", "code", "telegram_error")
 	}
 	for i, chunk := range parts {
+
 		params := &telegram.SendMessageParams{ChatID: chatID, Text: chunk, ParseMode: parseMode}
 		if disablePreview {
 			disabled := true
